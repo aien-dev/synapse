@@ -10,6 +10,9 @@ use synapse_core::{
     SynapseResult,
 };
 
+mod chain;
+pub use chain::*;
+
 /// Current capability grant schema version.
 pub const CAPABILITY_GRANT_VERSION: u16 = 1;
 
@@ -35,6 +38,9 @@ pub enum Capability {
     Review,
     /// Project changesets to Git/GitHub or request canonical promotion (`project_git`, `promote_canonical`).
     Publish,
+    /// Restore an earlier operation view (ADR 0003 section 5.4); undoing another actor's
+    /// operations also needs a delegation chain that dominates that actor's (step B2).
+    Undo,
 }
 
 impl Capability {
@@ -45,6 +51,7 @@ impl Capability {
             Self::Evaluate => 3,
             Self::Review => 4,
             Self::Publish => 5,
+            Self::Undo => 6,
         }
     }
 
@@ -378,6 +385,7 @@ pub struct PolicyEnforcer {
     consumed_nonces: BTreeSet<(RepoId, String, [u8; 32])>,
     rate_windows: BTreeMap<(RepoId, String), Vec<u64>>,
     audit_log: AuditLog,
+    chains: ChainRegistry,
 }
 
 impl Default for PolicyEnforcer {
@@ -393,6 +401,7 @@ impl PolicyEnforcer {
             consumed_nonces: BTreeSet::new(),
             rate_windows: BTreeMap::new(),
             audit_log: AuditLog::new(),
+            chains: ChainRegistry::default(),
         }
     }
 

@@ -44,6 +44,9 @@ pub enum RefusalCode {
     QuotaTooManyPaths,
     QuotaRateLimitExceeded,
     PaginationLimitExceeded,
+    /// The children of one capability link would together exceed the parent's rate, storage, or
+    /// footprint quota (ADR 0003 section 5.8, step F1).
+    QuotaPartitionExceeded,
 
     // Schema, path, and consistency refusals
     EnvelopeVersionUnsupported,
@@ -68,6 +71,26 @@ pub enum RefusalCode {
     AuthReplayDetected,
     AuthSelfReviewRefused,
     AuditChainCorrupt,
+    /// A capability chain does not link up: empty or too deep, a root that is not a trusted
+    /// repository authority, a parent digest that does not match the previous link (stripped or
+    /// reordered chain), or a link the server never granted (ADR 0003 section 5.8, step F1).
+    AuthChainBroken,
+    /// A capability link or chain is not in its one canonical binary encoding (step F1).
+    AuthChainMalformed,
+    /// A link is bound to another audience: its issuer is not its parent's audience, or the
+    /// request is presented by a key that is not the leaf link's audience (step F1).
+    AuthAudienceMismatch,
+    /// A derived link is wider than its parent in operations, paths, references, change scope,
+    /// quotas, or validity window (step F1).
+    AuthScopeEscalation,
+    /// A link of the chain was revoked at or before the request's `WalSeq` (step F1).
+    AuthGrantRevoked,
+    /// A request touches a path outside the chain's path scope (step F1).
+    AuthPathOutOfScope,
+    /// A request touches a reference kind outside the chain's reference scope (step F1).
+    AuthReferenceOutOfScope,
+    /// A request joins a `ChangeId` outside the chain's change scope (step F1).
+    AuthChangeOutOfScope,
 
     // Git and Radicle canonicality refusals
     GitObjectCorrupt,
@@ -322,6 +345,25 @@ impl IdempotencyKey {
 impl fmt::Debug for IdempotencyKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "IdempotencyKey({})", self.to_hex())
+    }
+}
+
+/// One unit of intended work across all its rewrites and retries (ADR 0003 section 5.1):
+/// 16 random bytes, not content-derived. Step F1 uses it only to name the `ChangeId`s a
+/// capability link's change scope allows its holder to join; binding a `ChangeId` to its
+/// creating chain is step B1.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ChangeId(pub [u8; 16]);
+
+impl ChangeId {
+    pub fn to_hex(self) -> String {
+        hex::encode(self.0)
+    }
+}
+
+impl fmt::Debug for ChangeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ChangeId({})", self.to_hex())
     }
 }
 
