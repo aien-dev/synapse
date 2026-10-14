@@ -361,6 +361,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "synapse-bench"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "hex",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "synapse-api",
+ "synapse-auth",
+ "synapse-core",
+ "synapse-git",
+ "synapse-radicle",
+ "synapse-store",
+]
+
+[[package]]
 name = "synapse-core"
 version = "0.1.0"
 dependencies = [

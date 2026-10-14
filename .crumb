@@ -1,6 +1,6 @@
 schema: "crumb/v1"
 repository: "aien-spark/synapse"
-updated_at: "2026-10-14T14:05:00Z"
+updated_at: "2026-10-14T15:35:01Z"
 summary: "Synapse agent-native changeset service with Git and Radicle interoperability (aien-sovereign-core#515)"
 components:
   - name: "synapse-core"
@@ -23,4 +23,4 @@ components:
     role: "Radicle refs/rad/id and refs/rad/sigrefs Ed25519 delegate threshold verifier and split-brain refusal engine"
   - name: "synapse-bench"
     path: "crates/synapse-bench"
-    role: "Comparative concurrent agent benchmark and conformance suite against Git worktree workflows"
+    role: "Gate 4 comparative qualification harness (Synapse versus Git worktree and plumbing workflows) and WAL, Git, and Radicle conformance suites"
