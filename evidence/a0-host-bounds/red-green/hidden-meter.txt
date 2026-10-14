@@ -1,0 +1,5 @@
+$ synapse-bench bounds --evidence <copy of protocol.json> --work-dir <empty dir> --hwmon-root /nonexistent
+synapse-bench: INSTRUMENT_UNAVAILABLE: no aien_spbm hwmon device under /nonexistent
+exit status: 1
+files in evidence dir after: protocol.json 
+entries in work dir after: 0

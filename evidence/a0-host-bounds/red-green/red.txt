@@ -1,0 +1,208 @@
+warning: unused imports: `COUNTER_WRAP_UJ` and `MAX_SAMPLE_GAP`
+  --> crates/synapse-bench/src/bounds.rs:23:27
+   |
+23 | use crate::energy::{Spbm, COUNTER_WRAP_UJ, MAX_SAMPLE_GAP, SAMPLE_PERIOD, SENSOR_PERIOD_S};
+   |                           ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::floor::FloorReport`
+  --> crates/synapse-bench/src/bounds.rs:24:5
+   |
+24 | use crate::floor::FloorReport;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Verifier`
+  --> crates/synapse-bench/src/bounds.rs:27:52
+   |
+27 | use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+   |                                                    ^^^^^^^^
+
+warning: unused import: `std::hint::black_box`
+  --> crates/synapse-bench/src/bounds.rs:32:5
+   |
+32 | use std::hint::black_box;
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `FileExt`
+  --> crates/synapse-bench/src/bounds.rs:34:25
+   |
+34 | use std::os::unix::fs::{FileExt, OpenOptionsExt};
+   |                         ^^^^^^^
+
+warning: fields `file`, `buf`, `offset`, and `chunks` are never read
+   --> crates/synapse-bench/src/bounds.rs:480:5
+    |
+479 | pub struct DeviceState {
+    |            ----------- fields in this struct
+480 |     file: File,
+    |     ^^^^
+481 |     buf: AlignedBytes,
+    |     ^^^
+482 |     offset: u64,
+    |     ^^^^^^
+483 |     chunks: u64,
+    |     ^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `synapse-bench` (lib test) generated 6 warnings (run `cargo fix --lib -p synapse-bench --tests` to apply 5 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.53s
+     Running unittests src/lib.rs (target/debug/deps/synapse_bench-a5aabe17679cd948)
+
+running 20 tests
+test bounds::tests::protocol_refuses_too_few_repetitions_and_unaligned_device_chunks ... FAILED
+test bounds::tests::frozen_overflowed_or_missing_counters_refuse_preflight ... FAILED
+test bounds::tests::memory_read_touches_every_word_of_every_pass ... FAILED
+test bounds::tests::energy_figures_come_from_counter_differences ... FAILED
+test bounds::tests::advancing_counter_passes_preflight ... ok
+test bounds::tests::arm_sha256_matches_the_sha2_crate ... FAILED
+test bounds::tests::memory_copy_copies_and_counts_both_directions ... FAILED
+test bounds::tests::energy_figures_refuse_broken_windows ... FAILED
+test bounds::tests::sha2_crate_probe_counts_hashed_bytes ... FAILED
+test bounds::tests::w1_source_with_a_different_digest_is_refused ... FAILED
+test rng::tests::below_stays_in_bounds_and_shuffle_is_permutation ... ok
+test bounds::tests::device_probes_write_then_read_back_the_pattern ... FAILED
+test bounds::tests::ed25519_probe_verifies_and_refuses_a_bad_signature ... FAILED
+test bounds::tests::report_figures_are_recomputed_from_integers ... FAILED
+test bounds::tests::verify_refuses_dropped_extra_or_resized_repetitions ... FAILED
+test bounds::tests::verify_refuses_a_protocol_changed_after_the_run ... FAILED
+test bounds::tests::verify_refuses_a_changed_raw_sample ... FAILED
+test bounds::tests::verify_accepts_sealed_evidence_as_written ... FAILED
+test bounds::tests::verify_refuses_a_changed_report_figure ... FAILED
+test bounds::tests::hidden_energy_device_refuses_with_instrument_unavailable_and_writes_nothing ... FAILED
+
+failures:
+
+---- bounds::tests::protocol_refuses_too_few_repetitions_and_unaligned_device_chunks stdout ----
+
+thread 'bounds::tests::protocol_refuses_too_few_repetitions_and_unaligned_device_chunks' (3458097) panicked at crates/synapse-bench/src/bounds/tests.rs:97:5:
+2 repetitions cannot give a range
+
+---- bounds::tests::frozen_overflowed_or_missing_counters_refuse_preflight stdout ----
+
+thread 'bounds::tests::frozen_overflowed_or_missing_counters_refuse_preflight' (3458093) panicked at crates/synapse-bench/src/bounds/tests.rs:152:5:
+a counter that never advances is not a meter: None
+
+---- bounds::tests::memory_read_touches_every_word_of_every_pass stdout ----
+
+thread 'bounds::tests::memory_read_touches_every_word_of_every_pass' (3458096) panicked at crates/synapse-bench/src/bounds/tests.rs:486:5:
+assertion `left == right` failed
+  left: 0
+ right: 24576
+
+---- bounds::tests::energy_figures_come_from_counter_differences stdout ----
+
+thread 'bounds::tests::energy_figures_come_from_counter_differences' (3458091) panicked at crates/synapse-bench/src/bounds/tests.rs:230:5:
+assertion `left == right` failed
+  left: None
+ right: Some(20.0)
+
+---- bounds::tests::arm_sha256_matches_the_sha2_crate stdout ----
+
+thread 'bounds::tests::arm_sha256_matches_the_sha2_crate' (3458088) panicked at crates/synapse-bench/src/bounds/tests.rs:535:9:
+assertion `left == right` failed: length 0
+  left: Some([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+ right: Some([227, 176, 196, 66, 152, 252, 28, 20, 154, 251, 244, 200, 153, 111, 185, 36, 39, 174, 65, 228, 100, 155, 147, 76, 164, 149, 153, 27, 120, 82, 184, 85])
+
+---- bounds::tests::memory_copy_copies_and_counts_both_directions stdout ----
+
+thread 'bounds::tests::memory_copy_copies_and_counts_both_directions' (3458095) panicked at crates/synapse-bench/src/bounds/tests.rs:497:5:
+assertion `left == right` failed
+  left: 0
+ right: 32768
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- bounds::tests::energy_figures_refuse_broken_windows stdout ----
+
+thread 'bounds::tests::energy_figures_refuse_broken_windows' (3458092) panicked at crates/synapse-bench/src/bounds/tests.rs:260:9:
+decreasing counter accepted
+
+---- bounds::tests::sha2_crate_probe_counts_hashed_bytes stdout ----
+
+thread 'bounds::tests::sha2_crate_probe_counts_hashed_bytes' (3458099) panicked at crates/synapse-bench/src/bounds/tests.rs:550:5:
+assertion `left == right` failed
+  left: 0
+ right: 1200
+
+---- bounds::tests::w1_source_with_a_different_digest_is_refused stdout ----
+
+thread 'bounds::tests::w1_source_with_a_different_digest_is_refused' (3458108) panicked at crates/synapse-bench/src/bounds/tests.rs:468:5:
+assertion failed: matches!(load_w1_flush(&repo_root(), &src),
+    Err(BoundsRefusal::W1SourceMismatch(_)))
+
+---- bounds::tests::device_probes_write_then_read_back_the_pattern stdout ----
+
+thread 'bounds::tests::device_probes_write_then_read_back_the_pattern' (3458089) panicked at crates/synapse-bench/src/bounds/tests.rs:514:5:
+assertion `left == right` failed
+  left: 0
+ right: 32768
+
+---- bounds::tests::ed25519_probe_verifies_and_refuses_a_bad_signature stdout ----
+
+thread 'bounds::tests::ed25519_probe_verifies_and_refuses_a_bad_signature' (3458090) panicked at crates/synapse-bench/src/bounds/tests.rs:561:5:
+assertion `left == right` failed
+  left: 0
+ right: 10
+
+---- bounds::tests::report_figures_are_recomputed_from_integers stdout ----
+
+thread 'bounds::tests::report_figures_are_recomputed_from_integers' (3458098) panicked at crates/synapse-bench/src/bounds/tests.rs:324:10:
+called `Option::unwrap()` on a `None` value
+
+---- bounds::tests::verify_refuses_dropped_extra_or_resized_repetitions stdout ----
+
+thread 'bounds::tests::verify_refuses_dropped_extra_or_resized_repetitions' (3458106) panicked at crates/synapse-bench/src/bounds/tests.rs:431:5:
+a dropped repetition (cherry-picking) must not verify: Ok(Report { schema: "synapse-bench/a0-host-bounds-report/v1", protocol_sha256: "c53e423d5d21c11eb4685095a9c66eec4f8c3c028ce43c3e0b7b8def35a3e4a0", raw_sha256: "", source_rev: "synthetic", repetitions: 3, central_statistic: Median, spread_statistic: Range, bound_statistic: MaxRate, instruments: Instruments { clock: "synthetic", clock_resolution_ns: 1, energy_sensor: "synthetic", energy_step_uj: 1000, energy_update_period_ms: 100, energy_sample_period_ms: 100 }, w1_flush: W1Flush { path: "evidence/phase5-group-commit/floor.json", sha256: "9c30eddf2e278921b28df5ecd8f3b2e2b8f43771c73c5c540b8d9dc965f5ccef", probes: [] }, bound_inputs: [], probes: [] })
+
+---- bounds::tests::verify_refuses_a_protocol_changed_after_the_run stdout ----
+
+thread 'bounds::tests::verify_refuses_a_protocol_changed_after_the_run' (3458104) panicked at crates/synapse-bench/src/bounds/tests.rs:415:5:
+Ok(Report { schema: "synapse-bench/a0-host-bounds-report/v1", protocol_sha256: "c53e423d5d21c11eb4685095a9c66eec4f8c3c028ce43c3e0b7b8def35a3e4a0", raw_sha256: "", source_rev: "synthetic", repetitions: 4, central_statistic: Median, spread_statistic: Range, bound_statistic: MaxRate, instruments: Instruments { clock: "synthetic", clock_resolution_ns: 1, energy_sensor: "synthetic", energy_step_uj: 1000, energy_update_period_ms: 100, energy_sample_period_ms: 100 }, w1_flush: W1Flush { path: "evidence/phase5-group-commit/floor.json", sha256: "9c30eddf2e278921b28df5ecd8f3b2e2b8f43771c73c5c540b8d9dc965f5ccef", probes: [] }, bound_inputs: [], probes: [] })
+
+---- bounds::tests::verify_refuses_a_changed_raw_sample stdout ----
+
+thread 'bounds::tests::verify_refuses_a_changed_raw_sample' (3458101) panicked at crates/synapse-bench/src/bounds/tests.rs:376:5:
+one nanosecond changed in raw.json must break the report: Ok(Report { schema: "synapse-bench/a0-host-bounds-report/v1", protocol_sha256: "c53e423d5d21c11eb4685095a9c66eec4f8c3c028ce43c3e0b7b8def35a3e4a0", raw_sha256: "", source_rev: "synthetic", repetitions: 3, central_statistic: Median, spread_statistic: Range, bound_statistic: MaxRate, instruments: Instruments { clock: "synthetic", clock_resolution_ns: 1, energy_sensor: "synthetic", energy_step_uj: 1000, energy_update_period_ms: 100, energy_sample_period_ms: 100 }, w1_flush: W1Flush { path: "evidence/phase5-group-commit/floor.json", sha256: "9c30eddf2e278921b28df5ecd8f3b2e2b8f43771c73c5c540b8d9dc965f5ccef", probes: [] }, bound_inputs: [], probes: [] })
+
+---- bounds::tests::verify_accepts_sealed_evidence_as_written stdout ----
+
+thread 'bounds::tests::verify_accepts_sealed_evidence_as_written' (3458100) panicked at crates/synapse-bench/src/bounds/tests.rs:369:5:
+assertion `left == right` failed
+  left: 0
+ right: 8
+
+---- bounds::tests::verify_refuses_a_changed_report_figure stdout ----
+
+thread 'bounds::tests::verify_refuses_a_changed_report_figure' (3458102) panicked at crates/synapse-bench/src/bounds/tests.rs:395:5:
+an edited figure must not verify: Ok(Report { schema: "synapse-bench/a0-host-bounds-report/v1", protocol_sha256: "c53e423d5d21c11eb4685095a9c66eec4f8c3c028ce43c3e0b7b8def35a3e4a0", raw_sha256: "", source_rev: "synthetic", repetitions: 3, central_statistic: Median, spread_statistic: Range, bound_statistic: MaxRate, instruments: Instruments { clock: "synthetic", clock_resolution_ns: 1, energy_sensor: "synthetic", energy_step_uj: 1000, energy_update_period_ms: 100, energy_sample_period_ms: 100 }, w1_flush: W1Flush { path: "evidence/phase5-group-commit/floor.json", sha256: "9c30eddf2e278921b28df5ecd8f3b2e2b8f43771c73c5c540b8d9dc965f5ccef", probes: [] }, bound_inputs: [], probes: [] })
+
+---- bounds::tests::hidden_energy_device_refuses_with_instrument_unavailable_and_writes_nothing stdout ----
+
+thread 'bounds::tests::hidden_energy_device_refuses_with_instrument_unavailable_and_writes_nothing' (3458094) panicked at crates/synapse-bench/src/bounds/tests.rs:136:28:
+hidden meter must refuse, got a report: Ok(Report { schema: "synapse-bench/a0-host-bounds-report/v1", protocol_sha256: "c53e423d5d21c11eb4685095a9c66eec4f8c3c028ce43c3e0b7b8def35a3e4a0", raw_sha256: "", source_rev: "test", repetitions: 3, central_statistic: Median, spread_statistic: Range, bound_statistic: MaxRate, instruments: Instruments { clock: "CLOCK_MONOTONIC (std::time::Instant)", clock_resolution_ns: 1, energy_sensor: "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters; pkg, cpu_e, cpu_p; no published accuracy; not compared with an external meter; NVMe drive energy outside it, UNMEASURED)", energy_step_uj: 1000, energy_update_period_ms: 100, energy_sample_period_ms: 100 }, w1_flush: W1Flush { path: "evidence/phase5-group-commit/floor.json", sha256: "9c30eddf2e278921b28df5ecd8f3b2e2b8f43771c73c5c540b8d9dc965f5ccef", probes: [] }, bound_inputs: [], probes: [] })
+
+
+failures:
+    bounds::tests::arm_sha256_matches_the_sha2_crate
+    bounds::tests::device_probes_write_then_read_back_the_pattern
+    bounds::tests::ed25519_probe_verifies_and_refuses_a_bad_signature
+    bounds::tests::energy_figures_come_from_counter_differences
+    bounds::tests::energy_figures_refuse_broken_windows
+    bounds::tests::frozen_overflowed_or_missing_counters_refuse_preflight
+    bounds::tests::hidden_energy_device_refuses_with_instrument_unavailable_and_writes_nothing
+    bounds::tests::memory_copy_copies_and_counts_both_directions
+    bounds::tests::memory_read_touches_every_word_of_every_pass
+    bounds::tests::protocol_refuses_too_few_repetitions_and_unaligned_device_chunks
+    bounds::tests::report_figures_are_recomputed_from_integers
+    bounds::tests::sha2_crate_probe_counts_hashed_bytes
+    bounds::tests::verify_accepts_sealed_evidence_as_written
+    bounds::tests::verify_refuses_a_changed_raw_sample
+    bounds::tests::verify_refuses_a_changed_report_figure
+    bounds::tests::verify_refuses_a_protocol_changed_after_the_run
+    bounds::tests::verify_refuses_dropped_extra_or_resized_repetitions
+    bounds::tests::w1_source_with_a_different_digest_is_refused
+
+test result: FAILED. 2 passed; 18 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.23s
+
+error: test failed, to rerun pass `-p synapse-bench --lib`

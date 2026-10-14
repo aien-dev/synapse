@@ -1,0 +1,56 @@
+
+running 22 tests
+test bounds::tests::energy_figures_come_from_counter_differences ... ok
+test bounds::tests::energy_figures_refuse_broken_windows ... ok
+test bounds::tests::protocol_refuses_too_few_repetitions_and_unaligned_device_chunks ... ok
+test bounds::tests::hidden_energy_device_refuses_with_instrument_unavailable_and_writes_nothing ... ok
+test bounds::tests::memory_read_touches_every_word_of_every_pass ... ok
+test bounds::tests::sha2_crate_probe_counts_hashed_bytes ... ok
+test bounds::tests::memory_copy_copies_and_counts_both_directions ... ok
+test bounds::tests::arm_sha256_matches_the_sha2_crate ... ok
+test bounds::tests::w1_source_with_a_different_digest_is_refused ... ok
+test bounds::tests::device_probes_write_then_read_back_the_pattern ... ok
+test bounds::tests::ed25519_probe_verifies_and_refuses_a_bad_signature ... ok
+test bounds::tests::measured_rates_are_labelled_achieved_never_bounds ... FAILED
+test bounds::tests::report_figures_are_recomputed_from_integers ... ok
+test bounds::tests::errored_repetitions_are_counted_and_refused_beyond_the_protocol_allowance ... FAILED
+test bounds::tests::verify_refuses_a_protocol_changed_after_the_run ... ok
+test bounds::tests::verify_checks_sha256sums_not_only_consistency ... FAILED
+test bounds::tests::verify_accepts_sealed_evidence_as_written ... ok
+test bounds::tests::verify_refuses_a_changed_report_figure ... ok
+test bounds::tests::frozen_overflowed_or_missing_counters_refuse_preflight ... ok
+test bounds::tests::advancing_counter_passes_preflight ... ok
+test bounds::tests::verify_refuses_a_changed_raw_sample ... ok
+test bounds::tests::verify_refuses_dropped_extra_or_resized_repetitions ... ok
+
+failures:
+
+---- bounds::tests::measured_rates_are_labelled_achieved_never_bounds stdout ----
+
+thread 'bounds::tests::measured_rates_are_labelled_achieved_never_bounds' (3716140) panicked at crates/synapse-bench/src/bounds/tests.rs:565:9:
+assertion `left == right` failed: memory_read_bandwidth
+  left: String("hardware measurement")
+ right: "achieved (lower bound on capability)"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- bounds::tests::errored_repetitions_are_counted_and_refused_beyond_the_protocol_allowance stdout ----
+
+thread 'bounds::tests::errored_repetitions_are_counted_and_refused_beyond_the_protocol_allowance' (3716136) panicked at crates/synapse-bench/src/bounds/tests.rs:527:5:
+assertion `left == right` failed: count is always reported
+  left: Null
+ right: 0
+
+---- bounds::tests::verify_checks_sha256sums_not_only_consistency stdout ----
+
+thread 'bounds::tests::verify_checks_sha256sums_not_only_consistency' (3716149) panicked at crates/synapse-bench/src/bounds/tests.rs:494:49:
+called `Result::unwrap_err()` on an `Ok` value: ()
+
+
+failures:
+    bounds::tests::errored_repetitions_are_counted_and_refused_beyond_the_protocol_allowance
+    bounds::tests::measured_rates_are_labelled_achieved_never_bounds
+    bounds::tests::verify_checks_sha256sums_not_only_consistency
+
+test result: FAILED. 19 passed; 3 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.12s
+
+error: test failed, to rerun pass `-p synapse-bench --lib`

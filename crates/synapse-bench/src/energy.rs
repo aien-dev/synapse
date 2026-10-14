@@ -36,6 +36,8 @@ pub const SENSOR_PERIOD_S: f64 = 0.1;
 pub const COUNTER_WRAP_UJ: u64 = (u32::MAX as u64 + 1) * 1000;
 /// Refuse a window when two consecutive samples are further apart than this.
 pub const MAX_SAMPLE_GAP: Duration = Duration::from_millis(300);
+/// Where the kernel lists hwmon devices.
+pub const HWMON_ROOT: &str = "/sys/class/hwmon";
 
 /// A located hwmon device with labelled channels.
 #[derive(Debug, Clone)]
@@ -52,7 +54,12 @@ fn read_trim(path: &Path) -> Option<String> {
 impl Spbm {
     /// Find the hwmon device named `aien_spbm`.
     pub fn find() -> Option<Self> {
-        let entries = std::fs::read_dir("/sys/class/hwmon").ok()?;
+        Self::find_in(Path::new(HWMON_ROOT))
+    }
+
+    /// Find the hwmon device named `aien_spbm` under `root` (normally [`HWMON_ROOT`]).
+    pub fn find_in(root: &Path) -> Option<Self> {
+        let entries = std::fs::read_dir(root).ok()?;
         for e in entries.flatten() {
             let dir = e.path();
             if read_trim(&dir.join("name")).as_deref() == Some("aien_spbm") {

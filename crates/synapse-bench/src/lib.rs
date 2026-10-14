@@ -14,6 +14,7 @@
 //!
 //! [aien-sovereign-core#515]: https://github.com/aien-spark/aien-sovereign-core/issues/515
 
+pub mod bounds;
 pub mod conflict;
 pub mod conformance;
 pub mod energy;

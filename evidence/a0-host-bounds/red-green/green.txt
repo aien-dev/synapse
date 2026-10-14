@@ -1,0 +1,26 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/synapse_bench-a5aabe17679cd948)
+
+running 19 tests
+test bounds::tests::energy_figures_come_from_counter_differences ... ok
+test bounds::tests::energy_figures_refuse_broken_windows ... ok
+test bounds::tests::hidden_energy_device_refuses_with_instrument_unavailable_and_writes_nothing ... ok
+test bounds::tests::protocol_refuses_too_few_repetitions_and_unaligned_device_chunks ... ok
+test bounds::tests::memory_copy_copies_and_counts_both_directions ... ok
+test bounds::tests::memory_read_touches_every_word_of_every_pass ... ok
+test bounds::tests::sha2_crate_probe_counts_hashed_bytes ... ok
+test bounds::tests::w1_source_with_a_different_digest_is_refused ... ok
+test bounds::tests::arm_sha256_matches_the_sha2_crate ... ok
+test bounds::tests::device_probes_write_then_read_back_the_pattern ... ok
+test bounds::tests::ed25519_probe_verifies_and_refuses_a_bad_signature ... ok
+test bounds::tests::verify_accepts_sealed_evidence_as_written ... ok
+test bounds::tests::report_figures_are_recomputed_from_integers ... ok
+test bounds::tests::verify_refuses_a_changed_report_figure ... ok
+test bounds::tests::verify_refuses_a_protocol_changed_after_the_run ... ok
+test bounds::tests::verify_refuses_a_changed_raw_sample ... ok
+test bounds::tests::frozen_overflowed_or_missing_counters_refuse_preflight ... ok
+test bounds::tests::advancing_counter_passes_preflight ... ok
+test bounds::tests::verify_refuses_dropped_extra_or_resized_repetitions ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.12s
+
