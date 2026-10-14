@@ -18,7 +18,12 @@ use synapse_store::{
     StoredChangeset, SynapseStore,
 };
 
+mod advisory;
 mod crumb;
+pub use advisory::{
+    ChangesetAdvisory, ChangesetAdvisoryPayload, CoordinationStatus, GuidanceNote,
+    OverlappingProposal, PathAdvisory, Staleness, MAX_ADVISORY_PATHS,
+};
 pub use crumb::CrumbContextQueryPayload;
 
 /// Default maximum page size for bounded API queries.

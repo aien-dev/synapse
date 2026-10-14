@@ -15,5 +15,6 @@ serde_json.workspace = true
 sha2.workspace = true
 synapse-auth.workspace = true
 synapse-core.workspace = true
+synapse-coord.workspace = true
 synapse-crumb.workspace = true
 synapse-store.workspace = true
