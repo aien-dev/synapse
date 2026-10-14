@@ -28,7 +28,7 @@ pub use advisory::{
 pub use crumb::CrumbContextQueryPayload;
 pub use evidence::{
     EvidenceBase, EvidenceBaseQueryPayload, ReceiptMismatch, ReceiptVerification, StaleContext,
-    VerifyEvidenceReceiptPayload,
+    StaleReason, VerifyEvidenceReceiptPayload,
 };
 
 /// Default maximum page size for bounded API queries.

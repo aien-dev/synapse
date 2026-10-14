@@ -12,8 +12,9 @@
 //! * the repository and the `ChangesetId` under test;
 //! * the source revision the changeset was built on ([`SourceRevision`]: its base `GitOid`
 //!   and parent `ChangesetId`s, exactly as the envelope states them);
-//! * one [`CrumbContextBinding`] per distinct directory of the changed path set: the
-//!   `CrumbContextDigest` of that directory's Directory Crumb context at the base revision;
+//! * one [`CrumbContextBinding`] per distinct directory of the changed path set, holding two
+//!   `CrumbContextDigest`s of that directory's Directory Crumb context: at the base revision
+//!   (what the author saw) and in the changeset's own tree (what the runner tested under);
 //! * the inputs, named by an [`InputRootDigest`] over a list of repository members (one
 //!   member in v1; ADR 0003 L1's composite multi-repository input root is the same digest
 //!   over more than one member);
@@ -72,6 +73,11 @@ pub const MAX_STRING_BYTES: usize = 4096;
 pub const MAX_LIST_ITEMS: usize = 4096;
 /// Maximum bytes of the observation log carried inline.
 pub const MAX_LOG_BYTES: usize = 1024 * 1024;
+/// Maximum bytes of one whole encoded receipt record: the log cap plus 1 MiB for every other
+/// field. [`EvidenceReceipt::decode`] checks it before parsing or allocating anything, and
+/// [`EvidenceReceipt::sign`] and [`EvidenceReceipt::encode`] refuse to produce a larger record.
+/// The per-field caps alone would allow a record of about 100 MB.
+pub const MAX_RECEIPT_BYTES: usize = MAX_LOG_BYTES + 1024 * 1024;
 
 /// Input root member kind tag for "a whole Synapse changeset tree" (the only v1 kind).
 const INPUT_MEMBER_CHANGESET: u8 = 1;
@@ -193,12 +199,16 @@ pub struct SourceRevision {
     pub parent_changesets: Vec<ChangesetId>,
 }
 
-/// The Directory Crumb context of one directory at the base revision.
+/// The Directory Crumb context of one directory, on both sides of the changeset. The two
+/// digests differ when the changeset edits a `.crumb` on that directory's chain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrumbContextBinding {
     /// `"."` for the repository root, else a repository-relative directory.
     pub dir: String,
-    pub digest: CrumbContextDigest,
+    /// Context at the changeset's base: what the author saw.
+    pub at_base: CrumbContextDigest,
+    /// Context in the changeset's own tree (the input root): what the runner tested under.
+    pub in_changeset: CrumbContextDigest,
 }
 
 /// One repository's contribution to an input root.
@@ -456,7 +466,8 @@ pub struct EvidenceReceipt {
 }
 
 impl EvidenceReceipt {
-    /// Validate `body` and sign it as record version 1 with the executor's key.
+    /// Validate `body` and sign it as record version 1 with the executor's key, named by its
+    /// canonical `did:key`. Refuses a body whose record would exceed [`MAX_RECEIPT_BYTES`].
     pub fn sign(body: ReceiptBody, executor: &SigningKey) -> Result<Self, ReceiptError> {
         body.validate()?;
         let mut receipt = Self {
@@ -465,7 +476,16 @@ impl EvidenceReceipt {
             executor_did: encode_did_key_ed25519(&executor.verifying_key().to_bytes()),
             signature: [0; 64],
         };
-        receipt.signature = executor.sign(&receipt.signable_bytes()).to_bytes();
+        let signable = receipt.signable_bytes();
+        // The record is the signable bytes with the record tag in place of the sign tag, plus
+        // the 64-byte signature.
+        let record_len = signable.len() - DOMAIN_EVIDENCE_RECEIPT_SIGN_V1.len()
+            + DOMAIN_EVIDENCE_RECEIPT_V1.len()
+            + 64;
+        if record_len > MAX_RECEIPT_BYTES {
+            return Err(ReceiptError::OverCap("receipt"));
+        }
+        receipt.signature = executor.sign(&signable).to_bytes();
         Ok(receipt)
     }
 
@@ -488,6 +508,11 @@ impl EvidenceReceipt {
         self.body.validate()?;
         let key_bytes = decode_did_key_ed25519(&self.executor_did)
             .map_err(|_| ReceiptError::ExecutorDidInvalid)?;
+        // One key has exactly one accepted spelling (`did:key:z6Mk...`), so the receipt
+        // identity, which hashes the DID string, is a function of the key.
+        if self.executor_did != encode_did_key_ed25519(&key_bytes) {
+            return Err(ReceiptError::ExecutorDidInvalid);
+        }
         let key =
             VerifyingKey::from_bytes(&key_bytes).map_err(|_| ReceiptError::ExecutorDidInvalid)?;
         key.verify_strict(
@@ -515,21 +540,36 @@ impl EvidenceReceipt {
         EvidenceReceiptId(h.finalize().into())
     }
 
-    /// Canonical record bytes: record tag, version, body, executor, signature.
-    pub fn encode(&self) -> Vec<u8> {
+    /// Canonical record bytes: record tag, version, body, executor, signature. Refuses an
+    /// unknown version, a body that breaks a version 1 rule (so no length or count is ever
+    /// truncated into its u32 prefix), and a record over [`MAX_RECEIPT_BYTES`]. Does not
+    /// check the signature.
+    pub fn encode(&self) -> Result<Vec<u8>, ReceiptError> {
+        if self.record_version != EVIDENCE_RECEIPT_VERSION_V1 {
+            return Err(ReceiptError::UnknownVersion(self.record_version));
+        }
+        self.body.validate()?;
+        cap_str(&self.executor_did, "executor_did")?;
         let mut buf = Vec::with_capacity(512 + self.body.observation.log.len());
         buf.extend_from_slice(DOMAIN_EVIDENCE_RECEIPT_V1);
         buf.extend_from_slice(&self.record_version.to_le_bytes());
         put_body(&mut buf, &self.body);
         put_str(&mut buf, &self.executor_did);
         buf.extend_from_slice(&self.signature);
-        buf
+        if buf.len() > MAX_RECEIPT_BYTES {
+            return Err(ReceiptError::OverCap("receipt"));
+        }
+        Ok(buf)
     }
 
-    /// Parse canonical record bytes. Refuses a wrong domain tag and an unknown version
-    /// before reading anything else; every length is checked against its cap before any
-    /// allocation. Does not verify the signature; see [`Self::decode_verified`].
+    /// Parse canonical record bytes. Refuses a record over [`MAX_RECEIPT_BYTES`] first, then
+    /// a wrong domain tag and an unknown version before reading anything else; every length
+    /// is checked against its cap before any allocation. Does not verify the signature; see
+    /// [`Self::decode_verified`].
     pub fn decode(bytes: &[u8]) -> Result<Self, ReceiptError> {
+        if bytes.len() > MAX_RECEIPT_BYTES {
+            return Err(ReceiptError::OverCap("receipt"));
+        }
         let mut r = Reader { bytes, pos: 0 };
         if r.take(DOMAIN_EVIDENCE_RECEIPT_V1.len())
             .map_err(|_| ReceiptError::WrongDomain)?
@@ -598,7 +638,8 @@ fn put_contexts(buf: &mut Vec<u8>, cs: &[CrumbContextBinding]) {
     put_count(buf, cs.len());
     for c in cs {
         put_str(buf, &c.dir);
-        buf.extend_from_slice(&c.digest.0);
+        buf.extend_from_slice(&c.at_base.0);
+        buf.extend_from_slice(&c.in_changeset.0);
     }
 }
 
@@ -730,7 +771,8 @@ fn read_body(r: &mut Reader<'_>) -> Result<ReceiptBody, ReceiptError> {
         let dir = r.string("crumb_contexts")?;
         crumb_contexts.push(CrumbContextBinding {
             dir,
-            digest: CrumbContextDigest(r.array()?),
+            at_base: CrumbContextDigest(r.array()?),
+            in_changeset: CrumbContextDigest(r.array()?),
         });
     }
 

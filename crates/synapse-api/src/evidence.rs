@@ -4,10 +4,11 @@
 //! submission path:
 //!
 //! * [`SynapseService::evidence_base`] gives a runner the source revision and the
-//!   per-directory `CrumbContextDigest`s it must bind for a changeset;
+//!   per-directory `CrumbContextDigest`s it must bind for a changeset, at the base and in the
+//!   changeset's own tree;
 //! * [`SynapseService::verify_evidence_receipt`] checks a signed receipt, then recomputes
-//!   those digests at the changeset's base and reports a typed [`ReceiptVerification`]. A
-//!   context that differs is reported as [`ReceiptVerification::Stale`], never accepted.
+//!   both digests per directory and reports a typed [`ReceiptVerification`]. A context that
+//!   differs on either side is reported as [`ReceiptVerification::Stale`], never accepted.
 //!
 //! A `Current` verdict grants nothing: AEGIS stays the sole execution and publication
 //! authority and Radicle canonical promotion stays independent. Receipts are not stored.
@@ -41,16 +42,29 @@ pub struct VerifyEvidenceReceiptPayload {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceBase {
     pub source: SourceRevision,
-    /// One per distinct directory of the changeset's mutated paths, sorted by directory.
+    /// One per distinct directory of the changeset's mutated paths, sorted by directory, with
+    /// the context at the base and in the changeset's own tree.
     pub crumb_contexts: Vec<CrumbContextBinding>,
 }
 
-/// A directory whose context at the base differs from the one the receipt binds.
+/// Which side of a changeset a stale context binding is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StaleReason {
+    /// The context bound as "at the base" (what the author saw) is not the base's context.
+    AtBase,
+    /// The context bound as "in the changeset" (what the runner tested under) is not the
+    /// context in the changeset's own tree.
+    InChangeset,
+}
+
+/// One bound context that differs from what Synapse recomputes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StaleContext {
     pub dir: String,
+    pub reason: StaleReason,
     pub in_receipt: CrumbContextDigest,
-    pub at_base: CrumbContextDigest,
+    /// What Synapse recomputes for this directory on the `reason` side.
+    pub expected: CrumbContextDigest,
 }
 
 /// Why a well-formed, correctly signed receipt does not describe this changeset.
@@ -68,15 +82,16 @@ pub enum ReceiptMismatch {
 }
 
 /// Typed result of checking a receipt against Synapse. Only `Current` means the receipt
-/// binds exactly the context at the changeset's base; even then it grants nothing.
+/// binds exactly the contexts at the changeset's base and in its tree; even then it grants nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReceiptVerification {
-    /// Signature, version, and structure hold, and every bound context matches the base.
+    /// Signature, version, and structure hold, and every bound context matches on both sides.
     Current {
         receipt_id: EvidenceReceiptId,
         outcome: Outcome,
     },
-    /// At least one bound context differs from the context at the changeset's base.
+    /// At least one bound context differs from the context Synapse recomputes, at the base or
+    /// in the changeset's tree. Each entry names its directory and side.
     Stale {
         receipt_id: EvidenceReceiptId,
         stale: Vec<StaleContext>,
@@ -91,8 +106,9 @@ pub enum ReceiptVerification {
 }
 
 impl SynapseService {
-    /// Source revision and per-directory Crumb contexts at the base of `changeset_id`
-    /// (`Capability::Read`). A runner binds these into its receipt.
+    /// Source revision and per-directory Crumb contexts (at the base and in the changeset's
+    /// own tree) for `changeset_id` (`Capability::Read`). A runner binds these into its
+    /// receipt.
     pub fn evidence_base(
         &mut self,
         req: &AuthenticatedRequest<EvidenceBaseQueryPayload>,
@@ -110,8 +126,8 @@ impl SynapseService {
         self.compute_evidence_base(p.changeset_id, p.snapshot_seq)
     }
 
-    /// Check a signed receipt and recompute its Crumb contexts at the changeset's base
-    /// (`Capability::Read`). An unknown or invisible changeset is an error, as for `get`.
+    /// Check a signed receipt and recompute its Crumb contexts at the changeset's base and in
+    /// its tree (`Capability::Read`). An unknown or invisible changeset is an error, as for `get`.
     pub fn verify_evidence_receipt(
         &mut self,
         req: &AuthenticatedRequest<VerifyEvidenceReceiptPayload>,
@@ -154,18 +170,24 @@ impl SynapseService {
                 },
             });
         }
-        // Both lists are sorted by directory and hold the same set, so they pair up.
-        let stale: Vec<StaleContext> = body
-            .crumb_contexts
-            .iter()
-            .zip(&base.crumb_contexts)
-            .filter(|(r, b)| r.digest != b.digest)
-            .map(|(r, b)| StaleContext {
-                dir: r.dir.clone(),
-                in_receipt: r.digest,
-                at_base: b.digest,
-            })
-            .collect();
+        // Both lists are sorted by directory and hold the same set, so they pair up. Each side
+        // is checked on its own, so a receipt can be stale on either or both.
+        let mut stale = Vec::new();
+        for (r, b) in body.crumb_contexts.iter().zip(&base.crumb_contexts) {
+            for (reason, in_receipt, expected) in [
+                (StaleReason::AtBase, r.at_base, b.at_base),
+                (StaleReason::InChangeset, r.in_changeset, b.in_changeset),
+            ] {
+                if in_receipt != expected {
+                    stale.push(StaleContext {
+                        dir: r.dir.clone(),
+                        reason,
+                        in_receipt,
+                        expected,
+                    });
+                }
+            }
+        }
         if stale.is_empty() {
             Ok(ReceiptVerification::Current {
                 receipt_id,
@@ -186,13 +208,23 @@ impl SynapseService {
             .store
             .get_changeset(changeset_id, None, snapshot_seq)?
             .envelope;
-        let tree = self.base_tree(&envelope, snapshot_seq)?;
+        let base_tree = self.base_tree(&envelope, snapshot_seq)?;
+        // The changeset's own tree is the v1 input root: the tree the runner tested.
+        let tested_tree =
+            self.materialize_virtual_tree(TreeTarget::Changeset(changeset_id), snapshot_seq)?;
         let mut crumb_contexts = Vec::new();
         for dir in mutated_dirs(&envelope) {
-            let digest = self
-                .resolve_crumb_context(&tree, &dir, snapshot_seq)?
+            let at_base = self
+                .resolve_crumb_context(&base_tree, &dir, snapshot_seq)?
                 .digest();
-            crumb_contexts.push(CrumbContextBinding { dir, digest });
+            let in_changeset = self
+                .resolve_crumb_context(&tested_tree, &dir, snapshot_seq)?
+                .digest();
+            crumb_contexts.push(CrumbContextBinding {
+                dir,
+                at_base,
+                in_changeset,
+            });
         }
         Ok(EvidenceBase {
             source: SourceRevision {
@@ -256,6 +288,7 @@ mod tests {
 
     const ROOT: &[u8] = br#"{"schema_version":"1.0.0","name":"root","purpose":"Root."}"#;
     const SRC: &[u8] = br#"{"schema_version":"1.0.0","name":"src","purpose":"Sources."}"#;
+    const NEW_SRC: &[u8] = br#"{"schema_version":"1.0.0","name":"src","purpose":"Edited."}"#;
 
     struct Fixture {
         svc: SynapseService,
@@ -360,7 +393,14 @@ mod tests {
 
         /// Submit a changeset on base `seed` upserting `src/b.rs` and `docs/x.md`.
         fn propose(&mut self, seed: u8) -> ChangesetId {
-            let files: [(&str, &[u8]); 2] = [("docs/x.md", b"# x\n"), ("src/b.rs", b"fn b() {}\n")];
+            self.propose_files(
+                seed,
+                &[("docs/x.md", b"# x\n"), ("src/b.rs", b"fn b() {}\n")],
+            )
+        }
+
+        /// Submit a changeset on base `seed` upserting `files` (sorted by path).
+        fn propose_files(&mut self, seed: u8, files: &[(&str, &[u8])]) -> ChangesetId {
             let mut env = ChangesetEnvelope {
                 version: SYNAPSE_ENVELOPE_VERSION,
                 repo_id: self.repo.clone(),
@@ -458,6 +498,72 @@ mod tests {
     }
 
     #[test]
+    fn changeset_editing_a_crumb_binds_both_contexts() {
+        let mut fx = Fixture::new("edits-crumb");
+        let cs = fx.propose_files(1, &[("src/.crumb", NEW_SRC), ("src/b.rs", b"fn b() {}\n")]);
+        let base = fx.base(cs);
+        let tree = fx
+            .svc
+            .materialize_virtual_tree(TreeTarget::Changeset(cs), None)
+            .unwrap();
+        let tested = fx
+            .svc
+            .resolve_crumb_context(&tree, "src", None)
+            .unwrap()
+            .digest();
+        let src = base.crumb_contexts.iter().find(|c| c.dir == "src").unwrap();
+        // The runner tested under the edited `src/.crumb`; the author saw the base one.
+        assert_eq!(
+            src.in_changeset, tested,
+            "receipt must bind the tested context"
+        );
+        assert_ne!(src.at_base, src.in_changeset);
+        let (at_base, in_changeset) = (src.at_base, src.in_changeset);
+
+        // Binding both sides as given is Current.
+        let r = fx.receipt(cs, base.clone());
+        assert!(matches!(
+            fx.verify(r.encode().unwrap()).unwrap(),
+            ReceiptVerification::Current { .. }
+        ));
+
+        // A runner that claims it tested under the base context (the old single binding) is
+        // stale on the changeset side only.
+        let mut bound = base.clone();
+        bound.crumb_contexts[0].in_changeset = at_base;
+        let r = fx.receipt(cs, bound);
+        assert_eq!(
+            fx.verify(r.encode().unwrap()).unwrap(),
+            ReceiptVerification::Stale {
+                receipt_id: r.id(),
+                stale: vec![StaleContext {
+                    dir: "src".into(),
+                    reason: StaleReason::InChangeset,
+                    in_receipt: at_base,
+                    expected: in_changeset,
+                }],
+            }
+        );
+
+        // Claiming the author saw the edited context is stale on the base side only.
+        let mut bound = base;
+        bound.crumb_contexts[0].at_base = in_changeset;
+        let r = fx.receipt(cs, bound);
+        assert_eq!(
+            fx.verify(r.encode().unwrap()).unwrap(),
+            ReceiptVerification::Stale {
+                receipt_id: r.id(),
+                stale: vec![StaleContext {
+                    dir: "src".into(),
+                    reason: StaleReason::AtBase,
+                    in_receipt: in_changeset,
+                    expected: at_base,
+                }],
+            }
+        );
+    }
+
+    #[test]
     fn base_binds_one_context_per_mutated_directory() {
         let mut fx = Fixture::new("base");
         let cs = fx.propose(1);
@@ -474,7 +580,7 @@ mod tests {
         let cs = fx.propose(1);
         let base = fx.base(cs);
         let r = fx.receipt(cs, base);
-        let v = fx.verify(r.encode()).unwrap();
+        let v = fx.verify(r.encode().unwrap()).unwrap();
         assert_eq!(
             v,
             ReceiptVerification::Current {
@@ -495,13 +601,28 @@ mod tests {
         bound.crumb_contexts = seen.crumb_contexts.clone();
         let truth = fx.base(cs1);
         let r = fx.receipt(cs1, bound);
-        match fx.verify(r.encode()).unwrap() {
+        match fx.verify(r.encode().unwrap()).unwrap() {
             ReceiptVerification::Stale { receipt_id, stale } => {
                 assert_eq!(receipt_id, r.id());
-                assert_eq!(stale.len(), 1);
-                assert_eq!(stale[0].dir, "src");
-                assert_eq!(stale[0].in_receipt, seen.crumb_contexts[1].digest);
-                assert_eq!(stale[0].at_base, truth.crumb_contexts[1].digest);
+                // Neither changeset edits `src/.crumb`, so both sides are stale, each named.
+                let (s, t) = (&seen.crumb_contexts[1], &truth.crumb_contexts[1]);
+                assert_eq!(
+                    stale,
+                    vec![
+                        StaleContext {
+                            dir: "src".into(),
+                            reason: StaleReason::AtBase,
+                            in_receipt: s.at_base,
+                            expected: t.at_base,
+                        },
+                        StaleContext {
+                            dir: "src".into(),
+                            reason: StaleReason::InChangeset,
+                            in_receipt: s.in_changeset,
+                            expected: t.in_changeset,
+                        },
+                    ]
+                );
             }
             other => panic!("expected Stale, got {other:?}"),
         }
@@ -515,7 +636,7 @@ mod tests {
         base.source.base_git_oid = GitOid([2; 20]);
         let r = fx.receipt(cs, base);
         assert!(matches!(
-            fx.verify(r.encode()).unwrap(),
+            fx.verify(r.encode().unwrap()).unwrap(),
             ReceiptVerification::Mismatch {
                 reason: ReceiptMismatch::SourceRevision,
                 ..
@@ -526,7 +647,7 @@ mod tests {
         base.crumb_contexts.remove(0);
         let r = fx.receipt(cs, base);
         assert_eq!(
-            fx.verify(r.encode()).unwrap(),
+            fx.verify(r.encode().unwrap()).unwrap(),
             ReceiptVerification::Mismatch {
                 receipt_id: r.id(),
                 reason: ReceiptMismatch::ContextSet {
@@ -547,7 +668,7 @@ mod tests {
             .sign(&r.signable_bytes())
             .to_bytes();
         assert_eq!(
-            fx.verify(r.encode()).unwrap(),
+            fx.verify(r.encode().unwrap()).unwrap(),
             ReceiptVerification::Refused(ReceiptError::SignatureInvalid)
         );
         assert_eq!(
@@ -559,7 +680,7 @@ mod tests {
         let ghost = ChangesetId([0xee; 32]);
         let r = fx.receipt(ghost, base);
         assert_eq!(
-            fx.verify(r.encode()).unwrap_err().code,
+            fx.verify(r.encode().unwrap()).unwrap_err().code,
             RefusalCode::ChangesetNotFound
         );
     }

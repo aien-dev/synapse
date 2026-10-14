@@ -18,11 +18,13 @@ fn body() -> ReceiptBody {
         crumb_contexts: vec![
             CrumbContextBinding {
                 dir: ".".into(),
-                digest: CrumbContextDigest([0xa1; 32]),
+                at_base: CrumbContextDigest([0xa1; 32]),
+                in_changeset: CrumbContextDigest([0xb1; 32]),
             },
             CrumbContextBinding {
                 dir: "src".into(),
-                digest: CrumbContextDigest([0xa2; 32]),
+                at_base: CrumbContextDigest([0xa2; 32]),
+                in_changeset: CrumbContextDigest([0xa2; 32]),
             },
         ],
         input_root: InputRoot::single_repo(repo, cs),
@@ -71,14 +73,14 @@ fn signed() -> EvidenceReceipt {
 #[test]
 fn round_trip_encoding_is_canonical() {
     let r = signed();
-    let bytes = r.encode();
+    let bytes = r.encode().unwrap();
     assert!(bytes.starts_with(DOMAIN_EVIDENCE_RECEIPT_V1));
     let (back, id) = EvidenceReceipt::decode_verified(&bytes).unwrap();
     assert_eq!(back, r);
     assert_eq!(id, r.id());
-    assert_eq!(back.encode(), bytes);
+    assert_eq!(back.encode().unwrap(), bytes);
     // Deterministic: signing the same body twice gives identical bytes (Ed25519 is deterministic).
-    assert_eq!(signed().encode(), bytes);
+    assert_eq!(signed().encode().unwrap(), bytes);
 }
 
 #[test]
@@ -100,8 +102,11 @@ fn every_bound_field_is_tamper_evident() {
         ("source.parent_changesets", |r| {
             r.body.source.parent_changesets.pop();
         }),
-        ("crumb_contexts.digest", |r| {
-            r.body.crumb_contexts[1].digest = CrumbContextDigest([0xb2; 32])
+        ("crumb_contexts.at_base", |r| {
+            r.body.crumb_contexts[1].at_base = CrumbContextDigest([0xb2; 32])
+        }),
+        ("crumb_contexts.in_changeset", |r| {
+            r.body.crumb_contexts[1].in_changeset = CrumbContextDigest([0xb2; 32])
         }),
         ("crumb_contexts.dir", |r| {
             r.body.crumb_contexts[1].dir = "srd".into()
@@ -153,7 +158,7 @@ fn every_bound_field_is_tamper_evident() {
         );
         // The same tamper through the wire form is refused too.
         assert_eq!(
-            EvidenceReceipt::decode_verified(&r.encode()).map(|_| ()),
+            EvidenceReceipt::decode_verified(&r.encode().unwrap()).map(|_| ()),
             Err(ReceiptError::SignatureInvalid),
             "{field} via bytes"
         );
@@ -162,7 +167,7 @@ fn every_bound_field_is_tamper_evident() {
 
 #[test]
 fn every_single_byte_flip_is_refused() {
-    let bytes = signed().encode();
+    let bytes = signed().encode().unwrap();
     for i in 0..bytes.len() {
         let mut b = bytes.clone();
         b[i] ^= 0x01;
@@ -200,7 +205,7 @@ fn forged_signatures_are_refused() {
 #[test]
 fn wrong_domain_is_refused() {
     // Record bytes under another tag.
-    let mut bytes = signed().encode();
+    let mut bytes = signed().encode().unwrap();
     bytes[..DOMAIN_EVIDENCE_RECEIPT_V1.len()].copy_from_slice(b"SYNAPSE_EVIDENCE_RECEIPT_V2\0");
     assert_eq!(
         EvidenceReceipt::decode(&bytes),
@@ -227,7 +232,7 @@ fn wrong_domain_is_refused() {
 #[test]
 fn unknown_version_is_refused() {
     let r = signed();
-    let mut bytes = r.encode();
+    let mut bytes = r.encode().unwrap();
     let at = DOMAIN_EVIDENCE_RECEIPT_V1.len();
     bytes[at..at + 2].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
@@ -294,7 +299,7 @@ fn identity_excludes_logs_and_timings() {
     // Both verify, carry different observations, and share one identity.
     let ida = a.verify().unwrap();
     let idb = b.verify().unwrap();
-    assert_ne!(a.encode(), b.encode());
+    assert_ne!(a.encode().unwrap(), b.encode().unwrap());
     assert_eq!(a.result_digest(), b.result_digest());
     assert_eq!(a.body.action_digest(), b.body.action_digest());
     assert_eq!(ida, idb);
@@ -311,8 +316,11 @@ fn identity_excludes_logs_and_timings() {
     assert_ne!(EvidenceReceipt::sign(b4, &executor()).unwrap().id(), ida);
     // So do the action (context seen) and the executor.
     let mut b5 = body();
-    b5.crumb_contexts[0].digest = CrumbContextDigest([0; 32]);
+    b5.crumb_contexts[0].at_base = CrumbContextDigest([0; 32]);
     assert_ne!(EvidenceReceipt::sign(b5, &executor()).unwrap().id(), ida);
+    let mut b6 = body();
+    b6.crumb_contexts[0].in_changeset = CrumbContextDigest([0; 32]);
+    assert_ne!(EvidenceReceipt::sign(b6, &executor()).unwrap().id(), ida);
     let other = SigningKey::from_bytes(&[11u8; 32]);
     assert_ne!(EvidenceReceipt::sign(body(), &other).unwrap().id(), ida);
 }
@@ -400,7 +408,7 @@ fn structural_rules_are_enforced() {
 
 #[test]
 fn malformed_bytes_are_refused_without_panic() {
-    let bytes = signed().encode();
+    let bytes = signed().encode().unwrap();
     for n in 0..bytes.len() {
         assert!(EvidenceReceipt::decode(&bytes[..n]).is_err(), "prefix {n}");
     }
@@ -417,5 +425,71 @@ fn malformed_bytes_are_refused_without_panic() {
     assert_eq!(
         EvidenceReceipt::decode(&huge),
         Err(ReceiptError::OverCap("repo_id"))
+    );
+}
+
+#[test]
+fn executor_did_must_be_canonical() {
+    // Same key, same body, DID spelled as a bare multibase key: refused even when re-signed,
+    // so one key has one spelling and one receipt identity.
+    let mut r = signed();
+    r.executor_did = r.executor_did.strip_prefix("did:key:").unwrap().to_string();
+    r.signature = executor().sign(&r.signable_bytes()).to_bytes();
+    assert_eq!(r.verify(), Err(ReceiptError::ExecutorDidInvalid));
+}
+
+#[test]
+fn encode_refuses_what_validate_refuses() {
+    // A record built by hand with more items than a u32-prefixed list may carry under v1 is
+    // refused, not written with a silently truncated count.
+    let mut r = signed();
+    r.body.source.parent_changesets = (0..=MAX_LIST_ITEMS as u32)
+        .map(|i| {
+            let mut id = [0u8; 32];
+            id[..4].copy_from_slice(&i.to_be_bytes());
+            ChangesetId(id)
+        })
+        .collect();
+    assert_eq!(
+        r.encode(),
+        Err(ReceiptError::OverCap("source.parent_changesets"))
+    );
+    let mut r = signed();
+    r.record_version = 2;
+    assert_eq!(r.encode(), Err(ReceiptError::UnknownVersion(2)));
+}
+
+#[test]
+fn total_record_size_is_capped() {
+    // Decode refuses an oversized record before reading any field, even with a valid prefix.
+    let mut big = signed().encode().unwrap();
+    big.resize(MAX_RECEIPT_BYTES + 1, 0);
+    assert_eq!(
+        EvidenceReceipt::decode(&big),
+        Err(ReceiptError::OverCap("receipt"))
+    );
+    // A body whose every field is within its own cap but whose record is over the total cap
+    // is refused at signing and at encoding.
+    let mut b = body();
+    b.observation.log = vec![b'x'; MAX_LOG_BYTES];
+    b.test.command = (0..300)
+        .map(|i| format!("{i:04}{}", "a".repeat(4000)))
+        .collect();
+    assert_eq!(
+        EvidenceReceipt::sign(b.clone(), &executor()),
+        Err(ReceiptError::OverCap("receipt"))
+    );
+    let mut r = signed();
+    r.body = b;
+    assert_eq!(r.encode(), Err(ReceiptError::OverCap("receipt")));
+    // The largest log that fits still round-trips.
+    let mut b = body();
+    b.observation.log = vec![b'x'; MAX_LOG_BYTES];
+    let r = EvidenceReceipt::sign(b, &executor()).unwrap();
+    assert_eq!(
+        EvidenceReceipt::decode_verified(&r.encode().unwrap())
+            .unwrap()
+            .0,
+        r
     );
 }
