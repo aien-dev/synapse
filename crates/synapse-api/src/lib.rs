@@ -1146,6 +1146,28 @@ impl SynapseService {
         &self.root_dir
     }
 
+    pub fn repo_id(&self) -> &RepoId {
+        &self.repo_id
+    }
+
+    /// Authorize an export/publication request (`Capability::Publish` at `BoundaryKind::Export`)
+    /// against this service's repository authority and policy enforcer.
+    pub fn authorize_export<T: Serialize>(
+        &mut self,
+        operation: &str,
+        req: &AuthenticatedRequest<T>,
+        now_ms: u64,
+    ) -> SynapseResult<()> {
+        self.auth.authorize(
+            BoundaryKind::Export,
+            operation,
+            &self.repo_id,
+            Capability::Publish,
+            req,
+            now_ms,
+        )
+    }
+
     fn validate_page_request(&self, page: &PageRequest) -> SynapseResult<WalSeq> {
         if page.limit == 0 || page.limit > self.max_page_size {
             return Err(SynapseError::new(

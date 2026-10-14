@@ -36,8 +36,8 @@ use synapse_evidence::{
     ReceiptResult, TestIdentity, MAX_LOG_BYTES, MAX_RECEIPT_BYTES,
 };
 use synapse_git::{
-    materialize_changeset_to_git, project_github_pull_request, GitHubPrProjectionRequest,
-    GitProjectionIndex,
+    advance_human_branch_fast_forward, materialize_changeset_to_git, project_github_pull_request,
+    GitHubPrProjectionRequest, GitProjectionIndex, HumanBranchAdvanceRequest,
 };
 use synapse_radicle::{
     CanonicalPromotionEngine, DelegateSigrefs, PromotionCandidate, RadicleIdentityDoc,
@@ -1352,14 +1352,19 @@ fn s12_exit_rule_passing_run_is_not_publication() {
     let mut index = GitProjectionIndex::new();
     let mat = materialize_changeset_to_git(&mut fx.svc, &mut index, &bare, cs, None, None).unwrap();
 
-    // Gate 1: Capability::Publish. Every other capability, plus a Current Pass receipt in
-    // hand, is refused. (Neither gate takes a receipt as input: there is no field for one.)
+    // Gate 1: Capability::Publish (both GitHub PR projection and human branch fast-forward).
+    // Every other capability, plus a Current Pass receipt in hand, is refused, and refs/heads/main
+    // is never created or moved. (Neither gate takes a receipt as input: there is no field for one.)
     let pr = |n| GitHubPrProjectionRequest {
         pr_number: n,
         changeset_id: cs,
         pr_branch_ref: "refs/synapse/agent-head/alice".into(),
         title: "d5".into(),
         github_merged: false,
+    };
+    let adv_branch = || HumanBranchAdvanceRequest {
+        branch: "main".into(),
+        new_commit_oid: mat.commit_oid,
     };
     for signer in [alice(), runner()] {
         let req = fx.sign_as(
@@ -1376,6 +1381,26 @@ fn s12_exit_rule_passing_run_is_not_publication() {
         let now = fx.now();
         let err = project_github_pull_request(&mut fx.svc, &index, &req, now).unwrap_err();
         assert_eq!(err.code, RefusalCode::AuthCapabilityDenied);
+
+        let branch_req = fx.sign_as(
+            &signer,
+            vec![
+                Capability::Read,
+                Capability::Propose,
+                Capability::Evaluate,
+                Capability::Review,
+            ],
+            Capability::Publish,
+            adv_branch(),
+        );
+        let now = fx.now();
+        let err =
+            advance_human_branch_fast_forward(&mut fx.svc, &bare, &branch_req, now).unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthCapabilityDenied);
+        assert!(
+            !bare.join("refs/heads/main").exists(),
+            "refs/heads/main must not be created or moved without Publish"
+        );
     }
 
     // Gate 2: Radicle canonical promotion needs the delegate quorum. Neither the author nor
@@ -1423,6 +1448,20 @@ fn s12_exit_rule_passing_run_is_not_publication() {
     let now = fx.now();
     let proj = project_github_pull_request(&mut fx.svc, &index, &req, now).unwrap();
     assert_eq!(proj.head_git_oid, mat.commit_oid);
+    let branch_req = fx.sign_as(
+        &alice(),
+        vec![Capability::Publish],
+        Capability::Publish,
+        adv_branch(),
+    );
+    let now = fx.now();
+    advance_human_branch_fast_forward(&mut fx.svc, &bare, &branch_req, now).unwrap();
+    assert_eq!(
+        fs::read_to_string(bare.join("refs/heads/main"))
+            .unwrap()
+            .trim(),
+        mat.commit_oid.to_hex()
+    );
     let head = engine
         .verify_and_promote(
             &candidate,
@@ -1433,6 +1472,6 @@ fn s12_exit_rule_passing_run_is_not_publication() {
     result(
         "S12",
         "PASS",
-        "advisory read (no foreign claims) + Current Pass receipt: GitHub PR projection refused without Publish (AuthCapabilityDenied, author and runner); Radicle promotion refused without delegate quorum (none / runner / author sigrefs); both open only for a Publish grant / delegate sigrefs. AEGIS not integrated (separate repo)",
+        "advisory read (no foreign claims) + Current Pass receipt: GitHub PR projection and advance_human_branch_fast_forward refused without Publish (AuthCapabilityDenied, author and runner; refs/heads/main untouched); Radicle promotion refused without delegate quorum (none / runner / author sigrefs); all open only for a Publish grant / delegate sigrefs. AEGIS not integrated (separate repo)",
     );
 }

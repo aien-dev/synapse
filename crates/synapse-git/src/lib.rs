@@ -13,7 +13,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 use synapse_api::{SynapseService, TreeTarget, VirtualTreeEntry};
-use synapse_auth::{AuthenticatedRequest, BoundaryKind, Capability};
+use synapse_auth::AuthenticatedRequest;
 use synapse_core::{
     ChangesetId, GitHubPullRequestProjection, GitOid, RefusalCode, SynapseError, SynapseResult,
     WalSeq,
@@ -86,6 +86,14 @@ pub struct GitHubPrProjectionRequest {
     pub pr_branch_ref: String,
     pub title: String,
     pub github_merged: bool,
+}
+
+/// Request payload for advancing a human-facing Git branch (`refs/heads/<branch>`)
+/// to a fast-forward descendant commit (`Capability::Publish` at `BoundaryKind::Export`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HumanBranchAdvanceRequest {
+    pub branch: String,
+    pub new_commit_oid: GitOid,
 }
 
 /// Compute RFC 1950 Adler-32 checksum over `data`.
@@ -235,8 +243,19 @@ fn write_dir_node_recursive(git_dir: &Path, node: &DirNode) -> SynapseResult<Git
     write_git_loose_object(git_dir, "tree", &tree_payload)
 }
 
-/// Write a Git ref file (`refs/synapse/...` or `refs/heads/...`) atomically inside `git_dir`.
+/// Write a Synapse namespace Git ref file (`refs/synapse/...`) atomically inside `git_dir`.
+/// Human-facing refs (`refs/heads/...`) must go through [`advance_human_branch_fast_forward`].
 pub fn write_git_ref(git_dir: &Path, ref_name: &str, oid: GitOid) -> SynapseResult<()> {
+    if !ref_name.starts_with("refs/synapse/") || ref_name.contains("..") {
+        return Err(SynapseError::new(
+            RefusalCode::PathInvalid,
+            format!("invalid or unauthenticated human git ref name: {ref_name}"),
+        ));
+    }
+    write_git_ref_raw(git_dir, ref_name, oid)
+}
+
+fn write_git_ref_raw(git_dir: &Path, ref_name: &str, oid: GitOid) -> SynapseResult<()> {
     if !ref_name.starts_with("refs/") || ref_name.contains("..") {
         return Err(SynapseError::new(
             RefusalCode::PathInvalid,
@@ -382,14 +401,36 @@ pub fn materialize_changeset_to_git(
     })
 }
 
-/// Advance a human-facing branch (`refs/heads/<branch>`) ONLY if `new_commit_oid` is a strict
-/// fast-forward descendant of the current branch head, refusing any non-fast-forward update
-/// with `RefusalCode::GitRefNonFastForward`.
-pub fn advance_human_branch_fast_forward(
+fn validate_human_branch_name(branch: &str) -> SynapseResult<()> {
+    if branch.is_empty()
+        || branch.starts_with('/')
+        || branch.ends_with('/')
+        || branch.starts_with('.')
+        || branch.ends_with(".lock")
+        || branch.contains("..")
+        || branch.contains("//")
+        || branch.contains("@{")
+        || branch.contains('\\')
+        || branch
+            .bytes()
+            .any(|b| b <= b' ' || b == 0x7f || matches!(b, b'~' | b'^' | b':' | b'?' | b'*' | b'['))
+    {
+        return Err(SynapseError::new(
+            RefusalCode::PathInvalid,
+            format!("invalid human branch name: {branch}"),
+        ));
+    }
+    Ok(())
+}
+
+/// Unauthenticated crate-private helper that advances `refs/heads/<branch>` only if
+/// `new_commit_oid` is a fast-forward descendant of the current branch head.
+fn advance_human_branch_fast_forward_unchecked(
     git_dir: &Path,
     branch: &str,
     new_commit_oid: GitOid,
 ) -> SynapseResult<()> {
+    validate_human_branch_name(branch)?;
     let ref_name = format!("refs/heads/{branch}");
     let rev_out = Command::new("git")
         .arg("--git-dir")
@@ -421,7 +462,25 @@ pub fn advance_human_branch_fast_forward(
         }
     }
 
-    write_git_ref(git_dir, &ref_name, new_commit_oid)
+    write_git_ref_raw(git_dir, &ref_name, new_commit_oid)
+}
+
+/// Advance a human-facing branch (`refs/heads/<branch>`) after authorizing `Capability::Publish`
+/// at `BoundaryKind::Export` via `SynapseService::authorize_export`, and ONLY if `new_commit_oid`
+/// is a fast-forward descendant of the current branch head (refusing non-fast-forward updates
+/// with `RefusalCode::GitRefNonFastForward`).
+pub fn advance_human_branch_fast_forward(
+    service: &mut SynapseService,
+    git_dir: &Path,
+    req: &AuthenticatedRequest<HumanBranchAdvanceRequest>,
+    now_ms: u64,
+) -> SynapseResult<()> {
+    service.authorize_export("advance_human_branch_fast_forward", req, now_ms)?;
+    advance_human_branch_fast_forward_unchecked(
+        git_dir,
+        &req.payload.branch,
+        req.payload.new_commit_oid,
+    )
 }
 
 /// Build and record a bounded `GitHubPullRequestProjection` (`Capability::Publish` at `BoundaryKind::Export`).
@@ -432,21 +491,8 @@ pub fn project_github_pull_request(
     req: &AuthenticatedRequest<GitHubPrProjectionRequest>,
     now_ms: u64,
 ) -> SynapseResult<GitHubPullRequestProjection> {
-    let repo_id = service
-        .store()
-        .list_changesets(None, None, None)?
-        .first()
-        .map(|cs| cs.envelope.repo_id.clone())
-        .unwrap_or_else(|| req.target_repo_id.clone());
-
-    service.auth_mut().authorize(
-        BoundaryKind::Export,
-        "project_github_pr",
-        &repo_id,
-        Capability::Publish,
-        req,
-        now_ms,
-    )?;
+    let repo_id = service.repo_id().clone();
+    service.authorize_export("project_github_pr", req, now_ms)?;
 
     let stored = service
         .store()
@@ -522,7 +568,7 @@ mod tests {
     use super::*;
     use ed25519_dalek::SigningKey;
     use synapse_api::SubmitChangesetPayload;
-    use synapse_auth::AgentCapabilityGrant;
+    use synapse_auth::{AgentCapabilityGrant, Capability};
     use synapse_core::{
         encode_did_key_ed25519, BlobDigest, ChangesetEnvelope, EvidenceAttachment, FileMode,
         IdempotencyKey, MutationOp, PathMutation, RepoId, SYNAPSE_ENVELOPE_VERSION,
@@ -676,7 +722,21 @@ mod tests {
         assert_eq!(index.changeset_for_commit(mat1.commit_oid), Some(cs1_id));
 
         // Fast-forward human `main` branch to `mat1.commit_oid`
-        advance_human_branch_fast_forward(&bare_git_dir, "main", mat1.commit_oid).unwrap();
+        let adv1_req = AuthenticatedRequest::sign_new(
+            &agent_key,
+            grant.clone(),
+            repo_id.clone(),
+            Capability::Publish,
+            [11u8; 32],
+            1_500,
+            0,
+            HumanBranchAdvanceRequest {
+                branch: "main".to_string(),
+                new_commit_oid: mat1.commit_oid,
+            },
+        )
+        .unwrap();
+        advance_human_branch_fast_forward(&mut svc, &bare_git_dir, &adv1_req, 1_500).unwrap();
 
         // 4. Verify `git fsck --full --strict` passes with zero errors or warnings
         let fsck_out = Command::new("git")
@@ -770,9 +830,38 @@ mod tests {
         // 7. Verify non-fast-forward human branch protection:
         //    Advance human `main` to `mat2.commit_oid` (fast-forward succeeds),
         //    then attempt to move human `main` backwards to `mat1.commit_oid` -> refused with GitRefNonFastForward!
-        advance_human_branch_fast_forward(&bare_git_dir, "main", mat2.commit_oid).unwrap();
+        let adv2_req = AuthenticatedRequest::sign_new(
+            &agent_key,
+            grant.clone(),
+            repo_id.clone(),
+            Capability::Publish,
+            [12u8; 32],
+            2_500,
+            0,
+            HumanBranchAdvanceRequest {
+                branch: "main".to_string(),
+                new_commit_oid: mat2.commit_oid,
+            },
+        )
+        .unwrap();
+        advance_human_branch_fast_forward(&mut svc, &bare_git_dir, &adv2_req, 2_500).unwrap();
+        let adv_back_req = AuthenticatedRequest::sign_new(
+            &agent_key,
+            grant.clone(),
+            repo_id.clone(),
+            Capability::Publish,
+            [13u8; 32],
+            2_600,
+            0,
+            HumanBranchAdvanceRequest {
+                branch: "main".to_string(),
+                new_commit_oid: mat1.commit_oid,
+            },
+        )
+        .unwrap();
         let non_ff_err =
-            advance_human_branch_fast_forward(&bare_git_dir, "main", mat1.commit_oid).unwrap_err();
+            advance_human_branch_fast_forward(&mut svc, &bare_git_dir, &adv_back_req, 2_600)
+                .unwrap_err();
         assert_eq!(non_ff_err.code, RefusalCode::GitRefNonFastForward);
 
         // 8. Attach evaluation receipt and build GitHub PR projection (`Capability::Publish`)
@@ -808,6 +897,279 @@ mod tests {
         let proj = project_github_pull_request(&mut svc, &index, &pr_req, 3_000).unwrap();
         assert_eq!(proj.head_git_oid, mat2.commit_oid);
         assert!(proj.body_markdown.contains("cargo-test"));
+
+        let _ = fs::remove_dir_all(&work);
+    }
+
+    #[test]
+    fn test_advance_human_branch_requires_publish_capability_and_rejects_bypass() {
+        let work = temp_dir("publish-gate");
+        let bare_git_dir = work.join("origin.git");
+        let svc_dir = work.join("synapse-service");
+
+        Command::new("git")
+            .args(["init", "--bare"])
+            .arg(&bare_git_dir)
+            .output()
+            .unwrap();
+
+        let repo_id = RepoId::new("aien-spark/synapse").unwrap();
+        let mut svc = SynapseService::open(
+            &svc_dir,
+            repo_id.clone(),
+            FsyncPolicy::EveryCommit,
+            RecoveryPolicy::StrictFailClosed,
+            StoreLimits::default(),
+        )
+        .unwrap();
+
+        let auth_key = SigningKey::from_bytes(&[50u8; 32]);
+        let auth_did = encode_did_key_ed25519(&auth_key.verifying_key().to_bytes());
+        svc.register_authority(auth_did);
+        svc.register_base_tree(GitOid::ZERO, vec![]).unwrap();
+
+        let author_key = SigningKey::from_bytes(&[51u8; 32]);
+        let author_did = encode_did_key_ed25519(&author_key.verifying_key().to_bytes());
+        let no_publish_grant = AgentCapabilityGrant::issue(
+            &auth_key,
+            [21u8; 32],
+            repo_id.clone(),
+            author_did.clone(),
+            vec![
+                Capability::Read,
+                Capability::Propose,
+                Capability::Evaluate,
+                Capability::Review,
+            ],
+            1024 * 1024,
+            100,
+            60_000,
+            10,
+            100_000,
+        );
+
+        let body = b"fn gated() {}
+";
+        let d_body = BlobDigest::compute(body);
+        let mut env = ChangesetEnvelope {
+            version: SYNAPSE_ENVELOPE_VERSION,
+            repo_id: repo_id.clone(),
+            base_git_oid: GitOid::ZERO,
+            parent_changesets: vec![],
+            author_did: String::new(),
+            idempotency_key: IdempotencyKey::from_label("publish-gate-cs1"),
+            created_at_ms: 1_700_000_000_000,
+            intent_summary: "Propose gated change".to_string(),
+            mutations: vec![PathMutation {
+                path: "src/lib.rs".to_string(),
+                op: MutationOp::Upsert {
+                    mode: FileMode::Regular644,
+                    blob_digest: d_body,
+                    size_bytes: body.len() as u64,
+                },
+            }],
+            evidence_receipts: vec![],
+            signature: vec![],
+        };
+        env.sign(&author_key);
+        let sub_req = AuthenticatedRequest::sign_new(
+            &author_key,
+            no_publish_grant.clone(),
+            repo_id.clone(),
+            Capability::Propose,
+            [22u8; 32],
+            1_000,
+            0,
+            SubmitChangesetPayload {
+                envelope: env,
+                blobs: vec![(d_body, body.to_vec())],
+            },
+        )
+        .unwrap();
+        let cs_id = match svc.submit(&sub_req, 1_000).unwrap() {
+            IngestOutcome::Committed { changeset_id, .. } => changeset_id,
+            _ => unreachable!(),
+        };
+
+        // Attach a passing evaluation receipt to verify that passing validation never grants Publish.
+        svc.store_mut()
+            .attach_evaluation(
+                cs_id,
+                EvidenceAttachment {
+                    gate_name: "cargo-test".to_string(),
+                    passed: true,
+                    artifact_digest: [0xcd; 32],
+                    summary: "all tests passed".to_string(),
+                },
+            )
+            .unwrap();
+
+        let mut index = GitProjectionIndex::new();
+        let mat = materialize_changeset_to_git(
+            &mut svc,
+            &mut index,
+            &bare_git_dir,
+            cs_id,
+            Some("lane-beta"),
+            None,
+        )
+        .unwrap();
+
+        // Direct write_git_ref to refs/heads/main is refused as PathInvalid.
+        let direct_err =
+            write_git_ref(&bare_git_dir, "refs/heads/main", mat.commit_oid).unwrap_err();
+        assert_eq!(direct_err.code, RefusalCode::PathInvalid);
+        assert!(!bare_git_dir.join("refs/heads/main").exists());
+
+        // 1. Grant without Capability::Publish is refused with AuthCapabilityDenied; ref does not move.
+        let unauth_req = AuthenticatedRequest::sign_new(
+            &author_key,
+            no_publish_grant.clone(),
+            repo_id.clone(),
+            Capability::Publish,
+            [23u8; 32],
+            1_100,
+            0,
+            HumanBranchAdvanceRequest {
+                branch: "main".to_string(),
+                new_commit_oid: mat.commit_oid,
+            },
+        )
+        .unwrap();
+        let err = advance_human_branch_fast_forward(&mut svc, &bare_git_dir, &unauth_req, 1_100)
+            .unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthCapabilityDenied);
+        assert!(!bare_git_dir.join("refs/heads/main").exists());
+
+        // 2. Request signed with Capability::Propose instead of Capability::Publish is refused.
+        let wrong_cap_req = AuthenticatedRequest::sign_new(
+            &author_key,
+            no_publish_grant,
+            repo_id.clone(),
+            Capability::Propose,
+            [24u8; 32],
+            1_200,
+            0,
+            HumanBranchAdvanceRequest {
+                branch: "main".to_string(),
+                new_commit_oid: mat.commit_oid,
+            },
+        )
+        .unwrap();
+        let err = advance_human_branch_fast_forward(&mut svc, &bare_git_dir, &wrong_cap_req, 1_200)
+            .unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthCapabilityDenied);
+        assert!(!bare_git_dir.join("refs/heads/main").exists());
+
+        // 3. Cross-repo grant is refused with AuthCrossRepoDenied.
+        let other_repo = RepoId::new("aien-spark/other").unwrap();
+        let cross_grant = AgentCapabilityGrant::issue(
+            &auth_key,
+            [25u8; 32],
+            other_repo.clone(),
+            author_did.clone(),
+            vec![Capability::Publish],
+            1024 * 1024,
+            100,
+            60_000,
+            10,
+            100_000,
+        );
+        let cross_req = AuthenticatedRequest::sign_new(
+            &author_key,
+            cross_grant,
+            other_repo,
+            Capability::Publish,
+            [26u8; 32],
+            1_300,
+            0,
+            HumanBranchAdvanceRequest {
+                branch: "main".to_string(),
+                new_commit_oid: mat.commit_oid,
+            },
+        )
+        .unwrap();
+        let err = advance_human_branch_fast_forward(&mut svc, &bare_git_dir, &cross_req, 1_300)
+            .unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthCrossRepoDenied);
+        assert!(!bare_git_dir.join("refs/heads/main").exists());
+
+        // 4. Expired Publish grant is refused with AuthGrantExpired.
+        let publish_grant = AgentCapabilityGrant::issue(
+            &auth_key,
+            [27u8; 32],
+            repo_id.clone(),
+            author_did,
+            vec![Capability::Publish],
+            1024 * 1024,
+            100,
+            60_000,
+            10,
+            5_000,
+        );
+        let exp_req = AuthenticatedRequest::sign_new(
+            &author_key,
+            publish_grant.clone(),
+            repo_id.clone(),
+            Capability::Publish,
+            [28u8; 32],
+            6_000,
+            0,
+            HumanBranchAdvanceRequest {
+                branch: "main".to_string(),
+                new_commit_oid: mat.commit_oid,
+            },
+        )
+        .unwrap();
+        let err = advance_human_branch_fast_forward(&mut svc, &bare_git_dir, &exp_req, 6_000)
+            .unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthGrantExpired);
+        assert!(!bare_git_dir.join("refs/heads/main").exists());
+
+        // 5. Path traversal or malformed branch name is refused even with valid Publish grant.
+        let bad_branch_req = AuthenticatedRequest::sign_new(
+            &author_key,
+            publish_grant.clone(),
+            repo_id.clone(),
+            Capability::Publish,
+            [29u8; 32],
+            2_000,
+            0,
+            HumanBranchAdvanceRequest {
+                branch: "../synapse/agent-head/lane-beta".to_string(),
+                new_commit_oid: mat.commit_oid,
+            },
+        )
+        .unwrap();
+        let err =
+            advance_human_branch_fast_forward(&mut svc, &bare_git_dir, &bad_branch_req, 2_000)
+                .unwrap_err();
+        assert_eq!(err.code, RefusalCode::PathInvalid);
+        assert!(!bare_git_dir.join("refs/heads/main").exists());
+
+        // 6. Valid Publish grant succeeds and advances refs/heads/main; replay of the same nonce is refused.
+        let valid_req = AuthenticatedRequest::sign_new(
+            &author_key,
+            publish_grant,
+            repo_id,
+            Capability::Publish,
+            [30u8; 32],
+            2_100,
+            0,
+            HumanBranchAdvanceRequest {
+                branch: "main".to_string(),
+                new_commit_oid: mat.commit_oid,
+            },
+        )
+        .unwrap();
+        advance_human_branch_fast_forward(&mut svc, &bare_git_dir, &valid_req, 2_100).unwrap();
+        let head = fs::read_to_string(bare_git_dir.join("refs/heads/main")).unwrap();
+        assert_eq!(head.trim(), mat.commit_oid.to_hex());
+
+        let replay_err =
+            advance_human_branch_fast_forward(&mut svc, &bare_git_dir, &valid_req, 2_101)
+                .unwrap_err();
+        assert_eq!(replay_err.code, RefusalCode::AuthReplayDetected);
 
         let _ = fs::remove_dir_all(&work);
     }

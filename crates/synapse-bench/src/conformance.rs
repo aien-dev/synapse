@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use synapse_api::{SynapseService, TreeTarget};
+use synapse_auth::{AgentCapabilityGrant, AuthenticatedRequest, Capability};
 use synapse_core::{
     encode_did_key_ed25519, BlobDigest, ChangesetEnvelope, ChangesetId, FileMode, GitOid,
     IdempotencyKey, MutationOp, PathMutation, RefusalCode, RepoId, WalSeq,
@@ -28,6 +29,7 @@ use synapse_core::{
 };
 use synapse_git::{
     advance_human_branch_fast_forward, materialize_changeset_to_git, GitProjectionIndex,
+    HumanBranchAdvanceRequest,
 };
 use synapse_radicle::{
     load_radicle_state_from_bare_repo, CanonicalPromotionEngine, DelegateSigrefs,
@@ -434,9 +436,46 @@ struct GitFixture {
     base_repo: PathBuf,
     base_commit: String,
     svc: SynapseService,
+    ids: BenchIdentities,
     c1: ChangesetId,
     c2: ChangesetId,
     c3: ChangesetId,
+}
+
+fn sign_publish_advance(
+    ids: &BenchIdentities,
+    label: &str,
+    branch: &str,
+    new_commit_oid: GitOid,
+    now_ms: u64,
+) -> Result<AuthenticatedRequest<HumanBranchAdvanceRequest>, String> {
+    let agent = &ids.agents[0];
+    let grant = AgentCapabilityGrant::issue(
+        &ids.authority_key,
+        synapse_arm::label_bytes(&format!("publish-grant-{label}")),
+        ids.repo_id.clone(),
+        agent.did.clone(),
+        vec![Capability::Publish],
+        synapse_arm::BENCH_MAX_BYTES_PER_OP,
+        u32::MAX,
+        synapse_arm::BENCH_RATE_WINDOW_MS,
+        now_ms.saturating_sub(3_600_000),
+        now_ms + 7 * 24 * 3_600_000,
+    );
+    AuthenticatedRequest::sign_new(
+        &agent.key,
+        grant,
+        ids.repo_id.clone(),
+        Capability::Publish,
+        synapse_arm::label_bytes(&format!("publish-nonce-{label}")),
+        now_ms,
+        0,
+        HumanBranchAdvanceRequest {
+            branch: branch.to_string(),
+            new_commit_oid,
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn upsert(path: &str, body: &str, mode: FileMode) -> FileEdit {
@@ -567,6 +606,7 @@ fn git_fixture(work: &Path) -> Result<GitFixture, String> {
         base_repo,
         base_commit,
         svc,
+        ids,
         c1,
         c2,
         c3,
@@ -759,7 +799,9 @@ pub fn run_git_suite(work: &Path) -> SuiteResult {
         "advancing refs/heads/main from the base to the stacked descendant succeeds (positive control)",
         || {
             let commit = c2_commit.ok_or("no materialized commit")?;
-            let r = advance_human_branch_fast_forward(&t1, "main", commit);
+            let now = crate::unix_now_ms();
+            let req = sign_publish_advance(&fx.ids, "ff", "main", commit, now)?;
+            let r = advance_human_branch_fast_forward(&mut fx.svc, &t1, &req, now);
             let head = git_line(&t1, &["rev-parse", "refs/heads/main"])?;
             Ok((r.is_ok() && head == commit.to_hex(), format!("result {:?}; main at {head}", code_of(&r))))
         },
@@ -773,7 +815,9 @@ pub fn run_git_suite(work: &Path) -> SuiteResult {
             let before = git_line(&t1, &["rev-parse", "refs/heads/main"])?;
             let m3 = materialize_changeset_to_git(&mut fx.svc, &mut index, &t1, fx.c3, None, None)
                 .map_err(|e| e.to_string())?;
-            let r = advance_human_branch_fast_forward(&t1, "main", m3.commit_oid);
+            let now = crate::unix_now_ms();
+            let req = sign_publish_advance(&fx.ids, "non-ff", "main", m3.commit_oid, now)?;
+            let r = advance_human_branch_fast_forward(&mut fx.svc, &t1, &req, now);
             let after = git_line(&t1, &["rev-parse", "refs/heads/main"])?;
             Ok((
                 code_of(&r) == Some(RefusalCode::GitRefNonFastForward) && before == after,
