@@ -21,12 +21,12 @@
     {
       "id": "GATE-3",
       "title": "Deterministic Git object materialization, GitHub PR projection, and Radicle delegate threshold verifier",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": "GATE-4",
       "title": "Comparative concurrent agent benchmark against Git worktrees, conformance suites, and qualification receipt",
-      "status": "planned"
+      "status": "in_progress"
     }
   ]
 }

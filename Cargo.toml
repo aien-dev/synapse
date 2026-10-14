@@ -5,6 +5,8 @@ members = [
     "crates/synapse-store",
     "crates/synapse-auth",
     "crates/synapse-api",
+    "crates/synapse-git",
+    "crates/synapse-radicle",
 ]
 
 [workspace.package]
@@ -26,6 +28,8 @@ sha2 = "0.10"
 synapse-api = { path = "crates/synapse-api" }
 synapse-auth = { path = "crates/synapse-auth" }
 synapse-core = { path = "crates/synapse-core" }
+synapse-git = { path = "crates/synapse-git" }
+synapse-radicle = { path = "crates/synapse-radicle" }
 synapse-store = { path = "crates/synapse-store" }
 zeroize = "1.9"
 

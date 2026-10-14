@@ -373,6 +373,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "synapse-git"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "synapse-api",
+ "synapse-auth",
+ "synapse-core",
+ "synapse-store",
+]
+
+[[package]]
+name = "synapse-radicle"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "synapse-auth",
+ "synapse-core",
+ "synapse-store",
+]
+
+[[package]]
 name = "synapse-store"
 version = "0.1.0"
 dependencies = [
