@@ -118,6 +118,8 @@ fn workspace_sha2_is_built_with_its_aarch64_instruction_backend() {
             );
         }
     }
+    // The backend actually in use: linked into this binary and selected at run time.
+    assert_sha2_backend(Backend::Instructions);
 }
 
 #[test]
@@ -337,4 +339,391 @@ fn a0_instruction_code_gives_every_corpus_digest() {
         }
     }
     assert!(n > 0);
+}
+
+// ---------------------------------------------------------------------------------
+// Which sha2 backend runs, and the portable fallback run automatically
+// ---------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Backend {
+    Instructions,
+    Portable,
+}
+
+/// Path segment of `sha2::sha256::aarch64::sha256_compress` in both the legacy and
+/// v0 symbol manglings, stored reversed so this constant cannot match itself in the
+/// binary being searched.
+const SHA2_AARCH64_SYMBOL_REVERSED: &[u8] = b"sserpmoc_652ahs5146hcraa7652ahs62ahs4";
+
+/// `sha2` chooses its SHA-256 backend twice: at build time (the aarch64 module exists
+/// only with `asm` and without `force-soft`) and at run time (`cpufeatures` checks the
+/// `sha2` hwcap). Check both for this very test binary; any missing input fails.
+fn assert_sha2_backend(want: Backend) {
+    let exe = std::fs::read("/proc/self/exe").expect("read own executable");
+    let symbol: Vec<u8> = SHA2_AARCH64_SYMBOL_REVERSED.iter().rev().copied().collect();
+    let linked = exe.windows(symbol.len()).any(|w| w == symbol);
+    #[cfg(target_arch = "aarch64")]
+    let hwcap = std::arch::is_aarch64_feature_detected!("sha2");
+    #[cfg(not(target_arch = "aarch64"))]
+    let hwcap = false;
+    let got = if linked && hwcap {
+        Backend::Instructions
+    } else {
+        Backend::Portable
+    };
+    assert_eq!(
+        got, want,
+        "sha2 backend: instruction code linked = {linked}, CPU reports sha2 = {hwcap}"
+    );
+}
+
+const INNER_ENV: &str = "SYNAPSE_J3_PORTABLE_INNER";
+
+/// Run only inside the portable build started by
+/// `portable_sha2_backend_gives_the_sealed_corpus`.
+#[test]
+fn inner_portable_backend_is_in_use() {
+    if std::env::var_os(INNER_ENV).is_none() {
+        return;
+    }
+    assert_sha2_backend(Backend::Portable);
+}
+
+/// Builds this crate a second time with `sha2/force-soft` (its portable backend; a
+/// separate target directory, so no lock is shared with this run) and runs the
+/// sealed-corpus test and the backend check there. sha2 0.10 fixes its backend at
+/// build time, so the portable code cannot run inside this process.
+#[test]
+fn portable_sha2_backend_gives_the_sealed_corpus() {
+    if std::env::var_os(INNER_ENV).is_some() {
+        return;
+    }
+    let cargo = std::env::var("CARGO").expect("CARGO is unset: cannot build the portable variant");
+    let out = Command::new(cargo)
+        .current_dir(repo_root())
+        .env(INNER_ENV, "1")
+        .args([
+            "test",
+            "--offline",
+            "-p",
+            "synapse-bench",
+            "--lib",
+            "--features",
+            "sha2/force-soft",
+            "--target-dir",
+        ])
+        .arg(repo_root().join("target/j3-portable-sha2"))
+        .args([
+            "--",
+            "--exact",
+            "crypto_vectors::tests::sealed_corpus_matches_the_rust_crates_exactly",
+            "crypto_vectors::tests::inner_portable_backend_is_in_use",
+            "crypto_vectors::tests::every_corpus_answer_is_the_rust_crates_answer",
+        ])
+        .output()
+        .expect("run cargo test for the portable build");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success() && stdout.contains("test result: ok. 3 passed"),
+        "portable build failed:\n{stdout}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+// ---------------------------------------------------------------------------------
+// The sealed corpus is pinned
+// ---------------------------------------------------------------------------------
+
+#[test]
+fn sealed_corpus_digest_is_pinned() {
+    assert_eq!(CORPUS_SHA256.len(), 64, "corpus digest not pinned");
+    let sealed = std::fs::read(repo_root().join(CORPUS_PATH)).unwrap();
+    assert_eq!(hex::encode(Sha256::digest(&sealed)), CORPUS_SHA256);
+    assert_eq!(
+        hex::encode(Sha256::digest(encode(&rust_corpus()))),
+        CORPUS_SHA256
+    );
+}
+
+// ---------------------------------------------------------------------------------
+// Ed25519 edge cases, each shown to separate a wrong implementation
+// ---------------------------------------------------------------------------------
+
+mod models {
+    //! Independent models of the two `ed25519-dalek` checks, built on
+    //! `curve25519-dalek`, and wrong variants of them. Each wrong variant differs from
+    //! the right one in exactly one rule.
+    use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
+    use curve25519_dalek::scalar::Scalar;
+    use curve25519_dalek::traits::IsIdentity;
+    use sha2::{Digest, Sha512};
+
+    pub type Check = fn(&[u8; 32], &[u8; 64], &[u8]) -> bool;
+
+    fn k(r: &[u8], a: &[u8], m: &[u8]) -> Scalar {
+        let mut h = Sha512::new();
+        h.update(r);
+        h.update(a);
+        h.update(m);
+        Scalar::from_bytes_mod_order_wide(&h.finalize().into())
+    }
+
+    struct Parts {
+        a: EdwardsPoint,
+        r_bytes: [u8; 32],
+        s_bytes: [u8; 32],
+    }
+
+    fn parts(pk: &[u8; 32], sig: &[u8; 64]) -> Option<Parts> {
+        Some(Parts {
+            a: CompressedEdwardsY(*pk).decompress()?,
+            r_bytes: sig[..32].try_into().unwrap(),
+            s_bytes: sig[32..].try_into().unwrap(),
+        })
+    }
+
+    fn canonical_s(p: &Parts) -> Option<Scalar> {
+        Option::from(Scalar::from_canonical_bytes(p.s_bytes))
+    }
+
+    /// [S]B - [k]A, with k over the encodings as given.
+    fn r_prime(p: &Parts, pk: &[u8], s: &Scalar, m: &[u8]) -> EdwardsPoint {
+        let k = k(&p.r_bytes, pk, m);
+        EdwardsPoint::vartime_double_scalar_mul_basepoint(&k, &-p.a, s)
+    }
+
+    fn small_order_r(p: &Parts) -> Option<bool> {
+        Some(CompressedEdwardsY(p.r_bytes).decompress()?.is_small_order())
+    }
+
+    /// Model of `verify`: canonical S, cofactorless, R compared as bytes.
+    pub fn verify(pk: &[u8; 32], sig: &[u8; 64], m: &[u8]) -> bool {
+        (|| {
+            let p = parts(pk, sig)?;
+            let s = canonical_s(&p)?;
+            Some(r_prime(&p, pk, &s, m).compress().0 == p.r_bytes)
+        })()
+        .unwrap_or(false)
+    }
+
+    /// Model of `verify_strict`: `verify` plus R decodes and neither A nor R has small order.
+    pub fn verify_strict(pk: &[u8; 32], sig: &[u8; 64], m: &[u8]) -> bool {
+        (|| {
+            let p = parts(pk, sig)?;
+            Some(!small_order_r(&p)? && !p.a.is_small_order() && verify(pk, sig, m))
+        })()
+        .unwrap_or(false)
+    }
+
+    /// WRONG: decodes R and compares points, so non-canonical R encodings pass.
+    pub fn point_compare(pk: &[u8; 32], sig: &[u8; 64], m: &[u8]) -> bool {
+        (|| {
+            let p = parts(pk, sig)?;
+            let s = canonical_s(&p)?;
+            let r = CompressedEdwardsY(p.r_bytes).decompress()?;
+            Some(r_prime(&p, pk, &s, m) == r)
+        })()
+        .unwrap_or(false)
+    }
+
+    /// WRONG: cofactored equation [8]([S]B - [k]A - R) = 0.
+    pub fn cofactored(pk: &[u8; 32], sig: &[u8; 64], m: &[u8]) -> bool {
+        (|| {
+            let p = parts(pk, sig)?;
+            let s = canonical_s(&p)?;
+            let r = CompressedEdwardsY(p.r_bytes).decompress()?;
+            Some((r_prime(&p, pk, &s, m) - r).mul_by_cofactor().is_identity())
+        })()
+        .unwrap_or(false)
+    }
+
+    /// WRONG: cofactored equation with the strict small-order checks.
+    pub fn cofactored_strict(pk: &[u8; 32], sig: &[u8; 64], m: &[u8]) -> bool {
+        (|| {
+            let p = parts(pk, sig)?;
+            Some(!small_order_r(&p)? && !p.a.is_small_order() && cofactored(pk, sig, m))
+        })()
+        .unwrap_or(false)
+    }
+
+    /// WRONG: reduces S modulo L instead of refusing S >= L.
+    pub fn s_mod_l(pk: &[u8; 32], sig: &[u8; 64], m: &[u8]) -> bool {
+        (|| {
+            let p = parts(pk, sig)?;
+            let s = Scalar::from_bytes_mod_order(p.s_bytes);
+            Some(r_prime(&p, pk, &s, m).compress().0 == p.r_bytes)
+        })()
+        .unwrap_or(false)
+    }
+
+    /// WRONG: hashes the re-encoded (canonical) A instead of the bytes given.
+    pub fn canonical_a_in_hash(pk: &[u8; 32], sig: &[u8; 64], m: &[u8]) -> bool {
+        (|| {
+            let p = parts(pk, sig)?;
+            let s = canonical_s(&p)?;
+            let a = p.a.compress().0;
+            Some(r_prime(&p, &a, &s, m).compress().0 == p.r_bytes)
+        })()
+        .unwrap_or(false)
+    }
+
+    /// WRONG: also refuses keys with a small-order component (not torsion free).
+    pub fn torsion_free_key(pk: &[u8; 32], sig: &[u8; 64], m: &[u8]) -> bool {
+        parts(pk, sig).is_some_and(|p| p.a.is_torsion_free()) && verify(pk, sig, m)
+    }
+
+    /// WRONG as `verify_strict`: checks A for small order but not R.
+    pub fn strict_without_r_check(pk: &[u8; 32], sig: &[u8; 64], m: &[u8]) -> bool {
+        parts(pk, sig).is_some_and(|p| !p.a.is_small_order()) && verify(pk, sig, m)
+    }
+
+    /// WRONG as `verify_strict`: no small-order checks at all.
+    pub fn strict_without_small_order_checks(pk: &[u8; 32], sig: &[u8; 64], m: &[u8]) -> bool {
+        verify(pk, sig, m)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Call {
+    Verify,
+    VerifyStrict,
+}
+
+/// Every edge case, the wrong implementation it catches, and the dalek decision it
+/// is compared with. Cases follow the classes of Chalkias, Garillot and Nikolaenko,
+/// "Taming the many EdDSAs" (SSR 2020, IACR ePrint 2020/1244): small-order A and R,
+/// non-canonical A and R, mixed-order A and R, S >= L, and the cofactored versus
+/// cofactorless split.
+const SEPARATIONS: [(&str, &str, models::Check, Call); 10] = [
+    (
+        "noncanonical_r_y_p_plus_1",
+        "point compare",
+        models::point_compare,
+        Call::Verify,
+    ),
+    (
+        "noncanonical_r_negative_zero",
+        "point compare",
+        models::point_compare,
+        Call::Verify,
+    ),
+    (
+        "noncanonical_a_y_p",
+        "canonical A in hash",
+        models::canonical_a_in_hash,
+        Call::Verify,
+    ),
+    (
+        "small_order_a_and_r",
+        "no small-order checks",
+        models::strict_without_small_order_checks,
+        Call::VerifyStrict,
+    ),
+    (
+        "small_order_r_valid_key",
+        "no small-order R check",
+        models::strict_without_r_check,
+        Call::VerifyStrict,
+    ),
+    (
+        "mixed_order_a_k_not_multiple_of_8",
+        "cofactored",
+        models::cofactored,
+        Call::Verify,
+    ),
+    (
+        "mixed_order_a_k_multiple_of_8",
+        "torsion-free key check",
+        models::torsion_free_key,
+        Call::Verify,
+    ),
+    (
+        "mixed_order_r",
+        "cofactored",
+        models::cofactored,
+        Call::Verify,
+    ),
+    (
+        "mixed_order_r",
+        "cofactored strict",
+        models::cofactored_strict,
+        Call::VerifyStrict,
+    ),
+    (
+        "noncanonical_s_plus_l",
+        "S reduced mod L",
+        models::s_mod_l,
+        Call::Verify,
+    ),
+];
+
+/// The right models reproduce dalek on every corpus record, so a disagreement of a
+/// wrong model is due to its one changed rule.
+#[test]
+fn models_reproduce_dalek_on_the_whole_corpus() {
+    let mut n = 0;
+    for v in rust_corpus() {
+        if let Vector::Ed25519 {
+            public_key,
+            signature,
+            message,
+            verdict,
+        } = v
+        {
+            assert_eq!(
+                models::verify(&public_key, &signature, &message),
+                verdict.verify
+            );
+            assert_eq!(
+                models::verify_strict(&public_key, &signature, &message),
+                verdict.verify_strict
+            );
+            n += 1;
+        }
+    }
+    assert!(n > 0);
+}
+
+#[test]
+fn each_edge_case_is_in_the_corpus_and_catches_a_wrong_implementation() {
+    let corpus = rust_corpus();
+    let cases = ed25519_edge_cases();
+    for (name, wrong_name, wrong, call) in SEPARATIONS {
+        let (_, v) = cases
+            .iter()
+            .find(|(n, _)| *n == name)
+            .unwrap_or_else(|| panic!("edge case {name} missing"));
+        assert!(corpus.contains(v), "{name} not in the corpus");
+        let Vector::Ed25519 {
+            public_key,
+            signature,
+            message,
+            verdict,
+        } = v
+        else {
+            panic!("{name} is not an Ed25519 case");
+        };
+        let right = match call {
+            Call::Verify => verdict.verify,
+            Call::VerifyStrict => verdict.verify_strict,
+        };
+        assert_ne!(
+            wrong(public_key, signature, message),
+            right,
+            "{name}: the {wrong_name} implementation gives dalek's {call:?} answer"
+        );
+        // The wrong implementation is otherwise right: it accepts RFC 8032 TEST 1.
+        let (pk, sig) = (unhex::<32>(RFC8032[0].1), unhex::<64>(RFC8032[0].3));
+        assert!(
+            wrong(&pk, &sig, b""),
+            "{wrong_name} refuses RFC 8032 TEST 1"
+        );
+    }
+    for (name, _) in &cases {
+        assert!(
+            SEPARATIONS.iter().any(|s| s.0 == *name),
+            "edge case {name} has no separating implementation"
+        );
+    }
 }

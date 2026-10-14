@@ -38,6 +38,8 @@ pub const CORPUS_VERSION: u16 = 1;
 pub const MAX_MESSAGE_BYTES: u32 = 1 << 20;
 /// The sealed corpus, relative to the repository root.
 pub const CORPUS_PATH: &str = "evidence/j3-crypto-vectors/vectors.bin";
+/// SHA-256 of the sealed corpus, so the seal is checked by a test, not by hand.
+pub const CORPUS_SHA256: &str = "";
 
 pub const KIND_SHA256: u8 = 1;
 pub const KIND_ED25519: u8 = 2;
@@ -266,6 +268,12 @@ pub fn rust_corpus() -> Vec<Vector> {
         c.push(ed25519_vector(bad, sig1, b""));
     }
     c
+}
+
+/// Named Ed25519 cases that separate implementations which agree on ordinary
+/// signatures (see the tests for the wrong implementation each one catches).
+pub fn ed25519_edge_cases() -> Vec<(&'static str, Vector)> {
+    Vec::new()
 }
 
 const HEADER_BYTES: usize = 16;

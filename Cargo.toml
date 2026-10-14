@@ -22,6 +22,8 @@ repository = "https://github.com/aien-spark/synapse"
 
 [workspace.dependencies]
 base64 = "0.22"
+# J3 edge-case vectors (mixed-order and non-canonical points); already in the graph via ed25519-dalek.
+curve25519-dalek = { version = "4.1", default-features = false }
 ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "fast"] }
 hex = "0.4"
 libc = "0.2"
