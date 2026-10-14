@@ -1,26 +1,26 @@
 {
   "schema": "synapse-gate4-qualification-manifest/v1",
   "smoke": false,
-  "started_at_utc": "2026-10-14T17:02:23Z",
-  "finished_at_utc": "2026-10-14T17:15:09Z",
-  "total_run_s": 765.205,
+  "started_at_utc": "2026-10-14T17:46:26Z",
+  "finished_at_utc": "2026-10-14T17:59:17Z",
+  "total_run_s": 770.918,
   "command_line": [
-    "target/release/synapse-bench",
+    "/tmp/p5-rerun/synapse-bench-6826610",
     "run",
     "--fixture-repo",
     "/home/drakestapleton/workspace/aien-sovereign-core",
     "--fixture-rev",
     "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
     "--out",
-    "/home/drakestapleton/.t3/projects/synapse/.claude/worktrees/agent-acc292068feda44e4/evidence/phase5-group-commit",
+    "/tmp/p5-rerun/out",
     "--work-dir",
-    "/tmp/synapse-p5.kUpL2F",
+    "/tmp/synapse-p5r.NOUmsF",
     "--source-rev",
-    "de17a0a44b2c3942f1eca450a080ffe20b7897de",
+    "6826610e7cd2eace91df623f65e3c0ed83f204a1",
     "--source-dirty",
     "clean",
     "--source-digest",
-    "10b7df89efbf21c921c4f42a4e3b51fd42721fa58353f427c97c5312461c9599",
+    "458de91b4758d85a1613689611ad35fedf1c0cd4dd014f3d277e3d8f256afe1e",
     "--write-only",
     "--arms",
     "S1,S3",
@@ -36,8 +36,8 @@
   "config": {
     "fixture_repo": "/home/drakestapleton/workspace/aien-sovereign-core",
     "fixture_rev": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
-    "out_dir": "/home/drakestapleton/.t3/projects/synapse/.claude/worktrees/agent-acc292068feda44e4/evidence/phase5-group-commit",
-    "work_dir": "/tmp/synapse-p5.kUpL2F",
+    "out_dir": "/tmp/p5-rerun/out",
+    "work_dir": "/tmp/synapse-p5r.NOUmsF",
     "reps": 3,
     "tiers": [
       1,
@@ -64,27 +64,27 @@
     ],
     "recovery_reopen_reps": 3,
     "radicle_repo": null,
-    "source_rev": "de17a0a44b2c3942f1eca450a080ffe20b7897de",
+    "source_rev": "6826610e7cd2eace91df623f65e3c0ed83f204a1",
     "source_dirty": "clean",
-    "source_digest": "10b7df89efbf21c921c4f42a4e3b51fd42721fa58353f427c97c5312461c9599",
+    "source_digest": "458de91b4758d85a1613689611ad35fedf1c0cd4dd014f3d277e3d8f256afe1e",
     "smoke": false,
     "command_line": [
-      "target/release/synapse-bench",
+      "/tmp/p5-rerun/synapse-bench-6826610",
       "run",
       "--fixture-repo",
       "/home/drakestapleton/workspace/aien-sovereign-core",
       "--fixture-rev",
       "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
       "--out",
-      "/home/drakestapleton/.t3/projects/synapse/.claude/worktrees/agent-acc292068feda44e4/evidence/phase5-group-commit",
+      "/tmp/p5-rerun/out",
       "--work-dir",
-      "/tmp/synapse-p5.kUpL2F",
+      "/tmp/synapse-p5r.NOUmsF",
       "--source-rev",
-      "de17a0a44b2c3942f1eca450a080ffe20b7897de",
+      "6826610e7cd2eace91df623f65e3c0ed83f204a1",
       "--source-dirty",
       "clean",
       "--source-digest",
-      "10b7df89efbf21c921c4f42a4e3b51fd42721fa58353f427c97c5312461c9599",
+      "458de91b4758d85a1613689611ad35fedf1c0cd4dd014f3d277e3d8f256afe1e",
       "--write-only",
       "--arms",
       "S1,S3",
@@ -114,10 +114,10 @@
     "git_version": "git version 2.43.0",
     "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)",
     "cargo_version": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
-    "work_dir": "/tmp/synapse-p5.kUpL2F",
+    "work_dir": "/tmp/synapse-p5r.NOUmsF",
     "work_dir_fs_type": "ext4",
     "work_dir_source": "/dev/nvme0n1p2",
-    "work_dir_free_bytes_at_start": 1038752292864
+    "work_dir_free_bytes_at_start": 1029134327808
   },
   "fixture": {
     "original_repo": "/home/drakestapleton/workspace/aien-sovereign-core",
@@ -222,15 +222,15 @@
     "note": "counts of fsync, fdatasync, sync_file_range, and syncfs calls made by one `git hash-object -w --stdin` (strace -f -c)"
   },
   "disk": {
-    "free_bytes_at_start": 1038550986752,
+    "free_bytes_at_start": 1028932964352,
     "estimated_peak_cell_bytes": 2834333864,
     "required_free_bytes": 8503001592,
-    "min_free_bytes_observed": 1037428572160
+    "min_free_bytes_observed": 1028546793472
   },
   "source": {
-    "rev": "de17a0a44b2c3942f1eca450a080ffe20b7897de",
+    "rev": "6826610e7cd2eace91df623f65e3c0ed83f204a1",
     "dirty": "clean",
-    "digest": "10b7df89efbf21c921c4f42a4e3b51fd42721fa58353f427c97c5312461c9599"
+    "digest": "458de91b4758d85a1613689611ad35fedf1c0cd4dd014f3d277e3d8f256afe1e"
   },
   "cell_order_seed": 3636407535504307889,
   "cell_order": [
@@ -454,146 +454,146 @@
   "cell_timings": [
     {
       "label": "write-S3-a01-r0",
-      "clone_ms": 25.528,
-      "child_wall_ms": 9189.933,
+      "clone_ms": 21.641,
+      "child_wall_ms": 9322.868,
       "ok": true
     },
     {
       "label": "write-S3-a04-r0",
-      "clone_ms": 23.698,
-      "child_wall_ms": 4007.87,
+      "clone_ms": 22.998,
+      "child_wall_ms": 4071.048,
       "ok": true
     },
     {
       "label": "write-S3-a32-r0",
-      "clone_ms": 33.07,
-      "child_wall_ms": 2390.217,
+      "clone_ms": 22.246,
+      "child_wall_ms": 2540.528,
       "ok": true
     },
     {
       "label": "write-S1-a04-r0",
-      "clone_ms": 34.746,
-      "child_wall_ms": 56451.191,
+      "clone_ms": 34.136,
+      "child_wall_ms": 56519.042,
       "ok": true
     },
     {
       "label": "write-S1-a32-r0",
-      "clone_ms": 23.616,
-      "child_wall_ms": 58003.456,
+      "clone_ms": 33.33,
+      "child_wall_ms": 57293.235,
       "ok": true
     },
     {
       "label": "write-S1-a01-r0",
-      "clone_ms": 25.159,
-      "child_wall_ms": 57869.356,
+      "clone_ms": 25.531,
+      "child_wall_ms": 57988.668,
       "ok": true
     },
     {
       "label": "write-S3-a08-r0",
-      "clone_ms": 26.625,
-      "child_wall_ms": 2801.802,
+      "clone_ms": 31.119,
+      "child_wall_ms": 2675.179,
       "ok": true
     },
     {
       "label": "write-S1-a08-r0",
-      "clone_ms": 23.972,
-      "child_wall_ms": 56867.713,
+      "clone_ms": 24.796,
+      "child_wall_ms": 54438.257,
       "ok": true
     },
     {
       "label": "write-S3-a08-r1",
-      "clone_ms": 33.732,
-      "child_wall_ms": 2734.026,
+      "clone_ms": 25.162,
+      "child_wall_ms": 2825.679,
       "ok": true
     },
     {
       "label": "write-S1-a08-r1",
-      "clone_ms": 35.352,
-      "child_wall_ms": 55625.894,
+      "clone_ms": 34.55,
+      "child_wall_ms": 55626.29,
       "ok": true
     },
     {
       "label": "write-S3-a01-r1",
-      "clone_ms": 24.755,
-      "child_wall_ms": 9374.089,
+      "clone_ms": 33.06,
+      "child_wall_ms": 9984.264,
       "ok": true
     },
     {
       "label": "write-S1-a32-r1",
-      "clone_ms": 25.221,
-      "child_wall_ms": 56679.66,
+      "clone_ms": 25.717,
+      "child_wall_ms": 57510.272,
       "ok": true
     },
     {
       "label": "write-S3-a04-r1",
-      "clone_ms": 32.478,
-      "child_wall_ms": 4012.888,
+      "clone_ms": 34.247,
+      "child_wall_ms": 4079.968,
       "ok": true
     },
     {
       "label": "write-S1-a01-r1",
-      "clone_ms": 24.947,
-      "child_wall_ms": 56078.032,
+      "clone_ms": 22.699,
+      "child_wall_ms": 57262.61,
       "ok": true
     },
     {
       "label": "write-S1-a04-r1",
-      "clone_ms": 24.372,
-      "child_wall_ms": 55200.634,
+      "clone_ms": 36.647,
+      "child_wall_ms": 57209.807,
       "ok": true
     },
     {
       "label": "write-S3-a32-r1",
-      "clone_ms": 34.468,
-      "child_wall_ms": 2548.882,
+      "clone_ms": 35.7,
+      "child_wall_ms": 2513.584,
       "ok": true
     },
     {
       "label": "write-S3-a01-r2",
-      "clone_ms": 36.436,
-      "child_wall_ms": 8858.964,
+      "clone_ms": 35.665,
+      "child_wall_ms": 8601.646,
       "ok": true
     },
     {
       "label": "write-S3-a04-r2",
-      "clone_ms": 23.59,
-      "child_wall_ms": 4020.321,
+      "clone_ms": 23.139,
+      "child_wall_ms": 4084.174,
       "ok": true
     },
     {
       "label": "write-S1-a08-r2",
-      "clone_ms": 33.782,
-      "child_wall_ms": 56812.095,
+      "clone_ms": 34.823,
+      "child_wall_ms": 57238.723,
       "ok": true
     },
     {
       "label": "write-S3-a32-r2",
-      "clone_ms": 25.948,
-      "child_wall_ms": 2522.016,
+      "clone_ms": 31.339,
+      "child_wall_ms": 2535.21,
       "ok": true
     },
     {
       "label": "write-S1-a01-r2",
-      "clone_ms": 23.461,
-      "child_wall_ms": 56252.852,
+      "clone_ms": 22.14,
+      "child_wall_ms": 58407.47,
       "ok": true
     },
     {
       "label": "write-S1-a32-r2",
-      "clone_ms": 34.9,
-      "child_wall_ms": 55663.223,
+      "clone_ms": 34.763,
+      "child_wall_ms": 55715.543,
       "ok": true
     },
     {
       "label": "write-S3-a08-r2",
-      "clone_ms": 28.06,
-      "child_wall_ms": 2742.651,
+      "clone_ms": 34.256,
+      "child_wall_ms": 2860.535,
       "ok": true
     },
     {
       "label": "write-S1-a04-r2",
-      "clone_ms": 22.26,
-      "child_wall_ms": 56388.023,
+      "clone_ms": 33.944,
+      "child_wall_ms": 57278.804,
       "ok": true
     }
   ],

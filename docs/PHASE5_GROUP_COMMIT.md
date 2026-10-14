@@ -1,7 +1,7 @@
 # Phase 5: Durable Group Commit
 
-Status: implemented on branch `feat/phase5-group-commit`; measured once on the Spark (GB10) host on
-2026-10-14. Evidence: `evidence/phase5-group-commit/` (manifest, report, floor, raw traces,
+Status: implemented on branch `feat/phase5-group-commit`; measured on the Spark (GB10) host on
+2026-10-14 from commit `6826610` (the code with the review fixes). Evidence: `evidence/phase5-group-commit/` (manifest, report, floor, raw traces,
 red/green test logs, `SHA256SUMS`).
 
 ## 1. Design in Two Lines
@@ -99,7 +99,8 @@ Green: store crate 21/21, three consecutive runs.
 
 ## 4. Measurement Method
 
-Command (binary built from commit `de17a0a`, source digest in `manifest.json`):
+Command (release binary built from commit `6826610e7cd2`, clean tree; `manifest.json` records the
+revision and the `git archive` source digest):
 
 ```
 synapse-bench run --fixture-repo ~/workspace/aien-sovereign-core \
@@ -118,7 +119,7 @@ Energy sensor: the `aien_spbm` hwmon device, which reads the GB10 SPBM firmware 
 covers the SoC package only (CPU clusters plus the rest of the package); the NVMe drive is
 UNMEASURED. 1 mJ step, the counter updates about every 0.1 s, sampled at 10 Hz. There is no published
 accuracy and it has never been compared with an external meter: treat all joules as uncalibrated.
-A 30 s idle window (22.755 W) is the counterfactual baseline for "above idle" values.
+A 30 s idle window (22.731 W) is the counterfactual baseline for "above idle" values.
 
 ## 5. Hardware Floor
 
@@ -138,13 +139,15 @@ Floor per change at N agents (assumptions: ext4 file, not raw block device; the 
 measured; all N changes share one sync; the essential CPU work runs on 20 cores in parallel):
 
 - t_floor(N) = max(0.805 ms, 0.055 ms x ceil(N/20)) / N + 11 500 B x 0.138 s/GiB
-- E_floor(N) = 22.755 W x t_floor(N) + 0.2752 mJ (above-idle energy of verify, sign, blob digest and CRC)
+- E_floor(N) = 22.731 W x t_floor(N) + 0.2766 mJ (above-idle energy of verify, sign, blob digest and CRC)
 
-One idle baseline throughout: the sweep's 30 s idle window, 22.755 W. `floor.json` stores
+One idle baseline throughout: the sweep's 30 s idle window, 22.731 W. `floor.json` stores
 per-operation above-idle energy against its own 5 s idle window (23.19 W), which gives 0.2504 mJ for
-the same four operations; re-based to 22.755 W (per operation: package joules minus 22.755 W times
-the operation's share of its window) they sum to 0.2752 mJ: verify 0.0913, sign 0.0163, blob digest
-0.1650, CRC 0.0027 mJ. `floor.json` itself is unchanged.
+the same four operations; re-based to 22.731 W (per operation: package joules minus 22.731 W times
+the operation's share of its window) they sum to 0.2766 mJ: verify 0.0919, sign 0.0165, blob digest
+0.1655, CRC 0.0027 mJ. `floor.json` itself is unchanged; it was measured with the `floor`
+subcommand from the earlier build `de17a0a` (the floor is hardware and file system behaviour, and
+that subcommand did not change).
 
 "Fraction of floor" = floor / measured. 1.0 would mean running at the floor.
 
@@ -152,23 +155,27 @@ the operation's share of its window) they sum to 0.2752 mJ: verify 0.0913, sign 
 
 | Arm | Agents | s per change | floor | fraction | J per change (pkg) | floor | fraction | above idle | mean W |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| S1 | 1 | 13.784 ms | 0.806 ms | 0.059 | 366.1 mJ | 18.63 mJ | 0.051 | 43.2 mJ | 25.8 |
-| S3 | 1 | 2.010 ms | 0.806 ms | 0.401 | 50.1 mJ | 18.63 mJ | 0.372 | 3.4 mJ | 24.4 |
-| S1 | 4 | 13.817 ms | 0.203 ms | 0.015 | 382.0 mJ | 4.89 mJ | 0.013 | 67.6 mJ | 27.6 |
-| S3 | 4 | 0.718 ms | 0.203 ms | 0.282 | 20.3 mJ | 4.89 mJ | 0.241 | 4.0 mJ | 28.3 |
-| S1 | 8 | 13.916 ms | 0.102 ms | 0.007 | 357.6 mJ | 2.60 mJ | 0.007 | 40.2 mJ | 25.6 |
-| S3 | 8 | 0.398 ms | 0.102 ms | 0.257 | 14.1 mJ | 2.60 mJ | 0.185 | 5.1 mJ | 35.5 |
-| S1 | 32 | 13.892 ms | 0.027 ms | 0.002 | 350.8 mJ | 0.88 mJ | 0.003 | 27.3 mJ | 24.7 |
-| S3 | 32 | 0.348 ms | 0.027 ms | 0.077 | 11.3 mJ | 0.88 mJ | 0.078 | 3.4 mJ | 32.5 |
+| S1 | 1 | 14.217 ms | 0.806 ms | 0.057 | 305.2 mJ | 18.61 mJ | 0.061 | -18.0 mJ | 21.5 |
+| S3 | 1 | 2.048 ms | 0.806 ms | 0.394 | 51.7 mJ | 18.61 mJ | 0.360 | 4.9 mJ | 24.9 |
+| S1 | 4 | 14.030 ms | 0.203 ms | 0.014 | 316.3 mJ | 4.88 mJ | 0.015 | -3.0 mJ | 22.5 |
+| S3 | 4 | 0.726 ms | 0.203 ms | 0.279 | 17.2 mJ | 4.88 mJ | 0.283 | 0.7 mJ | 23.8 |
+| S1 | 8 | 13.623 ms | 0.102 ms | 0.007 | 376.9 mJ | 2.60 mJ | 0.007 | 67.3 mJ | 27.7 |
+| S3 | 8 | 0.411 ms | 0.102 ms | 0.248 | 12.9 mJ | 2.60 mJ | 0.202 | 4.0 mJ | 33.1 |
+| S1 | 32 | 14.038 ms | 0.027 ms | 0.002 | 305.2 mJ | 0.88 mJ | 0.003 | -13.9 mJ | 21.7 |
+| S3 | 32 | 0.349 ms | 0.027 ms | 0.076 | 8.5 mJ | 0.88 mJ | 0.104 | 0.6 mJ | 24.6 |
 
 - Gate 4 S1 for reference (`docs/GATE4_QUALIFICATION.md`): 13.79, 14.33, 13.58, 14.38 ms per change at
-  1, 4, 8, 32 agents. This run's S1 agrees.
+  1, 4, 8, 32 agents. This run's S1 agrees within about 0.5 ms.
 - S3 mean batch size: 1.0, about 1.8, about 3.1, about 3.6 records at 1, 4, 8, 32 agents (max 1, 4,
-  7, 10). No failed batches.
-- S3 latency p50 / p99: 1.83 / 4.90, 2.63 / 5.92, 2.91 / 6.50, 9.91 / 27.2 ms. S1 p99 at 32 agents is
-  1269 ms.
-- Above-idle energy varies widely between repetitions (for example S1 at 4 agents: -0.1 to 124.8 mJ),
-  because other work on the host moves the baseline. The package totals are steadier.
+  7, 16). No failed batches.
+- S3 latency p50 / p99: 1.86 / 5.09, 2.71 / 5.61, 2.99 / 6.69, 9.95 / 28.3 ms. S1 p99 at 32 agents is
+  1372 ms.
+- Above-idle energy varies widely between repetitions (for example S1 at 1 agent: -42.6 to 11.0 mJ),
+  and medians can be negative: S1 often drew less package power than the idle window (21.5 W
+  against 22.7 W), so other work on the host moved the baseline. Do not read S1 above-idle values
+  as S1's own cost. The package totals are steadier.
+- An earlier run on `de17a0a` (before the review fixes) gave S3 2.010, 0.718, 0.398, 0.348 ms per
+  change; it is replaced by this run and kept only in git history.
 
 ## 7. What Still Sits Between the Agent and the Floor
 
@@ -197,10 +204,10 @@ the operation's share of its window) they sum to 0.2752 mJ: verify 0.0913, sign 
 - The crash test kills a process; it cannot detect a missing fsync. Power loss was not tested.
 - In S3 the service's own store is opened but unused; `SharedStore` is not yet wired into
   `SynapseService`'s read path. The 64 MiB WAL pre-write happens during setup, outside the timed window.
-- The measured binary is `de17a0a`. The review fixes came after it and were not re-measured: an
-  8-byte trailer per batch (one more 8-byte copy in the one write per batch), one WAL sync at the start
-  of each checkpoint, and recovery-only logic. None of them is in the timed write path beyond the
-  trailer.
+- The measured binary is `6826610`. Later commits on the branch rebase onto main and change docs
+  and evidence; the store code is unchanged since the measurement.
+- A stray `wal.log.tmp` left by a crash during the v1 to v2 upgrade is not removed on open; it is
+  overwritten when the upgrade runs again, and it is harmless but stays on disk otherwise.
 - The floor model is a lower bound under the stated assumptions, not a proven physical limit.
 
 ## 9. Reproduction
