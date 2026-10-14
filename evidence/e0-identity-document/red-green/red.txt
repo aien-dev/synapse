@@ -1,0 +1,61 @@
+# E0 red: tests run against stub identity module (fail-open, no state change), before implementation
+# command: cargo test --offline -p synapse-radicle --test e0_identity_document
+# tests committed in 9c23166 (base 91733a3)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running tests/e0_identity_document.rs (target/debug/deps/e0_identity_document-41dfe8eff02347de)
+
+running 6 tests
+test e0_edit_signed_by_threshold_applies ... FAILED
+test e0_edits_chain_and_cannot_be_replayed_or_reordered ... FAILED
+test e0_binary_format_round_trips_and_refuses_malformed_bytes ... FAILED
+test e0_genesis_needs_its_own_threshold_and_a_valid_document ... FAILED
+test e0_edit_signed_by_fewer_than_threshold_is_refused ... FAILED
+test e0_removed_executor_later_receipts_are_refused ... FAILED
+
+failures:
+
+---- e0_edit_signed_by_threshold_applies stdout ----
+
+thread 'e0_edit_signed_by_threshold_applies' (1185232) panicked at crates/synapse-radicle/tests/e0_identity_document.rs:191:5:
+assertion `left == right` failed
+  left: RepositoryIdentityDocument { repo_id: RepoId("aien-spark/synapse"), revision: 0, prev: IdentityDocumentDigest([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), threshold: 2, delegates: [[65, 232, 253, 225, 50, 173, 103, 14, 83, 76, 216, 178, 117, 210, 205, 126, 236, 119, 115, 60, 102, 248, 219, 72, 161, 202, 218, 127, 171, 252, 69, 85], [110, 224, 145, 253, 40, 10, 155, 104, 85, 79, 167, 60, 88, 129, 37, 212, 125, 52, 37, 198, 138, 38, 186, 35, 107, 77, 173, 144, 249, 10, 143, 146], [180, 116, 11, 164, 224, 247, 224, 87, 111, 17, 232, 20, 157, 187, 178, 82, 156, 33, 34, 19, 219, 103, 152, 49, 251, 93, 27, 34, 30, 132, 85, 45]], executors: [[37, 252, 50, 196, 120, 165, 164, 248, 78, 69, 87, 160, 52, 46, 8, 39, 140, 136, 54, 65, 182, 20, 155, 219, 11, 74, 152, 106, 182, 194, 203, 120], [201, 28, 179, 206, 43, 132, 228, 186, 133, 245, 98, 236, 228, 30, 223, 228, 226, 122, 252, 82, 216, 141, 80, 127, 102, 161, 134, 56, 223, 130, 62, 159]], server_key: [192, 80, 197, 99, 122, 68, 250, 134, 41, 255, 243, 204, 204, 226, 48, 12, 179, 98, 166, 61, 153, 217, 95, 197, 65, 69, 38, 111, 67, 50, 68, 90] }
+ right: RepositoryIdentityDocument { repo_id: RepoId("aien-spark/synapse"), revision: 0, prev: IdentityDocumentDigest([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), threshold: 3, delegates: [[65, 232, 253, 225, 50, 173, 103, 14, 83, 76, 216, 178, 117, 210, 205, 126, 236, 119, 115, 60, 102, 248, 219, 72, 161, 202, 218, 127, 171, 252, 69, 85], [110, 224, 145, 253, 40, 10, 155, 104, 85, 79, 167, 60, 88, 129, 37, 212, 125, 52, 37, 198, 138, 38, 186, 35, 107, 77, 173, 144, 249, 10, 143, 146], [180, 116, 11, 164, 224, 247, 224, 87, 111, 17, 232, 20, 157, 187, 178, 82, 156, 33, 34, 19, 219, 103, 152, 49, 251, 93, 27, 34, 30, 132, 85, 45]], executors: [[37, 252, 50, 196, 120, 165, 164, 248, 78, 69, 87, 160, 52, 46, 8, 39, 140, 136, 54, 65, 182, 20, 155, 219, 11, 74, 152, 106, 182, 194, 203, 120]], server_key: [32, 18, 203, 144, 202, 96, 232, 229, 216, 218, 246, 110, 34, 114, 210, 35, 62, 4, 134, 213, 87, 232, 198, 97, 65, 237, 137, 32, 23, 125, 126, 183] }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- e0_edits_chain_and_cannot_be_replayed_or_reordered stdout ----
+
+thread 'e0_edits_chain_and_cannot_be_replayed_or_reordered' (1185233) panicked at crates/synapse-radicle/tests/e0_identity_document.rs:282:45:
+called `Result::unwrap_err()` on an `Ok` value: ()
+
+---- e0_binary_format_round_trips_and_refuses_malformed_bytes stdout ----
+
+thread 'e0_binary_format_round_trips_and_refuses_malformed_bytes' (1185230) panicked at crates/synapse-radicle/tests/e0_identity_document.rs:398:5:
+assertion failed: doc_bytes.starts_with(b"SYNAPSE_IDENTITY_DOCUMENT_V1\0")
+
+---- e0_genesis_needs_its_own_threshold_and_a_valid_document stdout ----
+
+thread 'e0_genesis_needs_its_own_threshold_and_a_valid_document' (1185234) panicked at crates/synapse-radicle/tests/e0_identity_document.rs:331:83:
+called `Result::unwrap_err()` on an `Ok` value: IdentityLog { entries: [IdentityLogEntry { applied_at: WalSeq(1), document: RepositoryIdentityDocument { repo_id: RepoId("aien-spark/synapse"), revision: 0, prev: IdentityDocumentDigest([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), threshold: 2, delegates: [[65, 232, 253, 225, 50, 173, 103, 14, 83, 76, 216, 178, 117, 210, 205, 126, 236, 119, 115, 60, 102, 248, 219, 72, 161, 202, 218, 127, 171, 252, 69, 85], [110, 224, 145, 253, 40, 10, 155, 104, 85, 79, 167, 60, 88, 129, 37, 212, 125, 52, 37, 198, 138, 38, 186, 35, 107, 77, 173, 144, 249, 10, 143, 146], [180, 116, 11, 164, 224, 247, 224, 87, 111, 17, 232, 20, 157, 187, 178, 82, 156, 33, 34, 19, 219, 103, 152, 49, 251, 93, 27, 34, 30, 132, 85, 45]], executors: [[37, 252, 50, 196, 120, 165, 164, 248, 78, 69, 87, 160, 52, 46, 8, 39, 140, 136, 54, 65, 182, 20, 155, 219, 11, 74, 152, 106, 182, 194, 203, 120], [201, 28, 179, 206, 43, 132, 228, 186, 133, 245, 98, 236, 228, 30, 223, 228, 226, 122, 252, 82, 216, 141, 80, 127, 102, 161, 134, 56, 223, 130, 62, 159]], server_key: [192, 80, 197, 99, 122, 68, 250, 134, 41, 255, 243, 204, 204, 226, 48, 12, 179, 98, 166, 61, 153, 217, 95, 197, 65, 69, 38, 111, 67, 50, 68, 90] } }] }
+
+---- e0_edit_signed_by_fewer_than_threshold_is_refused stdout ----
+
+thread 'e0_edit_signed_by_fewer_than_threshold_is_refused' (1185231) panicked at crates/synapse-radicle/tests/e0_identity_document.rs:141:43:
+called `Result::unwrap_err()` on an `Ok` value: ()
+
+---- e0_removed_executor_later_receipts_are_refused stdout ----
+
+thread 'e0_removed_executor_later_receipts_are_refused' (1185235) panicked at crates/synapse-radicle/tests/e0_identity_document.rs:235:5:
+assertion failed: !log.executor_registered_at(&e2, WalSeq(10))
+
+
+failures:
+    e0_binary_format_round_trips_and_refuses_malformed_bytes
+    e0_edit_signed_by_fewer_than_threshold_is_refused
+    e0_edit_signed_by_threshold_applies
+    e0_edits_chain_and_cannot_be_replayed_or_reordered
+    e0_genesis_needs_its_own_threshold_and_a_valid_document
+    e0_removed_executor_later_receipts_are_refused
+
+test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p synapse-radicle --test e0_identity_document`

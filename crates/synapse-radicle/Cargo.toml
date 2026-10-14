@@ -15,4 +15,8 @@ serde_json.workspace = true
 sha2.workspace = true
 synapse-auth.workspace = true
 synapse-core.workspace = true
+synapse-evidence.workspace = true
 synapse-store.workspace = true
+
+[dev-dependencies]
+synapse-crumb.workspace = true
