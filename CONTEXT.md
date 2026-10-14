@@ -57,7 +57,7 @@ _Avoid_: SourceGrant, ambient filesystem permission, unauthenticated agent ID
 ### AI-Native Model (ADR 0003, proposed)
 
 **ChangeId**:
-A 16-byte random identifier, chosen by the submitter and refused on collision, that names one unit of intended work across all its rewrites, rebases, and retries. Each rewrite is a new `ChangesetId` with the same `ChangeId`.
+A 16-byte random identifier that names one unit of intended work across all its rewrites, rebases, and retries. It is bound to its creating chain: only keys whose chain descends from it, or whose grant names it in change scope, may add revisions, and pruning needs the creating chain or one that dominates it. Each rewrite is a new `ChangesetId` with the same `ChangeId`.
 _Avoid_: ChangesetId, branch name, task title
 
 **TreeDigest**:
@@ -69,7 +69,7 @@ The digest of one content-defined chunk of a large blob. A storage and transfer 
 _Avoid_: BlobDigest, Git delta
 
 **AdmissionWitness**:
-The immutable record of a revision's first admission: `repo_id`, the submitting agent's DID and signature, the `IdempotencyKey`, the admission `WalSeq`, and the server's admission time. Idempotency is keyed on repository, DID, and key; retention and replay use the admission `WalSeq`, never a client clock.
+The immutable record of a revision's first admission: `repo_id`, the submitting agent's DID and signature (or, for a server-derived revision, the server's machine-key signature and its `DerivationAttestation` digest), the `IdempotencyKey`, the admission `WalSeq`, and the server's admission time. Idempotency is keyed on repository, DID, and key; replay order is the `WalSeq`; retention follows per-owner rules and the server's clock, never a client clock.
 _Avoid_: ChangesetId (content only), AuthorshipAttestation, created_at_ms
 
 **AuthorshipAttestation**:
@@ -85,11 +85,11 @@ A machine-checkable assertion in an `IntentRecord` (for example "action A passes
 _Avoid_: description, checklist item
 
 **Footprint**:
-The declared set of paths (later, symbols) a change intends to touch. Used for capability checks, predictive conflict queries, and subscriptions.
+The declared set of paths (later, symbols) a change intends to touch. Every actual mutation must lie inside it. Used for predictive conflict queries and subscriptions, and charged against the declarer's footprint quota by breadth.
 _Avoid_: diff, touched files after the fact
 
 **ObsolescenceMarker**:
-A signed record that one revision was replaced by zero (pruned), one (rewritten), or several (split) successors. Dependent `Private` and `Draft` revisions without receipts evolve onto successors automatically.
+A signed record that one revision was replaced by zero (pruned), one (rewritten), or several (split) successors. Pruning needs the change's creating chain or one that dominates it. Dependent `Private` and `Draft` revisions without receipts are rebased onto successors lazily, when they are next used.
 _Avoid_: reflog entry, deleted changeset
 
 **RevisionState**:
@@ -117,15 +117,15 @@ A server-side pointer to a base plus an overlay of changed paths, owned by a cap
 _Avoid_: Git worktree, clone, working directory
 
 **ActionDigest**:
-The digest of one exact evaluation: input `TreeDigest`, toolchain digest, command digest, environment digest, and platform.
+The digest of one exact evaluation: input root, toolchain digest, command digest, environment digest, and platform. The input root is a Merkle root over sorted (`repo_id`, `TreeDigest`) pairs, so one action can cover trees from several repositories.
 _Avoid_: test name, CI job ID
 
 **EvidenceReceipt**:
-A signed record of one action's result (exit status, output and log digests, seconds, joules when measured, hermetic flag, executor machine key) that applies only to the exact `TreeDigest` in its `ActionDigest`. Only receipts from registered executors (machine keys listed in the identity document, running a sandbox the requesting agent does not control) count toward promotion.
+A signed record of one action's result that applies only to the exact input root in its `ActionDigest`. Its deterministic part (exit status plus declared output digests) is its identity, the result digest; its observation part (logs, seconds, joules when measured) is stored but never part of that identity. It also records the hermetic flag and the executor machine key. Only receipts from registered executors (machine keys listed in the identity document, running a sandbox the requesting agent does not control) count toward promotion.
 _Avoid_: EvidenceAttachment (v1, unbound), PASS label, CI badge
 
 **ActionCache**:
-The map from `ActionDigest` to `EvidenceReceipt` that returns a stored result for an identical hermetic action from a registered executor instead of running it again. Two receipts for one `ActionDigest` with different outputs fail closed, and a receipt is served only while its inputs and outputs are retained.
+The map from `ActionDigest` to stored results that returns a result for an identical hermetic action from a registered executor instead of running it again. Receipts are compared by result digest only (exit status plus declared outputs), so differing logs agree; differing result digests make the entry `Flaky`. A receipt is served only while its inputs and outputs are retained.
 _Avoid_: test result reuse across different trees
 
 **PromotionQueue**:
@@ -137,15 +137,15 @@ A delegate in the repository identity document that is a machine or agent key, f
 _Avoid_: human maintainer, reviewer
 
 **CapabilityChain**:
-A sequence of grants from the repository authority to an agent in which each link may only narrow operations (`Read`, `Propose`, `Evaluate`, `Review`, `Publish`, `Undo`), paths, references, quotas, and expiry. Each link signs its parent's digest, the `repo_id`, the audience, and its caveats; child quotas never sum above the parent's. The server accepts a chain only if every link is unexpired and unrevoked at the request's `WalSeq`.
+A sequence of grants from the repository authority to an agent in which each link may only narrow operations (`Read`, `Propose`, `Evaluate`, `Review`, `Publish`, `Undo`), paths, references, change scope, quotas (request rate, storage, and footprint), and expiry. Each link signs its parent's digest, the `repo_id`, the audience, and its caveats; child quotas never sum above the parent's. The server accepts a chain only if every link is unexpired and unrevoked at the request's `WalSeq`.
 _Avoid_: shared token, bearer secret
 
 **ChangeGroup**:
-A record naming one revision per repository for changes that must land together across repositories (for example a pinned dependency and its consumer). Members promote in a fixed repository order; a failed later member is completed by a recorded revert in the earlier ones.
+A record naming one revision per repository for changes that must land together across repositories (for example a pinned dependency and its consumer). The group is tested as one action over a composite input root and promotes by one compare-and-swap on the group manifest, so every member lands or none does.
 _Avoid_: distributed transaction, submodule bump
 
 **PhysicalBound**:
-The least time or energy the hardware allows for a given piece of work, derived from measured or specified device inputs with every source stated. Performance results are reported in seconds, joules, and watts with the fraction of this bound achieved.
+The least time or energy the hardware allows for a given piece of work, derived from device flush time and bandwidth, memory bandwidth, and all-core throughput, with every source stated; never from one implementation's single-core rate. Where the hardware gives no closed-form limit, the best measured all-core implementation is used and labelled as a reference, replaced whenever beaten, so the fraction achieved stays at most 1. Performance results are reported in seconds, joules, and watts with the fraction of this bound achieved.
 _Avoid_: target, speedup, operations per second headline
 
 **Segment**:
@@ -153,5 +153,25 @@ An append-only storage file holding WAL records and content chunks together, so 
 _Avoid_: blob file, loose object, packfile
 
 **Turing (T)**:
-One bit of net held-out description-length saving against a declared baseline, after charging the model's own size. ADR 0003 section 7 proposes it, at Level 0 (definition only), for scoring how well Synapse's change representation predicts code history. It is not a performance measure.
+One bit of net held-out description-length saving against a declared baseline, after charging the model's own size. ADR 0003 section 7 proposes it, at Level 0 (definition only: never computed on Synapse data, not independently replicated, energy instrument uncalibrated), for scoring how well Synapse's change representation predicts code history. It is not a performance measure.
 _Avoid_: tesla (also symbol T), throughput, compression ratio
+
+**DerivationAttestation**:
+A record signed by the server's registered machine key for a revision the server produced (a lazy rebase, a promotion-queue merge, or a derived-file output). It names the input revisions or trees, the deterministic rule applied, and the output digests, so any replica can recompute and check it.
+_Avoid_: agent signature on server output, unsigned merge
+
+**Flaky**:
+The typed action-cache result for an `ActionDigest` whose registered receipts disagree in their deterministic part (exit status or declared outputs). It lists each distinct result and executor, is served as `Flaky`, and never discharges a claim or counts toward promotion.
+_Avoid_: pass, fail, non-deterministic error
+
+**GroupManifest**:
+One record mapping each linked repository's `repo_id` to its canonical `TreeDigest`. A `ChangeGroup` promotes by one compare-and-swap on it, so linked repositories move together or not at all.
+_Avoid_: compensating revert, distributed lock
+
+**OwnerRetention**:
+The v2 garbage-collection rule: an owner's revisions, operations, and views are kept while its grant or a lease it holds is live and for a server-clock window after, within a storage quota partitioned down its delegation chain. One owner's write volume never shortens another owner's retention.
+_Avoid_: retention counted in WalSeq, client created_at_ms
+
+**CryptographicErasure**:
+The only exception to never-lose-work: under the delegate threshold, the data key of a leaked secret is destroyed so every stored copy becomes unreadable; index, cache, and trace references are removed, the digest stays, and the erasure record is permanent.
+_Avoid_: history rewrite, force push, delete
