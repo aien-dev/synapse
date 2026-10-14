@@ -9,5 +9,5 @@ publish = false
 [dependencies]
 ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "fast"] }
 hex = "0.4"
-synapse-core = { path = "/home/drakestapleton/.t3/projects/synapse/crates/synapse-core" }
-synapse-store = { path = "/home/drakestapleton/.t3/projects/synapse/crates/synapse-store" }
+synapse-core = { git = "https://github.com/aien-spark/synapse", rev = "b04ad31d2f57725f7fa971d26d6b51062f3b53a6" }
+synapse-store = { git = "https://github.com/aien-spark/synapse", rev = "b04ad31d2f57725f7fa971d26d6b51062f3b53a6" }

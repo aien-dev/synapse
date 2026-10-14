@@ -1,0 +1,78 @@
+# Red for the migration crash-window tests (review item 1), 2026-10-14
+Each break is applied to crates/synapse-store/src/lib.rs, the A1 tests are run, and the file is restored (cmp-checked). All five crash tests start from the main-written (b04ad31) v1 fixtures.
+
+## Break A: a stale checkpoint.v1 beside checkpoint.v2 is always refused (condition forced true)
+test a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_log ... FAILED
+test a1_tests::a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log ... FAILED
+test a1_tests::a1_v1_checkpoint_ahead_of_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_damaged_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_log ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_v2_log ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_v2_log ... ok
+thread 'a1_tests::a1_crash_before_tombstone_recovers_wal_log' (746842) panicked at crates/synapse-store/src/a1_tests.rs:935:29:
+v1-wal-log BeforeTombstone: reopen refused: SynapseError { code: CheckpointCorrupt, message: "checkpoint.v1 is neither the tombstone nor older than checkpoint.v2" }
+thread 'a1_tests::a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log' (746855) panicked at crates/synapse-store/src/a1_tests.rs:935:29:
+v1-wal-log StaleV1Only: reopen refused: SynapseError { code: CheckpointCorrupt, message: "checkpoint.v1 is neither the tombstone nor older than checkpoint.v2" }
+
+## Break B1: wal.log frames covered by checkpoint.v2 go through the codec order rule
+test a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_log ... FAILED
+test a1_tests::a1_crash_before_tombstone_recovers_wal_log ... FAILED
+test a1_tests::a1_v1_checkpoint_ahead_of_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_damaged_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_v2_log ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_v2_log ... ok
+thread 'a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_log' (748463) panicked at crates/synapse-store/src/a1_tests.rs:935:29:
+v1-wal-log BeforeCompaction: reopen refused: SynapseError { code: WalVersionUnsupported, message: "v1 JSON WAL record at wal:9 after binary v2 records" }
+thread 'a1_tests::a1_crash_before_tombstone_recovers_wal_log' (748465) panicked at crates/synapse-store/src/a1_tests.rs:935:29:
+v1-wal-log BeforeTombstone: reopen refused: SynapseError { code: WalVersionUnsupported, message: "v1 JSON WAL record at wal:9 after binary v2 records" }
+
+## Break B2: wal.v2.log batches covered by checkpoint.v2 go through the codec order rule
+test a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused ... ok
+test a1_tests::a1_v1_checkpoint_ahead_of_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_log ... ok
+test a1_tests::a1_damaged_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_log ... ok
+test a1_tests::a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_v2_log ... FAILED
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_v2_log ... FAILED
+thread 'a1_tests::a1_crash_before_tombstone_recovers_wal_v2_log' (750182) panicked at crates/synapse-store/src/a1_tests.rs:935:29:
+v1-wal-v2-log BeforeTombstone: reopen refused: SynapseError { code: WalVersionUnsupported, message: "v1 JSON WAL record at wal:1 after binary v2 records" }
+thread 'a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_v2_log' (750180) panicked at crates/synapse-store/src/a1_tests.rs:935:29:
+v1-wal-v2-log BeforeCompaction: reopen refused: SynapseError { code: WalVersionUnsupported, message: "v1 JSON WAL record at wal:1 after binary v2 records" }
+
+## Break C: open does not replace checkpoint.v1 with the tombstone
+test a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused ... ok
+test a1_tests::a1_v1_checkpoint_ahead_of_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log ... FAILED
+test a1_tests::a1_crash_before_tombstone_recovers_wal_log ... FAILED
+test a1_tests::a1_damaged_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_log ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_v2_log ... FAILED
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_v2_log ... ok
+thread 'a1_tests::a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log' (752294) panicked at crates/synapse-store/src/a1_tests.rs:940:5:
+assertion `left == right` failed: v1-wal-log StaleV1Only: tombstone written on open
+thread 'a1_tests::a1_crash_before_tombstone_recovers_wal_log' (752281) panicked at crates/synapse-store/src/a1_tests.rs:940:5:
+assertion `left == right` failed: v1-wal-log BeforeTombstone: tombstone written on open
+thread 'a1_tests::a1_crash_before_tombstone_recovers_wal_v2_log' (752282) panicked at crates/synapse-store/src/a1_tests.rs:941:45:
+
+## Break D: a v1 checkpoint ahead of checkpoint.v2 is not detected
+test a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused ... ok
+test a1_tests::a1_v1_checkpoint_ahead_of_checkpoint_v2_is_refused ... FAILED
+test a1_tests::a1_damaged_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_log ... ok
+test a1_tests::a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_log ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_v2_log ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_v2_log ... ok
+thread 'a1_tests::a1_v1_checkpoint_ahead_of_checkpoint_v2_is_refused' (754100) panicked at crates/synapse-store/src/a1_tests.rs:1044:5:
+assertion `left == right` failed
+
+== Break E: checkpoint.v2 does not mark the store binary (lib.rs recover: binary_seen not set after loading checkpoint.v2)
+test a1_tests::a1_v1_records_appended_in_the_crash_window_are_refused ... FAILED
+  left: None
+ right: Some(WalVersionUnsupported)
+test result: FAILED. 20 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.51s
+lib.rs restored (cmp identical to the good copy).

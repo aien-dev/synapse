@@ -52,6 +52,21 @@ failure is `CheckpointCorrupt`. The writer decodes its own bytes back before wri
   checkpoint). The v1 root is taken before eviction. Write order: `checkpoint.v2` (temp,
   sync, rename, directory sync), then the tombstone, then log compaction. A crash between
   the two leaves an older `checkpoint.v1`, which the next open replaces with the tombstone.
+* Crash window. Between the `checkpoint.v2` rename and the tombstone write, the store still
+  holds the old `checkpoint.v1` and the JSON log, so a v1-only binary (main `b04ad31`) can
+  still open it. If that binary appends JSON records after the checkpoint's seq, the new code
+  refuses the store at replay with `WalVersionUnsupported`, because `checkpoint.v2` makes the
+  store binary (`a1_v1_records_appended_in_the_crash_window_are_refused`). If it checkpoints,
+  its `checkpoint.v1` is now ahead of `checkpoint.v2`, and the new code refuses the store with
+  `CheckpointCorrupt`
+  (`a1_v1_checkpoint_ahead_of_checkpoint_v2_is_refused`). Either way the store fails closed;
+  nothing is silently merged. Recovery from this window without a v1 writer in between is
+  tested on the main-written fixtures: `a1_crash_before_tombstone_recovers_wal_log`,
+  `..._wal_v2_log` (stale `checkpoint.v1`, `checkpoint.v2` present, no tombstone),
+  `a1_covered_json_frames_then_binary_frames_recover_wal_log`, `..._wal_v2_log` (tombstone
+  written, log not yet compacted, then binary frames appended: a mixed log), and
+  `a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log`. Each reopens with the same
+  state root and chain, commits a new binary record, and reopens again with the same root.
 * A fresh store writes binary from its first record.
 * Replay refuses a JSON record after a binary one, and a binary record in a v1 store before
   its migration checkpoint (`WalVersionUnsupported`). Records a checkpoint covers are exempt.
@@ -69,13 +84,32 @@ failure is `CheckpointCorrupt`. The writer decodes its own bytes back before wri
 | Every record kind decodes to the same logical record as its v1 JSON form, both directions | `a1_every_record_kind_matches_its_v1_json_form_in_both_directions` (16 records written by main `b04ad31`, all 6 kinds), `a1_edge_records_match_their_json_form_in_both_directions`, `a1_checkpoint_state_matches_its_v1_json_form_in_both_directions`, `a1_documented_layout_decodes_and_every_non_canonical_form_is_refused` | pass |
 | First v2 checkpoint records the last v1 `state_root_digest` and chains its root to it | `a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_log`, `..._wal_v2_log`, `a1_fresh_store_writes_binary_frames_and_records_the_empty_v1_root`, `a1_v1_readers_refuse_the_tombstone`, `a1_damaged_checkpoint_v2_is_refused` | pass |
 | WAL conformance 11 of 11 | `wal_suite_cases_pass` (11 cases), `wal_suite_stores_write_binary_codec_frames` (suite stores write binary frames) | pass |
-| Truncated, bit-flipped and oversized-length corpus refused typed, no panic, no allocation above the declared cap | `tests/a1_malformed_corpus.rs`: 30,690 cases at cap 2,048 bytes, 0 panics, 0 accepted, largest single allocation 136 bytes | pass |
+| Truncated, bit-flipped and oversized-length corpus refused typed, no panic, no allocation above the declared cap | `tests/a1_malformed_corpus.rs`: 30,690 cases at cap 2,048 bytes, 0 panics, 0 accepted, largest single allocation 136 bytes; resealed mode: 31,881 cases with checksums and digests recomputed, all reaching the decoders, 0 panics, every accept canonical, largest allocation 1,224 bytes (records, cap 2,048) and 3,976 bytes (checkpoint, the undamaged decode peak) | pass |
 | Replay seconds per changeset against the replay bound | below | reported |
 
 Corpus tally (`evidence/a1-binary-codec/red-green/green.txt`): truncated 1,502 (`WalTornFrame`);
 bit-flipped 12,016 (CRC, chain, magic, version, flags, cap, torn); oversized frame length 18
 (`QuotaPayloadTooLarge`); oversized inner length with valid checksums 18
 (`WalRecordMalformed`); checkpoint truncated 1,904 and bit-flipped 15,232 (`CheckpointCorrupt`).
+
+Most of those stop at a checksum or digest, before the decoder. The resealed mode
+(`a1_resealed_corpus_reaches_the_decoder_and_is_refused_or_canonical`) applies the same
+kinds of damage (every truncation, every bit flip, and a false `u32` length of remaining + 1,
+cap + 1 and `u32::MAX` at every byte offset), then recomputes the frame CRC, payload SHA-256,
+`checkpoint.v2` content digest and checkpoint root, so `codec::decode_record` and the
+checkpoint content decoder see the garbage. A case passes if the decoder refuses it
+(`WalRecordMalformed` for records, `CheckpointCorrupt` naming the content or state root for
+checkpoints) or if it decodes to a value whose encoding is exactly the damaged bytes (a flip
+that lands inside a hash or a name is still a valid record). Counts reaching the decoder:
+record truncated 974 (974 refused), bit-flipped 7,792 (1,225 refused, 6,567 canonical),
+false length 2,868 (877 refused, 1,991 canonical); checkpoint truncated 1,688 (1,688
+refused), bit-flipped 13,504 (3,094 refused, 10,410 canonical), false length 5,055 (1,983
+refused, 3,072 canonical). Total 31,881.
+
+Fixture provenance: `crates/synapse-store/tests/fixtures/a1-v1` is written by
+`evidence/a1-binary-codec/fixture-generator`, whose `Cargo.toml` pins `synapse-core` and
+`synapse-store` to git rev `b04ad31d2f57725f7fa971d26d6b51062f3b53a6` (main) with its
+`Cargo.lock` committed. Regenerating from that pin gives byte-identical fixtures.
 
 ## Replay against the bound
 

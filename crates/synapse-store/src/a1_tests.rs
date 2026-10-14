@@ -878,3 +878,210 @@ fn a1_record_prepared_before_the_migration_commits_in_the_new_codec() {
         content.to_vec()
     );
 }
+
+/// Where a migration checkpoint of a main-written v1 store was interrupted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Crash {
+    /// `checkpoint.v2` renamed into place; the tombstone and log compaction never ran
+    /// (`checkpoint.v1` is the stale v1 checkpoint, every v1 JSON frame is still logged).
+    BeforeTombstone,
+    /// `checkpoint.v2` and the tombstone written; log compaction never ran (the logs
+    /// still hold the v1 JSON frames the checkpoint covers).
+    BeforeCompaction,
+    /// Logs compacted, but `checkpoint.v1` is the stale v1 checkpoint (tombstone lost).
+    StaleV1Only,
+}
+
+/// Build the on-disk state of `crash` from the main-written fixture `name`, reopen it,
+/// and check it recovers the migrated state, rewrites the tombstone, accepts a new
+/// binary commit after the v1 frames (a mixed log), and reopens again.
+fn crash_case(name: &str, policy: FsyncPolicy, flags: fn(&Path) -> Vec<u8>, crash: Crash) {
+    let limits = StoreLimits {
+        wal_prealloc_bytes: 64 * 1024,
+        ..Default::default()
+    };
+    let pre = copy_fixture(name);
+    let post = copy_fixture(name);
+    let (root, seq, chain) = {
+        let mut s = SynapseStore::open(&post, policy, STRICT, limits.clone()).unwrap();
+        s.checkpoint_and_compact(2_000).unwrap();
+        (
+            s.state_root_digest(None).unwrap(),
+            s.committed_seq(),
+            s.checkpoint_chain().unwrap(),
+        )
+    };
+    let dir = match crash {
+        Crash::StaleV1Only => {
+            fs::copy(pre.join("checkpoint.v1"), post.join("checkpoint.v1")).unwrap();
+            post.clone()
+        }
+        Crash::BeforeTombstone | Crash::BeforeCompaction => {
+            // Blob files and checkpoint.v2 were durable before the crash point.
+            copy_tree(&post.join("blobs"), &pre.join("blobs"));
+            fs::copy(post.join(CHECKPOINT_V2_FILE), pre.join(CHECKPOINT_V2_FILE)).unwrap();
+            if crash == Crash::BeforeCompaction {
+                fs::copy(post.join("checkpoint.v1"), pre.join("checkpoint.v1")).unwrap();
+            }
+            assert!(
+                flags(&pre).contains(&0),
+                "{name} {crash:?}: v1 JSON frames remain"
+            );
+            pre.clone()
+        }
+    };
+
+    let mut s = SynapseStore::open(&dir, policy, STRICT, limits.clone())
+        .unwrap_or_else(|e| panic!("{name} {crash:?}: reopen refused: {e:?}"));
+    assert_eq!(s.committed_seq(), seq, "{name} {crash:?}");
+    assert_eq!(s.state_root_digest(None).unwrap(), root, "{name} {crash:?}");
+    assert_eq!(s.checkpoint_chain(), Some(chain), "{name} {crash:?}");
+    assert_eq!(s.record_codec(), RecordCodec::BinaryV2, "{name} {crash:?}");
+    assert_eq!(
+        fs::read(dir.join("checkpoint.v1")).unwrap(),
+        v1_tombstone_bytes(),
+        "{name} {crash:?}: tombstone written on open"
+    );
+
+    let key = SigningKey::from_bytes(&[0xC7; 32]);
+    let (env, blobs) = make_signed_changeset(&key, "after-crash", "after.rs", b"after", vec![], 3);
+    let IngestOutcome::Committed { wal_seq, .. } = s.ingest_changeset(env, &blobs).unwrap() else {
+        panic!("{name} {crash:?}: expected a commit");
+    };
+    assert_eq!(wal_seq, seq.next());
+    let f = flags(&dir);
+    assert_eq!(f.last(), Some(&WAL_FLAG_CODEC_V2), "{name} {crash:?}");
+    if crash != Crash::StaleV1Only {
+        assert!(f.contains(&0), "{name} {crash:?}: mixed log");
+    }
+    let root_after = s.state_root_digest(None).unwrap();
+    drop(s);
+    let s = SynapseStore::open(&dir, policy, STRICT, limits)
+        .unwrap_or_else(|e| panic!("{name} {crash:?}: second reopen refused: {e:?}"));
+    assert_eq!(s.committed_seq(), wal_seq, "{name} {crash:?}");
+    assert_eq!(
+        s.state_root_digest(None).unwrap(),
+        root_after,
+        "{name} {crash:?}"
+    );
+}
+
+#[test]
+fn a1_crash_before_tombstone_recovers_wal_log() {
+    crash_case(
+        "v1-wal-log",
+        FsyncPolicy::EveryCommit,
+        v1_flags,
+        Crash::BeforeTombstone,
+    );
+}
+
+#[test]
+fn a1_crash_before_tombstone_recovers_wal_v2_log() {
+    crash_case(
+        "v1-wal-v2-log",
+        FsyncPolicy::GROUP_COMMIT_DEFAULT,
+        v2_flags,
+        Crash::BeforeTombstone,
+    );
+}
+
+#[test]
+fn a1_covered_json_frames_then_binary_frames_recover_wal_log() {
+    crash_case(
+        "v1-wal-log",
+        FsyncPolicy::EveryCommit,
+        v1_flags,
+        Crash::BeforeCompaction,
+    );
+}
+
+#[test]
+fn a1_covered_json_frames_then_binary_frames_recover_wal_v2_log() {
+    crash_case(
+        "v1-wal-v2-log",
+        FsyncPolicy::GROUP_COMMIT_DEFAULT,
+        v2_flags,
+        Crash::BeforeCompaction,
+    );
+}
+
+#[test]
+fn a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log() {
+    crash_case(
+        "v1-wal-log",
+        FsyncPolicy::EveryCommit,
+        v1_flags,
+        Crash::StaleV1Only,
+    );
+}
+
+#[test]
+fn a1_v1_checkpoint_ahead_of_checkpoint_v2_is_refused() {
+    // If a v1-only binary opened the store in the crash window and checkpointed it, its
+    // checkpoint.v1 is ahead of checkpoint.v2: refused, never silently mixed.
+    let dir = copy_fixture("v1-wal-log");
+    let stale = fs::read(dir.join("checkpoint.v1")).unwrap();
+    {
+        let mut s = SynapseStore::open(
+            &dir,
+            FsyncPolicy::EveryCommit,
+            STRICT,
+            StoreLimits::default(),
+        )
+        .unwrap();
+        s.checkpoint_and_compact(2_000).unwrap();
+    }
+    let mut m: CheckpointManifest = serde_json::from_slice(&stale).unwrap();
+    m.checkpoint_seq = WalSeq(m.checkpoint_seq.0 + 100);
+    fs::write(dir.join("checkpoint.v1"), serde_json::to_vec(&m).unwrap()).unwrap();
+    let r = SynapseStore::open(
+        &dir,
+        FsyncPolicy::EveryCommit,
+        STRICT,
+        StoreLimits::default(),
+    );
+    assert_eq!(
+        r.err().map(|e| e.code),
+        Some(RefusalCode::CheckpointCorrupt)
+    );
+}
+
+#[test]
+fn a1_v1_records_appended_in_the_crash_window_are_refused() {
+    // A v1-only binary that opens the store between the checkpoint.v2 rename and the
+    // tombstone sees the old checkpoint.v1 and the JSON log, and may append JSON records
+    // after the checkpoint's seq. Simulated by this build writing the pre-migration copy
+    // (a v1-history store without checkpoint.v2 still writes JSON frames, as main does).
+    // checkpoint.v2 makes the store binary, so the JSON record after it is refused.
+    let limits = StoreLimits {
+        wal_prealloc_bytes: 64 * 1024,
+        ..Default::default()
+    };
+    let policy = FsyncPolicy::EveryCommit;
+    let pre = copy_fixture("v1-wal-log");
+    let post = copy_fixture("v1-wal-log");
+    {
+        let mut s = SynapseStore::open(&post, policy, STRICT, limits.clone()).unwrap();
+        s.checkpoint_and_compact(2_000).unwrap();
+    }
+    let key = SigningKey::from_bytes(&[0xC8; 32]);
+    {
+        let mut s = SynapseStore::open(&pre, policy, STRICT, limits.clone()).unwrap();
+        assert_eq!(s.record_codec(), RecordCodec::JsonV1);
+        let (env, blobs) = make_signed_changeset(&key, "v1-window", "w.rs", b"w", vec![], 3);
+        s.ingest_changeset(env, &blobs).unwrap();
+    }
+    assert_eq!(
+        v1_flags(&pre).last(),
+        Some(&0),
+        "JSON frame after the checkpoint seq"
+    );
+    copy_tree(&post.join("blobs"), &pre.join("blobs"));
+    fs::copy(post.join(CHECKPOINT_V2_FILE), pre.join(CHECKPOINT_V2_FILE)).unwrap();
+    let r = SynapseStore::open(&pre, policy, STRICT, limits);
+    assert_eq!(
+        r.err().map(|e| e.code),
+        Some(RefusalCode::WalVersionUnsupported)
+    );
+}

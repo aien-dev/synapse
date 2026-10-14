@@ -15,6 +15,7 @@
 //! thread while a decode runs. The cap is `CAP` bytes, set just above the largest valid
 //! frame so that it binds.
 
+use sha2::{Digest, Sha256};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -22,8 +23,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 use synapse_core::{RefusalCode, SynapseError, WalSeq};
 use synapse_store::codec::{
-    decode_checkpoint_v2, encode_checkpoint_v2, encode_record, CheckpointState, CODEC_V2,
-    WAL_FLAG_CODEC_V2,
+    checkpoint_root, decode_checkpoint_v2, encode_checkpoint_v2, encode_record, CheckpointState,
+    CHECKPOINT_V2_HEADER_LEN, CODEC_V2, DOMAIN_CHECKPOINT_CONTENT_V2, WAL_FLAG_CODEC_V2,
 };
 use synapse_store::{
     decode_wal_frame, encode_wal_frame, wal_frame_from_payload, CheckpointManifest, RecordCodec,
@@ -284,4 +285,165 @@ fn a1_malformed_frame_corpus_is_refused_typed_without_panic_or_allocation_above_
             "{class} is empty"
         );
     }
+}
+
+/// Truncations, single-bit flips and false `u32` lengths (remaining + 1, cap + 1,
+/// `u32::MAX`) at every byte offset of `bytes`.
+fn mutations(bytes: &[u8]) -> Vec<(&'static str, String, Vec<u8>)> {
+    let mut out = Vec::new();
+    for n in 0..bytes.len() {
+        out.push(("truncated", format!("to {n} bytes"), bytes[..n].to_vec()));
+    }
+    for bit in 0..bytes.len() * 8 {
+        let mut b = bytes.to_vec();
+        b[bit / 8] ^= 1 << (bit % 8);
+        out.push(("bit_flipped", format!("bit {bit}"), b));
+    }
+    for off in 0..bytes.len().saturating_sub(3) {
+        let remaining = (bytes.len() - off - 4) as u64;
+        for declared in [remaining + 1, CAP + 1, u64::from(u32::MAX)] {
+            let mut b = bytes.to_vec();
+            b[off..off + 4].copy_from_slice(&(declared as u32).to_le_bytes());
+            out.push((
+                "false_length",
+                format!("offset {off} declares {declared}"),
+                b,
+            ));
+        }
+    }
+    out
+}
+
+/// `checkpoint.v2` bytes around `content` with every digest recomputed, keeping the
+/// header fields of `good` (so only the content decoder can refuse it).
+fn reseal_checkpoint(good: &[u8], content: &[u8]) -> Vec<u8> {
+    let mut h = good[..CHECKPOINT_V2_HEADER_LEN].to_vec();
+    let a32 = |o: usize| -> [u8; 32] { h[o..o + 32].try_into().unwrap() };
+    let seq = WalSeq(u64::from_le_bytes(h[8..16].try_into().unwrap()));
+    let (anchor, v1, prev, state_root) = (a32(16), a32(48), a32(80), a32(112));
+    let mut d = Sha256::new();
+    d.update(DOMAIN_CHECKPOINT_CONTENT_V2);
+    d.update(content);
+    let content_sha: [u8; 32] = d.finalize().into();
+    let root = checkpoint_root(&v1, &prev, seq, &anchor, &state_root, &content_sha);
+    h[144..176].copy_from_slice(&content_sha);
+    h[176..208].copy_from_slice(&root);
+    h[208..216].copy_from_slice(&(content.len() as u64).to_le_bytes());
+    h.extend_from_slice(content);
+    h
+}
+
+#[derive(Default)]
+struct Reached {
+    cases: usize,
+    refused: usize,
+    accepted_canonical: usize,
+    peak: usize,
+}
+
+#[test]
+fn a1_resealed_corpus_reaches_the_decoder_and_is_refused_or_canonical() {
+    // Same mutations, but every checksum and digest is recomputed afterwards, so the
+    // garbage passes the integrity checks and reaches `decode_record` (through
+    // `decode_wal_frame`) and the checkpoint content decoder. A case either is refused
+    // by the decoder or decodes to a record whose encoding is exactly the mutated bytes.
+    let mut t: BTreeMap<String, Reached> = BTreeMap::new();
+    for r in one_record_per_kind() {
+        let kind = r.kind_byte();
+        let payload = encode_record(&r).unwrap();
+        for (class, what, m) in mutations(&payload) {
+            let (frame, _) =
+                wal_frame_from_payload(WalSeq(1), [0u8; 32], kind, WAL_FLAG_CODEC_V2, &m);
+            let (out, peak) = measured(|| decode_wal_frame(&frame, CAP));
+            let out = out.unwrap_or_else(|_| panic!("record {class} kind {kind} {what}: panic"));
+            assert!(
+                peak as u64 <= CAP,
+                "record {class} kind {kind} {what}: allocated {peak} bytes, above the cap {CAP}"
+            );
+            let e = t.entry(format!("record_{class}")).or_default();
+            e.cases += 1;
+            e.peak = e.peak.max(peak);
+            match out {
+                Ok(d) => {
+                    assert_eq!(
+                        encode_record(&d.record).unwrap(),
+                        m,
+                        "record {class} kind {kind} {what}: accepted bytes are not canonical"
+                    );
+                    e.accepted_canonical += 1;
+                }
+                Err(err) => {
+                    assert_eq!(
+                        err.code,
+                        RefusalCode::WalRecordMalformed,
+                        "record {class} kind {kind} {what}: did not reach the decoder: {}",
+                        err.message
+                    );
+                    e.refused += 1;
+                }
+            }
+        }
+    }
+
+    let manifest: CheckpointManifest =
+        serde_json::from_slice(&fixture("v1-wal-log/checkpoint.v1")).unwrap();
+    let state = CheckpointState::from_v1_manifest(manifest).unwrap();
+    let (ckpt, _) = encode_checkpoint_v2(&state, [1u8; 32], [2u8; 32]).unwrap();
+    let content = &ckpt[CHECKPOINT_V2_HEADER_LEN..];
+    assert_eq!(reseal_checkpoint(&ckpt, content), ckpt, "reseal is exact");
+    let (ok, good_peak) = measured(|| decode_checkpoint_v2(&ckpt));
+    ok.unwrap().unwrap();
+    // The content decoder's cap is the content length; other allocations (map nodes)
+    // do not depend on the input, so no case may exceed the undamaged decode.
+    let ckpt_bound = good_peak.max(content.len());
+    for (class, what, m) in mutations(content) {
+        let bytes = reseal_checkpoint(&ckpt, &m);
+        let (out, peak) = measured(|| decode_checkpoint_v2(&bytes));
+        let out = out.unwrap_or_else(|_| panic!("checkpoint {class} {what}: panic"));
+        assert!(
+            peak <= ckpt_bound,
+            "checkpoint {class} {what}: allocated {peak} bytes, above {ckpt_bound}"
+        );
+        let e = t.entry(format!("checkpoint_{class}")).or_default();
+        e.cases += 1;
+        e.peak = e.peak.max(peak);
+        match out {
+            Ok((s, chain)) => {
+                let (again, _) =
+                    encode_checkpoint_v2(&s, chain.v1_state_root, chain.prev_checkpoint_root)
+                        .unwrap();
+                assert_eq!(
+                    again, bytes,
+                    "checkpoint {class} {what}: accepted bytes are not canonical"
+                );
+                e.accepted_canonical += 1;
+            }
+            Err(err) => {
+                assert_eq!(err.code, RefusalCode::CheckpointCorrupt);
+                assert!(
+                    err.message.contains("checkpoint.v2 content")
+                        || err.message.contains("state root does not match"),
+                    "checkpoint {class} {what}: did not reach the decoder: {}",
+                    err.message
+                );
+                e.refused += 1;
+            }
+        }
+    }
+
+    let mut total = 0;
+    println!(
+        "A1 resealed corpus (checksums and digests recomputed; record cap {CAP} bytes, \
+         checkpoint bound {ckpt_bound} bytes = max(undamaged decode peak {good_peak}, content {})):",
+        content.len()
+    );
+    for (class, r) in &t {
+        total += r.cases;
+        println!(
+            "  {class}: {} reached the decoder, {} refused, {} accepted (canonical), largest allocation {} bytes",
+            r.cases, r.refused, r.accepted_canonical, r.peak
+        );
+    }
+    println!("  total reaching the decoder: {total}, 0 panics, 0 non-canonical accepts");
+    assert!(total > 0);
 }
