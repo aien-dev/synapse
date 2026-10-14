@@ -2,8 +2,9 @@
 //!
 //! For each path a changeset would mutate, report the Directory Crumb context of the path
 //! at the base snapshot, unexpired claims held by other agents in the shared coordination
-//! plane, overlapping open proposals, the context's invariants as guidance, and whether the
-//! `.crumb` chain changed between the base and the latest snapshot.
+//! plane, overlapping open proposals, open proposals that rewrite a `.crumb` in the path's
+//! chain, the context's invariants as guidance, and whether the `.crumb` chain changed
+//! between the base and both the newest visible changeset and the canonical head.
 //!
 //! Advisory only. Nothing here blocks, authorizes, or writes: one `Capability::Read`
 //! authorization (with its audit entry), reads through `materialize_virtual_tree` and
@@ -32,8 +33,8 @@ const ADVISORY_WORKSPACE: &str = "/synapse/advisory";
 pub struct ChangesetAdvisoryPayload {
     /// Snapshot the changeset would be built on.
     pub base: TreeTarget,
-    /// Snapshot to compare `.crumb` chains against. `None`: the changeset promoted by the
-    /// canonical head if it is visible, else the most recently committed changeset.
+    /// Snapshot to compare `.crumb` chains against. `None`: the most recently committed
+    /// visible changeset (promoted or not). The canonical head is compared separately.
     pub latest: Option<TreeTarget>,
     /// Repository-relative paths the changeset would mutate (at most [`MAX_ADVISORY_PATHS`]).
     pub paths: Vec<String>,
@@ -94,9 +95,28 @@ pub struct PathAdvisory {
     /// Unexpired claims by other agents on the path or a directory containing it.
     pub claims: Vec<LockView>,
     pub overlapping_proposals: Vec<OverlappingProposal>,
+    /// Open proposals that change a `.crumb` in the path's chain (the path's directory or
+    /// any ancestor), whether or not they touch the path. Each also adds a guidance note.
+    pub pending_crumb_changes: Vec<OverlappingProposal>,
     /// Invariants of the nearest crumb, then inherited ones (closest ancestor first).
+    /// Then one note per entry of `pending_crumb_changes`.
     pub guidance: Vec<GuidanceNote>,
+    /// Base chain against `compared_to`.
     pub staleness: Staleness,
+    /// Base chain against the canonical head (`Unknown` unless `canonical` is `Promoted`).
+    pub canonical_staleness: Staleness,
+}
+
+/// The canonical head the advisory compared against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalStatus {
+    /// No canonical head, or its promoted changeset is not visible at the snapshot.
+    NoHead,
+    /// The changeset the canonical head promotes.
+    Promoted(TreeTarget),
+    /// `snapshot_seq` is older than the committed state. The store keeps only the current
+    /// head, so the head at that snapshot is not known and is not used.
+    NotAtSnapshot,
 }
 
 /// Result of [`SynapseService::changeset_advisory`]. Grants nothing.
@@ -104,6 +124,8 @@ pub struct PathAdvisory {
 pub struct ChangesetAdvisory {
     /// Snapshot the staleness check compared against (`None`: nothing to compare with).
     pub compared_to: Option<TreeTarget>,
+    /// Canonical head used for `canonical_staleness` and to settle its lineage.
+    pub canonical: CanonicalStatus,
     pub coordination: CoordinationStatus,
     /// One entry per requested path, in request order.
     pub paths: Vec<PathAdvisory>,
@@ -179,24 +201,45 @@ impl SynapseService {
         }
 
         // Pin one snapshot so every read below sees the same state.
-        let snap = Some(payload.snapshot_seq.unwrap_or(self.store.committed_seq()));
+        let committed = self.store.committed_seq();
+        let snap = Some(payload.snapshot_seq.unwrap_or(committed));
         let visible = self
             .store
             .list_changesets(Some(&self.repo_id), None, snap)?;
-        let promoted = self
-            .store
-            .canonical_head(&self.repo_id)
-            .and_then(|h| h.promoted_changeset_id)
-            .filter(|id| visible.iter().any(|cs| cs.changeset_id == *id));
+        // The store keeps only the current canonical head, with no history, so it is the
+        // head at the pinned snapshot only when that snapshot is the committed state.
+        let canonical = if snap == Some(committed) {
+            match self
+                .store
+                .canonical_head(&self.repo_id)
+                .and_then(|h| h.promoted_changeset_id)
+                .filter(|id| visible.iter().any(|cs| cs.changeset_id == *id))
+            {
+                Some(id) => CanonicalStatus::Promoted(TreeTarget::Changeset(id)),
+                None => CanonicalStatus::NoHead,
+            }
+        } else {
+            CanonicalStatus::NotAtSnapshot
+        };
+        let promoted = match canonical {
+            CanonicalStatus::Promoted(TreeTarget::Changeset(id)) => Some(id),
+            _ => None,
+        };
 
         let base_tree = self.materialize_virtual_tree(payload.base, snap)?;
         let compared_to = payload.latest.or_else(|| {
-            promoted
-                .or_else(|| visible.last().map(|cs| cs.changeset_id))
-                .map(TreeTarget::Changeset)
+            visible
+                .last()
+                .map(|cs| TreeTarget::Changeset(cs.changeset_id))
         });
         let latest_tree = match compared_to {
             Some(t) if t != payload.base => Some(self.materialize_virtual_tree(t, snap)?),
+            _ => None,
+        };
+        let canonical_tree = match canonical {
+            CanonicalStatus::Promoted(t) if t != payload.base && Some(t) != compared_to => {
+                Some(self.materialize_virtual_tree(t, snap)?)
+            }
             _ => None,
         };
 
@@ -208,31 +251,36 @@ impl SynapseService {
         if let Some(id) = promoted {
             self.collect_lineage(id, snap, &mut settled)?;
         }
+        let open: Vec<_> = visible
+            .iter()
+            .filter(|cs| !settled.contains(&cs.changeset_id))
+            .collect();
 
-        let (coordination, locks) = match coord {
-            None => (CoordinationStatus::NotSupplied, Vec::new()),
-            Some(store) => {
-                let ws = Workspace::with_oracle(
-                    ADVISORY_WORKSPACE,
-                    Holder::default(),
-                    Box::new(SnapshotOracle::new(&base_tree)),
-                );
-                match store.sniff(&ws, &payload.agent, ROOT_DIR) {
-                    Ok(s) => (CoordinationStatus::Read, s.locks),
-                    Err(e) => (
-                        CoordinationStatus::Unavailable {
-                            reason: e.to_string(),
-                        },
-                        Vec::new(),
-                    ),
-                }
-            }
-        };
+        // One oracle over the base snapshot serves the store query and the claim keys.
         let oracle_ws = Workspace::with_oracle(
             ADVISORY_WORKSPACE,
             Holder::default(),
             Box::new(SnapshotOracle::new(&base_tree)),
         );
+        let (coordination, locks) = match coord {
+            None => (CoordinationStatus::NotSupplied, Vec::new()),
+            Some(store) => match store.sniff(&oracle_ws, &payload.agent, ROOT_DIR) {
+                // A lock record without a holder is malformed; it names no one to ask.
+                Ok(s) => (
+                    CoordinationStatus::Read,
+                    s.locks
+                        .into_iter()
+                        .filter(|l| !l.holder.is_empty())
+                        .collect(),
+                ),
+                Err(e) => (
+                    CoordinationStatus::Unavailable {
+                        reason: e.to_string(),
+                    },
+                    Vec::new(),
+                ),
+            },
+        };
 
         let mut out = Vec::with_capacity(payload.paths.len());
         for path in &payload.paths {
@@ -242,14 +290,16 @@ impl SynapseService {
             let staleness = match (&compared_to, &latest_tree) {
                 (None, _) => Staleness::Unknown,
                 (Some(_), None) => Staleness::Current,
-                (Some(_), Some(lt)) => {
-                    let latest_digest = self.resolve_crumb_context(lt, &dir, snap)?.digest();
-                    if latest_digest == digest {
-                        Staleness::Current
-                    } else {
-                        Staleness::Stale { latest_digest }
-                    }
-                }
+                (Some(_), Some(lt)) => self.staleness_against(lt, &dir, digest, snap)?,
+            };
+            let canonical_staleness = match canonical {
+                CanonicalStatus::Promoted(t) if t == payload.base => Staleness::Current,
+                CanonicalStatus::Promoted(_) => match &canonical_tree {
+                    Some(ct) => self.staleness_against(ct, &dir, digest, snap)?,
+                    // The canonical changeset is `compared_to`: same answer.
+                    None => staleness.clone(),
+                },
+                _ => Staleness::Unknown,
             };
 
             // Same key rule as `crumb claim` from the repository root.
@@ -262,38 +312,59 @@ impl SynapseService {
                 .cloned()
                 .collect();
 
-            let overlapping_proposals = visible
-                .iter()
-                .filter(|cs| !settled.contains(&cs.changeset_id))
-                .flat_map(|cs| {
-                    cs.envelope
-                        .mutations
-                        .iter()
-                        .filter(|m| m.path == *path || is_file_dir_prefix_collision(&m.path, path))
-                        .map(move |m| OverlappingProposal {
-                            changeset_id: cs.changeset_id,
-                            author_did: cs.envelope.author_did.clone(),
-                            committed_seq: cs.committed_seq,
-                            mutated_path: m.path.clone(),
-                        })
-                })
-                .collect();
+            let overlapping_proposals = open_mutations(&open, |m| {
+                m == path || is_file_dir_prefix_collision(m, path)
+            });
+            let chain = crumb_chain(&dir);
+            let pending_crumb_changes = open_mutations(&open, |m| chain.contains(m));
 
-            let guidance = guidance_notes(&context);
+            let mut guidance = guidance_notes(&context);
+            guidance.extend(pending_crumb_changes.iter().map(|p| {
+                GuidanceNote {
+                    dir: p
+                        .mutated_path
+                        .rsplit_once('/')
+                        .map_or(ROOT_DIR, |(d, _)| d)
+                        .to_string(),
+                    text: format!(
+                        "open proposal {} changes {}; this guidance may change",
+                        p.changeset_id, p.mutated_path
+                    ),
+                }
+            }));
             out.push(PathAdvisory {
                 path: path.clone(),
                 context,
                 digest,
                 claims,
                 overlapping_proposals,
+                pending_crumb_changes,
                 guidance,
                 staleness,
+                canonical_staleness,
             });
         }
         Ok(ChangesetAdvisory {
             compared_to,
+            canonical,
             coordination,
             paths: out,
+        })
+    }
+
+    /// Compare `digest` (the base context of `dir`) with the context of `dir` in `tree`.
+    fn staleness_against(
+        &self,
+        tree: &BTreeMap<String, VirtualTreeEntry>,
+        dir: &str,
+        digest: CrumbContextDigest,
+        snap: Option<WalSeq>,
+    ) -> SynapseResult<Staleness> {
+        let latest_digest = self.resolve_crumb_context(tree, dir, snap)?.digest();
+        Ok(if latest_digest == digest {
+            Staleness::Current
+        } else {
+            Staleness::Stale { latest_digest }
         })
     }
 
@@ -337,6 +408,38 @@ fn claim_covers(lock_key: &str, key: &str) -> bool {
         || key
             .strip_prefix(lock_key)
             .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// Every open proposal mutation whose path satisfies `hit`, in commit order.
+fn open_mutations(
+    open: &[&synapse_store::StoredChangeset],
+    hit: impl Fn(&str) -> bool,
+) -> Vec<OverlappingProposal> {
+    open.iter()
+        .flat_map(|cs| {
+            cs.envelope
+                .mutations
+                .iter()
+                .filter(|m| hit(&m.path))
+                .map(move |m| OverlappingProposal {
+                    changeset_id: cs.changeset_id,
+                    author_did: cs.envelope.author_did.clone(),
+                    committed_seq: cs.committed_seq,
+                    mutated_path: m.path.clone(),
+                })
+        })
+        .collect()
+}
+
+/// The `.crumb` paths of `dir` and every directory above it, root included.
+fn crumb_chain(dir: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::from([".crumb".to_string()]);
+    let mut d = dir;
+    while d != ROOT_DIR && !d.is_empty() {
+        out.insert(format!("{d}/.crumb"));
+        d = d.rsplit_once('/').map_or(ROOT_DIR, |(p, _)| p);
+    }
+    out
 }
 
 fn guidance_notes(context: &CrumbContext) -> Vec<GuidanceNote> {
@@ -719,5 +822,119 @@ mod tests {
         let adv = fx.advise(&["src/a.rs"], Some(&store));
         assert_eq!(adv.coordination, CoordinationStatus::Read);
         assert!(!fx.dir.join("coord").exists());
+    }
+
+    fn promote(fx: &mut Fixture, cs: ChangesetId) {
+        fx.svc
+            .store
+            .record_canonical_promotion(synapse_core::RadicleCanonicalHead {
+                repo_id: fx.repo.clone(),
+                default_branch: "main".to_string(),
+                canonical_git_oid: GitOid([2; 20]),
+                promoted_changeset_id: Some(cs),
+                rad_id_commit_oid: GitOid([3; 20]),
+                threshold: 1,
+                verified_delegates: vec![],
+                verified_at_ms: 5,
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn pending_crumb_rewrite_after_a_promotion_is_flagged() {
+        let mut fx = Fixture::new("pending-crumb");
+        let cs1 = fx.propose(&bob(), "bob-b", "src/b.rs", b"fn b2() {}\n");
+        promote(&mut fx, cs1);
+        let newer = br#"{"schema_version":"1.0.0","name":"src","purpose":"Changed.","invariants":["new rule"]}"#;
+        let cs2 = fx.propose(&bob(), "bob-crumb", "src/.crumb", newer);
+        let adv = fx.advise(&["src/a.rs"], None);
+        let p = &adv.paths[0];
+        assert!(
+            matches!(p.staleness, Staleness::Stale { .. }),
+            "compared_to {:?}, staleness {:?}, overlaps {:?}",
+            adv.compared_to,
+            p.staleness,
+            p.overlapping_proposals
+        );
+        assert_eq!(adv.compared_to, Some(TreeTarget::Changeset(cs2)));
+        assert_eq!(
+            adv.canonical,
+            CanonicalStatus::Promoted(TreeTarget::Changeset(cs1))
+        );
+        // The promoted changeset kept the base `.crumb` chain.
+        assert_eq!(p.canonical_staleness, Staleness::Current);
+        // The pending rewrite is surfaced even though it does not touch the path.
+        assert!(p.overlapping_proposals.is_empty());
+        assert_eq!(p.pending_crumb_changes.len(), 1);
+        assert_eq!(p.pending_crumb_changes[0].changeset_id, cs2);
+        assert_eq!(p.pending_crumb_changes[0].mutated_path, "src/.crumb");
+        let last = p.guidance.last().unwrap();
+        assert_eq!(last.dir, "src");
+        assert!(last.text.contains("src/.crumb"), "{last:?}");
+        // A path outside `src` has no pending rewrite in its chain.
+        let docs = fx.advise(&["docs/x.md"], None);
+        assert!(docs.paths[0].pending_crumb_changes.is_empty());
+        // An unrelated newer proposal does not hide the pending rewrite.
+        let carol = SigningKey::from_bytes(&[40u8; 32]);
+        let cs3 = fx.propose(&carol, "carol-docs", "docs/x.md", b"# y\n");
+        let adv = fx.advise(&["src/a.rs"], None);
+        assert_eq!(adv.compared_to, Some(TreeTarget::Changeset(cs3)));
+        assert_eq!(adv.paths[0].staleness, Staleness::Current);
+        assert_eq!(adv.paths[0].pending_crumb_changes[0].changeset_id, cs2);
+    }
+
+    #[test]
+    fn canonical_head_is_not_used_at_an_older_snapshot() {
+        let mut fx = Fixture::new("canon-snap");
+        let cs1 = fx.propose(&bob(), "bob-b", "src/b.rs", b"fn b2() {}\n");
+        let before = fx.svc.store.committed_seq();
+        promote(&mut fx, cs1);
+        let now = fx.advise(&["src/b.rs"], None);
+        assert_eq!(
+            now.canonical,
+            CanonicalStatus::Promoted(TreeTarget::Changeset(cs1))
+        );
+        assert!(now.paths[0].overlapping_proposals.is_empty());
+        // At the earlier snapshot the head was not promoted yet; the store cannot say so,
+        // so the head is not used and cs1 is still an open proposal there.
+        let key = SigningKey::from_bytes(&[20u8; 32]);
+        let grant = fx.grant(&key, vec![Capability::Read]);
+        let t = 1000 + u64::from(fx.nonce);
+        let req = AuthenticatedRequest::sign_new(
+            &key,
+            grant,
+            fx.repo.clone(),
+            Capability::Read,
+            [fx.nonce; 32],
+            t,
+            0,
+            ChangesetAdvisoryPayload {
+                base: fx.base,
+                latest: None,
+                paths: vec!["src/b.rs".to_string()],
+                agent: "alice".to_string(),
+                snapshot_seq: Some(before),
+            },
+        )
+        .unwrap();
+        let old = fx.svc.changeset_advisory(&req, None, t).unwrap();
+        assert_eq!(old.canonical, CanonicalStatus::NotAtSnapshot);
+        assert_eq!(old.paths[0].canonical_staleness, Staleness::Unknown);
+        assert_eq!(old.paths[0].overlapping_proposals[0].changeset_id, cs1);
+    }
+
+    #[test]
+    fn lock_without_holder_is_skipped() {
+        let mut fx = Fixture::new("noholder");
+        let store = fx.coord(T0);
+        claim(&store, "bob", "src/a.rs", 600);
+        let file = fx.dir.join("coord/dirs/src.json");
+        let text = fs::read_to_string(&file).unwrap();
+        let stripped = text.replacen("\"holder\": \"bob\",", "", 1);
+        assert_ne!(stripped, text, "fixture: holder field not found in {text}");
+        fs::write(&file, stripped).unwrap();
+        let adv = fx.advise(&["src/a.rs"], Some(&store));
+        assert_eq!(adv.coordination, CoordinationStatus::Read);
+        assert!(adv.paths[0].claims.is_empty(), "{:?}", adv.paths[0].claims);
     }
 }
