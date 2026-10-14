@@ -20,7 +20,7 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 | [`synapse-api`](crates/synapse-api) | Gate 2 | Bounded paginated API (`submit`, `get`, `diff`, `tree`, `history`, `provenance`, `conflicts`, `status`, `watch`), checkout-free virtual tree overlay, and exact path-index invalidation |
 | [`synapse-git`](crates/synapse-git) | Gate 3 | Deterministic Git loose object writer/reader, bidirectional `ChangesetId <-> GitOid` map, ref namespace separation, and GitHub PR projection builder |
 | [`synapse-radicle`](crates/synapse-radicle) | Gate 3 | Radicle `refs/rad/id` and `refs/rad/sigrefs` Ed25519 delegate threshold verifier and split-brain refusal engine |
-| [`synapse-bench`](crates/synapse-bench) | Gate 4 | Comparative multi-agent benchmark harness and conformance suite against conventional Git worktree workflows |
+| [`synapse-bench`](crates/synapse-bench) | Gate 4 | Comparative qualification harness (Synapse ingest and checkout-free queries versus Git worktree and Git plumbing workflows) plus WAL, Git materialization, and Radicle canonicality conformance suites |
 
 ## Documentation and Evidence
 
@@ -30,6 +30,8 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 * [Threat Model and Capability Permission Matrix](docs/THREAT_MODEL.md)
 * [Changeset Schema, WAL Format, Consistency, and GC Specification](docs/SCHEMA_AND_CONSISTENCY.md)
 * [Gate 0 Empirical Baseline Receipt (`evidence/gate0-baseline/`)](evidence/gate0-baseline/baseline_report.json)
+* [Gate 4 Comparative Qualification Report](docs/GATE4_QUALIFICATION.md)
+* [Gate 4 Qualification Evidence (`evidence/gate4-qualification/`)](evidence/gate4-qualification/report.json), reproduced with `scripts/run_gate4_qualification.sh`
 
 ## License
 

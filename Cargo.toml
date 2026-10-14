@@ -7,6 +7,7 @@ members = [
     "crates/synapse-api",
     "crates/synapse-git",
     "crates/synapse-radicle",
+    "crates/synapse-bench",
 ]
 
 [workspace.package]
@@ -27,6 +28,7 @@ sha1 = "0.10"
 sha2 = "0.10"
 synapse-api = { path = "crates/synapse-api" }
 synapse-auth = { path = "crates/synapse-auth" }
+synapse-bench = { path = "crates/synapse-bench" }
 synapse-core = { path = "crates/synapse-core" }
 synapse-git = { path = "crates/synapse-git" }
 synapse-radicle = { path = "crates/synapse-radicle" }

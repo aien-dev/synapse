@@ -1,0 +1,1518 @@
+{
+  "schema": "synapse-gate4-qualification-manifest/v1",
+  "smoke": false,
+  "started_at_utc": "2026-10-14T15:18:28Z",
+  "finished_at_utc": "2026-10-14T15:28:56Z",
+  "total_run_s": 627.867,
+  "command_line": [
+    "/home/drakestapleton/.t3/projects/synapse/target/release/synapse-bench",
+    "run",
+    "--fixture-repo",
+    "/home/drakestapleton/workspace/aien-sovereign-core",
+    "--fixture-rev",
+    "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "--out",
+    "/home/drakestapleton/.t3/projects/synapse/evidence/gate4-qualification",
+    "--work-dir",
+    "/tmp/synapse-gate4.v9wfcR",
+    "--source-rev",
+    "be7bf52fba0ba3ddea7a4b5c3a585fa8c5cd7c47",
+    "--source-dirty",
+    "dirty",
+    "--source-digest",
+    "6ded22a9d626f237f050c146ea3bb86240b1f74e3b39a0c205a1e62e636c85c8",
+    "--radicle-repo",
+    "/home/drakestapleton/.radicle/storage/z2kdkm8HpiyFbMFpFmzzWZQgTn1EQ"
+  ],
+  "config": {
+    "fixture_repo": "/home/drakestapleton/workspace/aien-sovereign-core",
+    "fixture_rev": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "out_dir": "/home/drakestapleton/.t3/projects/synapse/evidence/gate4-qualification",
+    "work_dir": "/tmp/synapse-gate4.v9wfcR",
+    "reps": 3,
+    "tiers": [
+      1,
+      4,
+      8,
+      32
+    ],
+    "arms": [
+      "S1",
+      "S2",
+      "G1",
+      "G2",
+      "G3",
+      "G3F"
+    ],
+    "seed": 7673641184369446932,
+    "ops_floor": 400,
+    "min_ops_per_agent": 8,
+    "g1_ops_cap": 32,
+    "batch_window_records": 64,
+    "query_agents": 8,
+    "query_ops_per_agent": 50,
+    "query_samples": 400,
+    "recovery_sizes": [
+      100,
+      1000,
+      10000
+    ],
+    "recovery_reopen_reps": 3,
+    "radicle_repo": "/home/drakestapleton/.radicle/storage/z2kdkm8HpiyFbMFpFmzzWZQgTn1EQ",
+    "source_rev": "be7bf52fba0ba3ddea7a4b5c3a585fa8c5cd7c47",
+    "source_dirty": "dirty",
+    "source_digest": "6ded22a9d626f237f050c146ea3bb86240b1f74e3b39a0c205a1e62e636c85c8",
+    "smoke": false,
+    "command_line": [
+      "/home/drakestapleton/.t3/projects/synapse/target/release/synapse-bench",
+      "run",
+      "--fixture-repo",
+      "/home/drakestapleton/workspace/aien-sovereign-core",
+      "--fixture-rev",
+      "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+      "--out",
+      "/home/drakestapleton/.t3/projects/synapse/evidence/gate4-qualification",
+      "--work-dir",
+      "/tmp/synapse-gate4.v9wfcR",
+      "--source-rev",
+      "be7bf52fba0ba3ddea7a4b5c3a585fa8c5cd7c47",
+      "--source-dirty",
+      "dirty",
+      "--source-digest",
+      "6ded22a9d626f237f050c146ea3bb86240b1f74e3b39a0c205a1e62e636c85c8",
+      "--radicle-repo",
+      "/home/drakestapleton/.radicle/storage/z2kdkm8HpiyFbMFpFmzzWZQgTn1EQ"
+    ]
+  },
+  "host": {
+    "hostname": "spark-b87b",
+    "kernel_release": "7.0.0-1019-nvidia",
+    "arch": "aarch64",
+    "cpu_models": [
+      "Cortex-X925",
+      "Cortex-A725"
+    ],
+    "cpu_model_source": "lscpu",
+    "logical_cpus": 20,
+    "mem_total_kib": 127598752,
+    "git_version": "git version 2.43.0",
+    "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "cargo_version": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "work_dir": "/tmp/synapse-gate4.v9wfcR",
+    "work_dir_fs_type": "ext4",
+    "work_dir_source": "/dev/nvme0n1p2",
+    "work_dir_free_bytes_at_start": 1040690204672
+  },
+  "fixture": {
+    "original_repo": "/home/drakestapleton/workspace/aien-sovereign-core",
+    "requested_rev": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "commit": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "tree": "39684d806998aa579244a55aab41b954be963525",
+    "files": 4376,
+    "total_bytes": 145731971,
+    "largest_file_bytes": 65855376,
+    "skipped_entries": 0,
+    "editable_files": 2307,
+    "master_clone_method": "git clone --no-checkout --no-hardlinks (once); each cell: git clone --no-checkout --local of the master clone",
+    "master_clone_git_dir_apparent_bytes": 197690821,
+    "original_head_before": "c83eb5b2f96b3d0a36fcb5092fcf0d66af5dd0d0",
+    "original_head_after": "c83eb5b2f96b3d0a36fcb5092fcf0d66af5dd0d0",
+    "original_refs_sha256_before": "54db35893b19627723f72376b59caa443d56941f7062f872e66af5fe90f18de8",
+    "original_refs_sha256_after": "75af848fb615cc6713ec87daca4c3d18fa6aa1a612879b5946443a3ab86deb5f"
+  },
+  "bench_clone_config": [
+    [
+      "gc.auto",
+      "0"
+    ],
+    [
+      "maintenance.auto",
+      "false"
+    ],
+    [
+      "user.name",
+      "Synapse Gate4 Bench"
+    ],
+    [
+      "user.email",
+      "gate4-bench@synapse.invalid"
+    ],
+    [
+      "commit.gpgsign",
+      "false"
+    ]
+  ],
+  "git_config": [
+    {
+      "key": "core.fsync",
+      "values_with_origin": [],
+      "set": false
+    },
+    {
+      "key": "core.fsyncMethod",
+      "values_with_origin": [],
+      "set": false
+    },
+    {
+      "key": "core.fsyncObjectFiles",
+      "values_with_origin": [],
+      "set": false
+    },
+    {
+      "key": "gc.auto",
+      "values_with_origin": [
+        "file:.git/config 0"
+      ],
+      "set": true
+    },
+    {
+      "key": "maintenance.auto",
+      "values_with_origin": [
+        "file:.git/config false"
+      ],
+      "set": true
+    }
+  ],
+  "git_config_listing": [
+    "file:/etc/gitconfig filter.lfs.clean=git-lfs clean -- %f",
+    "file:/etc/gitconfig filter.lfs.smudge=git-lfs smudge -- %f",
+    "file:/etc/gitconfig filter.lfs.process=git-lfs filter-process",
+    "file:/etc/gitconfig filter.lfs.required=true",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.clean=git-lfs clean -- %f",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.smudge=git-lfs smudge -- %f",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.process=git-lfs filter-process",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.required=true",
+    "file:/home/drakestapleton/.gitconfig user.name=Drake Stapleton",
+    "file:/home/drakestapleton/.gitconfig user.email=drake@aienos.com",
+    "file:/home/drakestapleton/.gitconfig core.excludesfile=/home/drakestapleton/.gitignore_global",
+    "file:.git/config core.repositoryformatversion=0",
+    "file:.git/config core.filemode=true",
+    "file:.git/config core.bare=false",
+    "file:.git/config core.logallrefupdates=true",
+    "file:.git/config remote.origin.url=/home/drakestapleton/workspace/aien-sovereign-core",
+    "file:.git/config remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*",
+    "file:.git/config branch.docs/readme-restructure.remote=origin",
+    "file:.git/config branch.docs/readme-restructure.merge=refs/heads/docs/readme-restructure",
+    "file:.git/config gc.auto=0",
+    "file:.git/config maintenance.auto=false",
+    "file:.git/config user.name=Synapse Gate4 Bench",
+    "file:.git/config user.email=gate4-bench@synapse.invalid",
+    "file:.git/config commit.gpgsign=false"
+  ],
+  "fsync_probe": {
+    "tool": "strace",
+    "default_config_fsync_calls": 0,
+    "fsync_all_config_fsync_calls": 1,
+    "note": "counts of fsync, fdatasync, sync_file_range, and syncfs calls made by one `git hash-object -w --stdin` (strace -f -c)"
+  },
+  "disk": {
+    "free_bytes_at_start": 1040488902656,
+    "estimated_peak_cell_bytes": 12161175376,
+    "required_free_bytes": 36483526128,
+    "min_free_bytes_observed": 1040460541952
+  },
+  "source": {
+    "rev": "be7bf52fba0ba3ddea7a4b5c3a585fa8c5cd7c47",
+    "dirty": "dirty",
+    "digest": "6ded22a9d626f237f050c146ea3bb86240b1f74e3b39a0c205a1e62e636c85c8"
+  },
+  "cell_order_seed": 3636407535504307889,
+  "cell_order": [
+    {
+      "order": 0,
+      "label": "write-S2-a32-r0",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 0
+    },
+    {
+      "order": 1,
+      "label": "write-G3-a32-r0",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 0
+    },
+    {
+      "order": 2,
+      "label": "write-G2-a01-r0",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 0
+    },
+    {
+      "order": 3,
+      "label": "write-G3F-a08-r0",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 0
+    },
+    {
+      "order": 4,
+      "label": "write-S1-a04-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 0
+    },
+    {
+      "order": 5,
+      "label": "write-G3-a04-r0",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 0
+    },
+    {
+      "order": 6,
+      "label": "write-G1-a08-r0",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 8,
+      "ops_per_agent": 4,
+      "rep": 0
+    },
+    {
+      "order": 7,
+      "label": "write-G3F-a01-r0",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 0
+    },
+    {
+      "order": 8,
+      "label": "write-G2-a04-r0",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 0
+    },
+    {
+      "order": 9,
+      "label": "conformance-r0",
+      "kind": "conformance",
+      "arm": null,
+      "agents": null,
+      "ops_per_agent": null,
+      "rep": 0
+    },
+    {
+      "order": 10,
+      "label": "query-r0",
+      "kind": "query",
+      "arm": null,
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 0
+    },
+    {
+      "order": 11,
+      "label": "write-G2-a32-r0",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 0
+    },
+    {
+      "order": 12,
+      "label": "write-G1-a04-r0",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 4,
+      "ops_per_agent": 8,
+      "rep": 0
+    },
+    {
+      "order": 13,
+      "label": "write-S1-a08-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 0
+    },
+    {
+      "order": 14,
+      "label": "write-S2-a04-r0",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 0
+    },
+    {
+      "order": 15,
+      "label": "write-G3-a01-r0",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 0
+    },
+    {
+      "order": 16,
+      "label": "write-G1-a32-r0",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 32,
+      "ops_per_agent": 2,
+      "rep": 0
+    },
+    {
+      "order": 17,
+      "label": "write-G3F-a04-r0",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 0
+    },
+    {
+      "order": 18,
+      "label": "write-G2-a08-r0",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 0
+    },
+    {
+      "order": 19,
+      "label": "write-S1-a01-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 0
+    },
+    {
+      "order": 20,
+      "label": "write-S2-a01-r0",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 0
+    },
+    {
+      "order": 21,
+      "label": "write-G3-a08-r0",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 0
+    },
+    {
+      "order": 22,
+      "label": "write-G3F-a32-r0",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 0
+    },
+    {
+      "order": 23,
+      "label": "write-G1-a01-r0",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 1,
+      "ops_per_agent": 32,
+      "rep": 0
+    },
+    {
+      "order": 24,
+      "label": "write-S1-a32-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 0
+    },
+    {
+      "order": 25,
+      "label": "write-S2-a08-r0",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 0
+    },
+    {
+      "order": 26,
+      "label": "write-G1-a08-r1",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 8,
+      "ops_per_agent": 4,
+      "rep": 1
+    },
+    {
+      "order": 27,
+      "label": "write-G1-a04-r1",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 4,
+      "ops_per_agent": 8,
+      "rep": 1
+    },
+    {
+      "order": 28,
+      "label": "write-S2-a01-r1",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 1
+    },
+    {
+      "order": 29,
+      "label": "write-S1-a04-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 1
+    },
+    {
+      "order": 30,
+      "label": "write-S1-a32-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 1
+    },
+    {
+      "order": 31,
+      "label": "write-G3F-a32-r1",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 1
+    },
+    {
+      "order": 32,
+      "label": "write-G1-a32-r1",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 32,
+      "ops_per_agent": 2,
+      "rep": 1
+    },
+    {
+      "order": 33,
+      "label": "write-G3-a01-r1",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 1
+    },
+    {
+      "order": 34,
+      "label": "write-G3F-a04-r1",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 1
+    },
+    {
+      "order": 35,
+      "label": "write-G1-a01-r1",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 1,
+      "ops_per_agent": 32,
+      "rep": 1
+    },
+    {
+      "order": 36,
+      "label": "write-S2-a32-r1",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 1
+    },
+    {
+      "order": 37,
+      "label": "write-S2-a08-r1",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 1
+    },
+    {
+      "order": 38,
+      "label": "write-S2-a04-r1",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 1
+    },
+    {
+      "order": 39,
+      "label": "write-G3-a04-r1",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 1
+    },
+    {
+      "order": 40,
+      "label": "write-S1-a01-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 1
+    },
+    {
+      "order": 41,
+      "label": "write-G3-a32-r1",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 1
+    },
+    {
+      "order": 42,
+      "label": "write-G2-a32-r1",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 1
+    },
+    {
+      "order": 43,
+      "label": "write-G3F-a01-r1",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 1
+    },
+    {
+      "order": 44,
+      "label": "write-G3-a08-r1",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 1
+    },
+    {
+      "order": 45,
+      "label": "write-G3F-a08-r1",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 1
+    },
+    {
+      "order": 46,
+      "label": "conformance-r1",
+      "kind": "conformance",
+      "arm": null,
+      "agents": null,
+      "ops_per_agent": null,
+      "rep": 1
+    },
+    {
+      "order": 47,
+      "label": "write-S1-a08-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 1
+    },
+    {
+      "order": 48,
+      "label": "write-G2-a08-r1",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 1
+    },
+    {
+      "order": 49,
+      "label": "write-G2-a01-r1",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 1
+    },
+    {
+      "order": 50,
+      "label": "write-G2-a04-r1",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 1
+    },
+    {
+      "order": 51,
+      "label": "query-r1",
+      "kind": "query",
+      "arm": null,
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 1
+    },
+    {
+      "order": 52,
+      "label": "write-G1-a04-r2",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 4,
+      "ops_per_agent": 8,
+      "rep": 2
+    },
+    {
+      "order": 53,
+      "label": "write-S2-a32-r2",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 2
+    },
+    {
+      "order": 54,
+      "label": "write-G1-a01-r2",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 1,
+      "ops_per_agent": 32,
+      "rep": 2
+    },
+    {
+      "order": 55,
+      "label": "write-G3-a08-r2",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 2
+    },
+    {
+      "order": 56,
+      "label": "query-r2",
+      "kind": "query",
+      "arm": null,
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 2
+    },
+    {
+      "order": 57,
+      "label": "write-G3F-a32-r2",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 2
+    },
+    {
+      "order": 58,
+      "label": "conformance-r2",
+      "kind": "conformance",
+      "arm": null,
+      "agents": null,
+      "ops_per_agent": null,
+      "rep": 2
+    },
+    {
+      "order": 59,
+      "label": "write-G3-a04-r2",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 2
+    },
+    {
+      "order": 60,
+      "label": "write-S2-a01-r2",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 2
+    },
+    {
+      "order": 61,
+      "label": "write-G2-a01-r2",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 2
+    },
+    {
+      "order": 62,
+      "label": "write-G2-a08-r2",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 2
+    },
+    {
+      "order": 63,
+      "label": "write-S1-a04-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 2
+    },
+    {
+      "order": 64,
+      "label": "write-S2-a08-r2",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 2
+    },
+    {
+      "order": 65,
+      "label": "write-G3F-a01-r2",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 2
+    },
+    {
+      "order": 66,
+      "label": "write-G1-a08-r2",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 8,
+      "ops_per_agent": 4,
+      "rep": 2
+    },
+    {
+      "order": 67,
+      "label": "write-G3-a01-r2",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 2
+    },
+    {
+      "order": 68,
+      "label": "write-G3F-a08-r2",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 2
+    },
+    {
+      "order": 69,
+      "label": "write-S1-a32-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 2
+    },
+    {
+      "order": 70,
+      "label": "write-S1-a08-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 50,
+      "rep": 2
+    },
+    {
+      "order": 71,
+      "label": "write-G2-a04-r2",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 2
+    },
+    {
+      "order": 72,
+      "label": "write-G3-a32-r2",
+      "kind": "write",
+      "arm": "G3",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 2
+    },
+    {
+      "order": 73,
+      "label": "write-G3F-a04-r2",
+      "kind": "write",
+      "arm": "G3F",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 2
+    },
+    {
+      "order": 74,
+      "label": "write-S1-a01-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 400,
+      "rep": 2
+    },
+    {
+      "order": 75,
+      "label": "write-G1-a32-r2",
+      "kind": "write",
+      "arm": "G1",
+      "agents": 32,
+      "ops_per_agent": 2,
+      "rep": 2
+    },
+    {
+      "order": 76,
+      "label": "write-G2-a32-r2",
+      "kind": "write",
+      "arm": "G2",
+      "agents": 32,
+      "ops_per_agent": 13,
+      "rep": 2
+    },
+    {
+      "order": 77,
+      "label": "write-S2-a04-r2",
+      "kind": "write",
+      "arm": "S2",
+      "agents": 4,
+      "ops_per_agent": 100,
+      "rep": 2
+    },
+    {
+      "order": 78,
+      "label": "conflict",
+      "kind": "conflict",
+      "arm": null,
+      "agents": null,
+      "ops_per_agent": null,
+      "rep": null
+    },
+    {
+      "order": 79,
+      "label": "recovery",
+      "kind": "recovery",
+      "arm": null,
+      "agents": null,
+      "ops_per_agent": null,
+      "rep": null
+    },
+    {
+      "order": 80,
+      "label": "import-probe",
+      "kind": "import-probe",
+      "arm": null,
+      "agents": null,
+      "ops_per_agent": null,
+      "rep": null
+    }
+  ],
+  "cell_timings": [
+    {
+      "label": "write-S2-a32-r0",
+      "clone_ms": 21.977,
+      "child_wall_ms": 1262.249,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a32-r0",
+      "clone_ms": 25.066,
+      "child_wall_ms": 844.329,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a01-r0",
+      "clone_ms": 27.305,
+      "child_wall_ms": 11192.694,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a08-r0",
+      "clone_ms": 24.125,
+      "child_wall_ms": 4017.845,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a04-r0",
+      "clone_ms": 26.929,
+      "child_wall_ms": 6782.008,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a04-r0",
+      "clone_ms": 23.101,
+      "child_wall_ms": 1707.13,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a08-r0",
+      "clone_ms": 31.087,
+      "child_wall_ms": 6850.795,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a01-r0",
+      "clone_ms": 29.948,
+      "child_wall_ms": 21686.037,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a04-r0",
+      "clone_ms": 34.009,
+      "child_wall_ms": 5664.8,
+      "ok": true
+    },
+    {
+      "label": "conformance-r0",
+      "clone_ms": 0.0,
+      "child_wall_ms": 713.675,
+      "ok": true
+    },
+    {
+      "label": "query-r0",
+      "clone_ms": 33.049,
+      "child_wall_ms": 21124.309,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a32-r0",
+      "clone_ms": 32.101,
+      "child_wall_ms": 22553.213,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a04-r0",
+      "clone_ms": 24.198,
+      "child_wall_ms": 9907.773,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a08-r0",
+      "clone_ms": 23.373,
+      "child_wall_ms": 6452.083,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a04-r0",
+      "clone_ms": 23.332,
+      "child_wall_ms": 1237.44,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a01-r0",
+      "clone_ms": 34.597,
+      "child_wall_ms": 5677.697,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a32-r0",
+      "clone_ms": 23.615,
+      "child_wall_ms": 8696.78,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a04-r0",
+      "clone_ms": 34.464,
+      "child_wall_ms": 7635.672,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a08-r0",
+      "clone_ms": 22.201,
+      "child_wall_ms": 7342.002,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a01-r0",
+      "clone_ms": 25.694,
+      "child_wall_ms": 6547.93,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a01-r0",
+      "clone_ms": 21.471,
+      "child_wall_ms": 1285.886,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a08-r0",
+      "clone_ms": 30.038,
+      "child_wall_ms": 999.797,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a32-r0",
+      "clone_ms": 35.697,
+      "child_wall_ms": 1637.127,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a01-r0",
+      "clone_ms": 32.302,
+      "child_wall_ms": 33485.411,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a32-r0",
+      "clone_ms": 31.544,
+      "child_wall_ms": 7047.531,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a08-r0",
+      "clone_ms": 32.703,
+      "child_wall_ms": 1219.529,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a08-r1",
+      "clone_ms": 34.403,
+      "child_wall_ms": 5726.141,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a04-r1",
+      "clone_ms": 30.048,
+      "child_wall_ms": 9835.908,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a01-r1",
+      "clone_ms": 30.291,
+      "child_wall_ms": 1335.661,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a04-r1",
+      "clone_ms": 33.336,
+      "child_wall_ms": 6672.192,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a32-r1",
+      "clone_ms": 29.951,
+      "child_wall_ms": 6721.019,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a32-r1",
+      "clone_ms": 21.234,
+      "child_wall_ms": 1545.158,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a32-r1",
+      "clone_ms": 23.779,
+      "child_wall_ms": 8800.957,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a01-r1",
+      "clone_ms": 23.535,
+      "child_wall_ms": 5334.929,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a04-r1",
+      "clone_ms": 32.082,
+      "child_wall_ms": 7627.501,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a01-r1",
+      "clone_ms": 32.241,
+      "child_wall_ms": 33369.414,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a32-r1",
+      "clone_ms": 23.872,
+      "child_wall_ms": 1333.806,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a08-r1",
+      "clone_ms": 23.899,
+      "child_wall_ms": 1210.337,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a04-r1",
+      "clone_ms": 26.234,
+      "child_wall_ms": 1272.314,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a04-r1",
+      "clone_ms": 32.494,
+      "child_wall_ms": 1713.583,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a01-r1",
+      "clone_ms": 32.096,
+      "child_wall_ms": 6487.789,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a32-r1",
+      "clone_ms": 25.435,
+      "child_wall_ms": 852.264,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a32-r1",
+      "clone_ms": 31.375,
+      "child_wall_ms": 22276.925,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a01-r1",
+      "clone_ms": 30.823,
+      "child_wall_ms": 21381.614,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a08-r1",
+      "clone_ms": 33.571,
+      "child_wall_ms": 937.767,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a08-r1",
+      "clone_ms": 26.831,
+      "child_wall_ms": 4066.605,
+      "ok": true
+    },
+    {
+      "label": "conformance-r1",
+      "clone_ms": 0.0,
+      "child_wall_ms": 646.117,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a08-r1",
+      "clone_ms": 21.414,
+      "child_wall_ms": 6556.501,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a08-r1",
+      "clone_ms": 32.389,
+      "child_wall_ms": 7281.658,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a01-r1",
+      "clone_ms": 31.359,
+      "child_wall_ms": 11000.09,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a04-r1",
+      "clone_ms": 41.679,
+      "child_wall_ms": 5981.226,
+      "ok": true
+    },
+    {
+      "label": "query-r1",
+      "clone_ms": 33.176,
+      "child_wall_ms": 21297.382,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a04-r2",
+      "clone_ms": 30.982,
+      "child_wall_ms": 9990.214,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a32-r2",
+      "clone_ms": 35.595,
+      "child_wall_ms": 1323.535,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a01-r2",
+      "clone_ms": 22.013,
+      "child_wall_ms": 33542.179,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a08-r2",
+      "clone_ms": 31.042,
+      "child_wall_ms": 910.829,
+      "ok": true
+    },
+    {
+      "label": "query-r2",
+      "clone_ms": 33.96,
+      "child_wall_ms": 21273.952,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a32-r2",
+      "clone_ms": 31.704,
+      "child_wall_ms": 1615.751,
+      "ok": true
+    },
+    {
+      "label": "conformance-r2",
+      "clone_ms": 0.0,
+      "child_wall_ms": 715.756,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a04-r2",
+      "clone_ms": 33.801,
+      "child_wall_ms": 1696.82,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a01-r2",
+      "clone_ms": 34.507,
+      "child_wall_ms": 1312.651,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a01-r2",
+      "clone_ms": 33.211,
+      "child_wall_ms": 11146.861,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a08-r2",
+      "clone_ms": 32.577,
+      "child_wall_ms": 7498.652,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a04-r2",
+      "clone_ms": 32.574,
+      "child_wall_ms": 6937.741,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a08-r2",
+      "clone_ms": 34.161,
+      "child_wall_ms": 1230.9,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a01-r2",
+      "clone_ms": 34.993,
+      "child_wall_ms": 21577.523,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a08-r2",
+      "clone_ms": 35.402,
+      "child_wall_ms": 6337.959,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a01-r2",
+      "clone_ms": 29.516,
+      "child_wall_ms": 5514.948,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a08-r2",
+      "clone_ms": 32.776,
+      "child_wall_ms": 3815.336,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a32-r2",
+      "clone_ms": 31.706,
+      "child_wall_ms": 7029.074,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a08-r2",
+      "clone_ms": 33.092,
+      "child_wall_ms": 6374.212,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a04-r2",
+      "clone_ms": 33.269,
+      "child_wall_ms": 5629.532,
+      "ok": true
+    },
+    {
+      "label": "write-G3-a32-r2",
+      "clone_ms": 22.214,
+      "child_wall_ms": 811.55,
+      "ok": true
+    },
+    {
+      "label": "write-G3F-a04-r2",
+      "clone_ms": 21.842,
+      "child_wall_ms": 7844.761,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a01-r2",
+      "clone_ms": 33.487,
+      "child_wall_ms": 6778.865,
+      "ok": true
+    },
+    {
+      "label": "write-G1-a32-r2",
+      "clone_ms": 21.134,
+      "child_wall_ms": 8330.761,
+      "ok": true
+    },
+    {
+      "label": "write-G2-a32-r2",
+      "clone_ms": 144.904,
+      "child_wall_ms": 22067.604,
+      "ok": true
+    },
+    {
+      "label": "write-S2-a04-r2",
+      "clone_ms": 32.212,
+      "child_wall_ms": 1322.695,
+      "ok": true
+    },
+    {
+      "label": "conflict",
+      "clone_ms": 22.054,
+      "child_wall_ms": 1817.997,
+      "ok": true
+    },
+    {
+      "label": "recovery",
+      "clone_ms": 20.419,
+      "child_wall_ms": 6021.36,
+      "ok": true
+    },
+    {
+      "label": "import-probe",
+      "clone_ms": 34.411,
+      "child_wall_ms": 7429.049,
+      "ok": true
+    }
+  ],
+  "trace_files": [
+    "traces/conflict.jsonl",
+    "traces/query-r0.jsonl",
+    "traces/query-r1.jsonl",
+    "traces/query-r2.jsonl",
+    "traces/recovery.jsonl",
+    "traces/write-G1-a01-r0.jsonl",
+    "traces/write-G1-a01-r1.jsonl",
+    "traces/write-G1-a01-r2.jsonl",
+    "traces/write-G1-a04-r0.jsonl",
+    "traces/write-G1-a04-r1.jsonl",
+    "traces/write-G1-a04-r2.jsonl",
+    "traces/write-G1-a08-r0.jsonl",
+    "traces/write-G1-a08-r1.jsonl",
+    "traces/write-G1-a08-r2.jsonl",
+    "traces/write-G1-a32-r0.jsonl",
+    "traces/write-G1-a32-r1.jsonl",
+    "traces/write-G1-a32-r2.jsonl",
+    "traces/write-G2-a01-r0.jsonl",
+    "traces/write-G2-a01-r1.jsonl",
+    "traces/write-G2-a01-r2.jsonl",
+    "traces/write-G2-a04-r0.jsonl",
+    "traces/write-G2-a04-r1.jsonl",
+    "traces/write-G2-a04-r2.jsonl",
+    "traces/write-G2-a08-r0.jsonl",
+    "traces/write-G2-a08-r1.jsonl",
+    "traces/write-G2-a08-r2.jsonl",
+    "traces/write-G2-a32-r0.jsonl",
+    "traces/write-G2-a32-r1.jsonl",
+    "traces/write-G2-a32-r2.jsonl",
+    "traces/write-G3-a01-r0.jsonl",
+    "traces/write-G3-a01-r1.jsonl",
+    "traces/write-G3-a01-r2.jsonl",
+    "traces/write-G3-a04-r0.jsonl",
+    "traces/write-G3-a04-r1.jsonl",
+    "traces/write-G3-a04-r2.jsonl",
+    "traces/write-G3-a08-r0.jsonl",
+    "traces/write-G3-a08-r1.jsonl",
+    "traces/write-G3-a08-r2.jsonl",
+    "traces/write-G3-a32-r0.jsonl",
+    "traces/write-G3-a32-r1.jsonl",
+    "traces/write-G3-a32-r2.jsonl",
+    "traces/write-G3F-a01-r0.jsonl",
+    "traces/write-G3F-a01-r1.jsonl",
+    "traces/write-G3F-a01-r2.jsonl",
+    "traces/write-G3F-a04-r0.jsonl",
+    "traces/write-G3F-a04-r1.jsonl",
+    "traces/write-G3F-a04-r2.jsonl",
+    "traces/write-G3F-a08-r0.jsonl",
+    "traces/write-G3F-a08-r1.jsonl",
+    "traces/write-G3F-a08-r2.jsonl",
+    "traces/write-G3F-a32-r0.jsonl",
+    "traces/write-G3F-a32-r1.jsonl",
+    "traces/write-G3F-a32-r2.jsonl",
+    "traces/write-S1-a01-r0.jsonl",
+    "traces/write-S1-a01-r1.jsonl",
+    "traces/write-S1-a01-r2.jsonl",
+    "traces/write-S1-a04-r0.jsonl",
+    "traces/write-S1-a04-r1.jsonl",
+    "traces/write-S1-a04-r2.jsonl",
+    "traces/write-S1-a08-r0.jsonl",
+    "traces/write-S1-a08-r1.jsonl",
+    "traces/write-S1-a08-r2.jsonl",
+    "traces/write-S1-a32-r0.jsonl",
+    "traces/write-S1-a32-r1.jsonl",
+    "traces/write-S1-a32-r2.jsonl",
+    "traces/write-S2-a01-r0.jsonl",
+    "traces/write-S2-a01-r1.jsonl",
+    "traces/write-S2-a01-r2.jsonl",
+    "traces/write-S2-a04-r0.jsonl",
+    "traces/write-S2-a04-r1.jsonl",
+    "traces/write-S2-a04-r2.jsonl",
+    "traces/write-S2-a08-r0.jsonl",
+    "traces/write-S2-a08-r1.jsonl",
+    "traces/write-S2-a08-r2.jsonl",
+    "traces/write-S2-a32-r0.jsonl",
+    "traces/write-S2-a32-r1.jsonl",
+    "traces/write-S2-a32-r2.jsonl"
+  ]
+}
