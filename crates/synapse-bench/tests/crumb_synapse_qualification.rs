@@ -1405,6 +1405,6 @@ fn s12_exit_rule_passing_run_is_not_publication() {
     result(
         "S12",
         "PASS",
-        "clean advisory + Current Pass receipt: GitHub PR projection refused without Publish (AuthCapabilityDenied, author and runner); Radicle promotion refused without delegate quorum (none / runner / author sigrefs); both open only for a Publish grant / delegate sigrefs. AEGIS not integrated (separate repo)",
+        "advisory read (no foreign claims) + Current Pass receipt: GitHub PR projection refused without Publish (AuthCapabilityDenied, author and runner); Radicle promotion refused without delegate quorum (none / runner / author sigrefs); both open only for a Publish grant / delegate sigrefs. AEGIS not integrated (separate repo)",
     );
 }

@@ -102,7 +102,7 @@ esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
   for r in "${DEFECT_ROWS[@]}"; do IFS='|' read -r n s dd <<< "$r"; echo "defect $s $n: $dd"; done
   echo "parity           exit $parity_rc; $parity_line"
   echo "interop          exit $interop_rc; $interop_line"
-  echo "overall          $([ $overall -eq 0 ] && echo QUALIFIED || echo NOT-QUALIFIED)"
+  echo "overall          $([ $overall -eq 0 ] && echo "QUALIFIED: every scenario PASS or KNOWN-GAP; open defects: ${#DEFECT_ROWS[@]} (recorded, not fixed)" || echo NOT-QUALIFIED)"
   echo "limit            AEGIS (aienos crates/aienos-aegis) not integrated; exit rule proven against Synapse's Publish capability and Radicle canonical promotion only"
 } > "$OUT_DIR/results.txt"
 {
@@ -136,7 +136,8 @@ esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
   echo "  \"limits\": [\"AEGIS not integrated (separate repository); publication gates tested are synapse-auth Capability::Publish and synapse-radicle canonical promotion\"]"
   echo "}"
 } > "$OUT_DIR/results.json"
-(cd "$OUT_DIR" && sha256sum results.json results.txt > SHA256SUMS)
+# negative-control.txt is written by hand when the control is re-run (see the doc).
+(cd "$OUT_DIR" && sha256sum results.json results.txt $(ls negative-control.txt 2>/dev/null) > SHA256SUMS)
 
 cat "$OUT_DIR/results.txt"
 exit $overall
