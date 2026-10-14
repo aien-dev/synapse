@@ -4,8 +4,10 @@
 //! synapse-bench run --fixture-repo <path> --fixture-rev <rev> --out <dir> --work-dir <dir>
 //!     [--reps N] [--tiers 1,4,8,32] [--arms S1,S2,G1,G2,G3,G3F] [--seed N]
 //!     [--radicle-repo <path>] [--source-rev R] [--source-dirty D] [--source-digest H] [--smoke]
+//!     [--write-only] [--idle-window-s S] [--ops-floor N]
 //! synapse-bench child --kind <write|query|conflict|conformance|recovery|import-probe>
 //!     --spec <file> --result <file>
+//! synapse-bench floor --dir <dir on the store filesystem> --out <file.json> [--iterations N]
 //! ```
 
 use std::path::PathBuf;
@@ -41,6 +43,9 @@ const KNOWN_RUN_OPTIONS: &[&str] = &[
     "--source-dirty",
     "--source-digest",
     "--smoke",
+    "--write-only",
+    "--idle-window-s",
+    "--ops-floor",
 ];
 
 fn run(args: &[String]) -> Result<(), String> {
@@ -51,7 +56,7 @@ fn run(args: &[String]) -> Result<(), String> {
         if !key.starts_with("--") {
             return Err(format!("unexpected argument {key}"));
         }
-        if key == "--smoke" {
+        if key == "--smoke" || key == "--write-only" {
             opts.push((key, None));
             i += 1;
         } else {
@@ -75,6 +80,13 @@ fn run(args: &[String]) -> Result<(), String> {
     );
     if opts.iter().any(|(k, _)| k == "--smoke") {
         cfg.apply_smoke();
+    }
+    cfg.write_only = opts.iter().any(|(k, _)| k == "--write-only");
+    if let Some(v) = get("--ops-floor") {
+        cfg.ops_floor = v.parse().map_err(|_| "invalid --ops-floor")?;
+    }
+    if let Some(v) = get("--idle-window-s") {
+        cfg.idle_window_s = v.parse().map_err(|_| "invalid --idle-window-s")?;
     }
     if let Some(v) = get("--reps") {
         cfg.reps = v.parse().map_err(|_| "invalid --reps")?;
@@ -138,11 +150,34 @@ fn child(args: &[String]) -> Result<(), String> {
     )
 }
 
+fn floor(args: &[String]) -> Result<(), String> {
+    let mut dir = None;
+    let mut out = None;
+    let mut iterations = 300usize;
+    let mut i = 0;
+    while i < args.len() {
+        let v = args
+            .get(i + 1)
+            .cloned()
+            .ok_or(format!("{} needs a value", args[i]))?;
+        match args[i].as_str() {
+            "--dir" => dir = Some(PathBuf::from(v)),
+            "--out" => out = Some(PathBuf::from(v)),
+            "--iterations" => iterations = v.parse().map_err(|_| "invalid --iterations")?,
+            other => return Err(format!("unknown option {other}")),
+        }
+        i += 2;
+    }
+    let report = synapse_bench::floor::run_floor(&dir.ok_or("missing --dir")?, iterations)?;
+    synapse_bench::write_json(&out.ok_or("missing --out")?, &report)
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
         Some("run") => run(&args[1..]),
         Some("child") => child(&args[1..]),
+        Some("floor") => floor(&args[1..]),
         _ => Err("usage: synapse-bench run ... | synapse-bench child ... (see crate docs)".into()),
     };
     match outcome {

@@ -5,11 +5,18 @@
 //! proposal and ends when the arm acknowledges it:
 //! * Synapse arms: envelope and request signing, JSON encode, JSON decode, waiting for
 //!   the single-writer service lock (queue wait, also recorded separately), and `submit`.
+//!   S3 holds the service lock only for the API admission checks and the path-index
+//!   update; the store commit runs through `SharedStore::submit` (group commit) with no
+//!   service lock held. S3's queue wait is the time spent waiting for the service lock.
 //! * Git arms: every file write and `git` process for that proposal.
 //!
 //! Throughput is acknowledged operations divided by the wall time from barrier release
 //! to the last acknowledgement (for S2 this includes one final `sync_wal`).
+//!
+//! Every cell also records SoC package energy over the timed window
+//! ([`crate::energy`]; CPU package only, uncalibrated, UNMEASURED when absent).
 
+use crate::energy::{EnergyReading, EnergyWindow};
 use crate::fixture::{self, BaseTree, EditableFile};
 use crate::git_arm::{self, PlumbingAgent, FSYNC_ALL_CONFIG};
 use crate::rusage::{CpuUsage, RusageWindow};
@@ -24,13 +31,17 @@ use std::time::Instant;
 use synapse_api::{SubmitChangesetPayload, SynapseService};
 use synapse_auth::AuthenticatedRequest;
 use synapse_core::{GitOid, RepoId};
-use synapse_store::{DurabilityGuarantee, FsyncPolicy, IngestOutcome, RecoveryPolicy};
+use synapse_store::{
+    DurabilityGuarantee, FsyncPolicy, GroupCommitStats, IngestOutcome, RecoveryPolicy, SharedStore,
+    StoreLimits,
+};
 
 /// Measured arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ArmKind {
     S1,
     S2,
+    S3,
     G1,
     G2,
     G3,
@@ -38,9 +49,10 @@ pub enum ArmKind {
 }
 
 impl ArmKind {
-    pub const ALL: [ArmKind; 6] = [
+    pub const ALL: [ArmKind; 7] = [
         ArmKind::S1,
         ArmKind::S2,
+        ArmKind::S3,
         ArmKind::G1,
         ArmKind::G2,
         ArmKind::G3,
@@ -51,6 +63,7 @@ impl ArmKind {
         match self {
             Self::S1 => "S1",
             Self::S2 => "S2",
+            Self::S3 => "S3",
             Self::G1 => "G1",
             Self::G2 => "G2",
             Self::G3 => "G3",
@@ -65,13 +78,14 @@ impl ArmKind {
     }
 
     pub fn is_synapse(self) -> bool {
-        matches!(self, Self::S1 | Self::S2)
+        matches!(self, Self::S1 | Self::S2 | Self::S3)
     }
 
     pub fn description(self) -> &'static str {
         match self {
             Self::S1 => "Synapse submit, FsyncPolicy::EveryCommit (blob files, shard dirs, and WAL fsynced before ack)",
             Self::S2 => "Synapse submit, FsyncPolicy::BatchWindow (WAL fsync every N records, blobs never fsynced; final sync_wal inside timing)",
+            Self::S3 => "Synapse submit, FsyncPolicy::GroupCommit through SharedStore (WAL v2, blobs inline, one fdatasync per batch of concurrent submitters; service lock held only for admission and path indexing)",
             Self::G1 => "Git: fresh `git worktree add -b` checkout per proposal, then add + commit (today's hive practice)",
             Self::G2 => "Git: one persistent worktree per agent; `checkout -B` to base, edit, add, commit per proposal",
             Self::G3 => "Git plumbing without checkout: per-agent temporary index, hash-object, update-index, write-tree, commit-tree, update-ref",
@@ -83,6 +97,7 @@ impl ArmKind {
         match self {
             Self::S1 => "fsync before ack (blobs, shard directories, WAL)",
             Self::S2 => "process-crash durable only (page cache) between WAL syncs",
+            Self::S3 => "fsync before ack (one fdatasync per batch into pre-written WAL v2 space; blobs inside the batch)",
             Self::G1 | Self::G2 | Self::G3 => {
                 "git default core.fsync (git-config(1): committed,-loose-object), loose objects and refs not fsynced"
             }
@@ -184,6 +199,16 @@ pub struct WriteCellResult {
     pub storage: StorageDelta,
     pub durability_receipts: Vec<(String, usize)>,
     pub first_errors: Vec<String>,
+    /// SoC package energy over the timed window (absent in Gate 4 results).
+    #[serde(default)]
+    pub energy: Option<EnergyReading>,
+    /// SoC package joules per acknowledged change over the timed window (includes the
+    /// idle draw of the package; see the run's idle window for the counterfactual).
+    #[serde(default)]
+    pub pkg_j_per_op: Option<f64>,
+    /// S3 only: group commit counters.
+    #[serde(default)]
+    pub group_commit: Option<GroupCommitStats>,
 }
 
 /// `du -s -c` (apparent with `-b`, allocated with `-B1`) over `paths`; returns the total.
@@ -288,8 +313,11 @@ struct SynapseSubmitOk {
 }
 
 /// One Synapse submit through the wire approximation and the shared service lock.
+/// With `group`, the service lock covers only admission and path indexing and the
+/// store commit goes through group commit.
 pub fn synapse_submit(
     service: &Mutex<SynapseService>,
+    group: Option<&SharedStore>,
     agent: &AgentIdentity,
     repo_id: &RepoId,
     base_oid: GitOid,
@@ -300,12 +328,32 @@ pub fn synapse_submit(
     let req = synapse_arm::build_submit_request(agent, repo_id, base_oid, p, label, now)?;
     let (decoded, wire_bytes): (AuthenticatedRequest<SubmitChangesetPayload>, usize) =
         synapse_arm::wire_roundtrip(&req)?;
-    let wait_start = Instant::now();
-    let mut guard = service
-        .lock()
-        .map_err(|_| "synapse service mutex poisoned".to_string())?;
-    let queue_wait_us = wait_start.elapsed().as_micros() as u64;
-    let outcome = guard.submit(&decoded, now).map_err(|e| e.to_string())?;
+    let lock = || {
+        let wait_start = Instant::now();
+        let guard = service
+            .lock()
+            .map_err(|_| "synapse service mutex poisoned".to_string())?;
+        Ok::<_, String>((guard, wait_start.elapsed().as_micros() as u64))
+    };
+    let (mut guard, mut queue_wait_us) = lock()?;
+    let outcome = match group {
+        None => guard.submit(&decoded, now).map_err(|e| e.to_string())?,
+        Some(store) => {
+            guard
+                .admit_submit(&decoded, now)
+                .map_err(|e| e.to_string())?;
+            drop(guard);
+            let env = &decoded.payload.envelope;
+            let outcome = store
+                .submit(env.clone(), &decoded.payload.blobs)
+                .map_err(|e| e.to_string())?;
+            let (g, wait) = lock()?;
+            queue_wait_us += wait;
+            guard = g;
+            guard.index_submitted(&outcome, env);
+            outcome
+        }
+    };
     drop(guard);
     let durability = match outcome {
         IngestOutcome::Committed { durability, .. } => Some(durability),
@@ -318,6 +366,7 @@ pub fn synapse_submit(
 fn run_synapse_agent(
     spec: &WriteCellSpec,
     service: &Mutex<SynapseService>,
+    group: Option<&SharedStore>,
     agent: &AgentIdentity,
     repo_id: &RepoId,
     base_oid: GitOid,
@@ -338,7 +387,7 @@ fn run_synapse_agent(
             p.index
         );
         let start = Instant::now();
-        let res = synapse_submit(service, agent, repo_id, base_oid, p, &label).map(
+        let res = synapse_submit(service, group, agent, repo_id, base_oid, p, &label).map(
             |(queue_wait_us, wire_bytes, durability)| SynapseSubmitOk {
                 queue_wait_us,
                 wire_bytes,
@@ -450,32 +499,62 @@ pub fn run_write_cell(spec: &WriteCellSpec) -> Result<WriteCellResult, String> {
 
     let barrier = Barrier::new(spec.agents + 1);
     let mut final_sync_ms = None;
-    let (setup, after_setup, traces, wall_ms, cpu) = if spec.arm.is_synapse() {
+    let mut group_stats = None;
+    let (setup, after_setup, traces, wall_ms, cpu, energy) = if spec.arm.is_synapse() {
         let setup_start = Instant::now();
         let ids = synapse_arm::issue_identities(spec.seed, spec.agents, crate::unix_now_ms())?;
-        let fsync = if spec.arm == ArmKind::S1 {
-            FsyncPolicy::EveryCommit
-        } else {
-            FsyncPolicy::BatchWindow {
+        let fsync = match spec.arm {
+            ArmKind::S1 => FsyncPolicy::EveryCommit,
+            ArmKind::S3 => FsyncPolicy::GROUP_COMMIT_DEFAULT,
+            _ => FsyncPolicy::BatchWindow {
                 max_records: spec.batch_window_records,
-            }
+            },
+        };
+        // S3: the service keeps auth, base trees and the path index; its own store (in a
+        // separate directory, never written) is unused. The measured store is the
+        // group-commit `SharedStore` in `store_dir`.
+        let (svc_dir, svc_fsync) = if spec.arm == ArmKind::S3 {
+            (
+                spec.cell_dir.join("service-admission"),
+                FsyncPolicy::EveryCommit,
+            )
+        } else {
+            (store_dir.clone(), fsync)
         };
         let mut svc =
-            synapse_arm::open_service(&store_dir, &ids, fsync, RecoveryPolicy::StrictFailClosed)?;
+            synapse_arm::open_service(&svc_dir, &ids, svc_fsync, RecoveryPolicy::StrictFailClosed)?;
+        let group = if spec.arm == ArmKind::S3 {
+            Some(
+                SharedStore::open(
+                    &store_dir,
+                    fsync,
+                    RecoveryPolicy::StrictFailClosed,
+                    StoreLimits::default(),
+                )
+                .map_err(|e| e.to_string())?,
+            )
+        } else {
+            None
+        };
         let base_oid = synapse_arm::register_base(
             &mut svc,
             &spec.base_commit,
             full_base.ok_or("full base missing for Synapse arm")?,
         )?;
         let setup = SetupSummary {
-            description: "open SynapseService, register the base tree held in memory, issue grants"
-                .into(),
+            description: if group.is_some() {
+                "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants"
+            } else {
+                "open SynapseService, register the base tree held in memory, issue grants"
+            }
+            .into(),
             units: 1,
             total_ms: round3(setup_start.elapsed().as_secs_f64() * 1000.0),
             per_unit: None,
         };
         let service = Mutex::new(svc);
         let after_setup = du_total(&measured)?;
+        let energy_window = EnergyWindow::start();
         let window = RusageWindow::start()?;
         let epoch = Instant::now();
         let traces: Vec<OpTrace> = std::thread::scope(|s| {
@@ -485,9 +564,10 @@ pub fn run_write_cell(spec: &WriteCellSpec) -> Result<WriteCellResult, String> {
                 .zip(workload.iter())
                 .map(|(agent, props)| {
                     let (service, barrier, repo_id) = (&service, &barrier, &ids.repo_id);
+                    let group = group.as_ref();
                     s.spawn(move || {
                         run_synapse_agent(
-                            spec, service, agent, repo_id, base_oid, props, barrier, epoch,
+                            spec, service, group, agent, repo_id, base_oid, props, barrier, epoch,
                         )
                     })
                 })
@@ -513,7 +593,9 @@ pub fn run_write_cell(spec: &WriteCellSpec) -> Result<WriteCellResult, String> {
         }
         let wall_ms = epoch.elapsed().as_secs_f64() * 1000.0;
         let cpu = window.finish()?;
-        (setup, after_setup, traces, wall_ms, cpu)
+        let energy = energy_window.finish();
+        group_stats = group.as_ref().map(SharedStore::stats);
+        (setup, after_setup, traces, wall_ms, cpu, energy)
     } else {
         let config: &[(&str, &str)] = if spec.arm == ArmKind::G3F {
             FSYNC_ALL_CONFIG
@@ -568,6 +650,7 @@ pub fn run_write_cell(spec: &WriteCellSpec) -> Result<WriteCellResult, String> {
             per_unit: summarize_us(&samples),
         };
         let after_setup = du_total(&measured)?;
+        let energy_window = EnergyWindow::start();
         let window = RusageWindow::start()?;
         let epoch = Instant::now();
         let traces: Vec<OpTrace> = std::thread::scope(|s| {
@@ -590,7 +673,8 @@ pub fn run_write_cell(spec: &WriteCellSpec) -> Result<WriteCellResult, String> {
         .collect();
         let wall_ms = epoch.elapsed().as_secs_f64() * 1000.0;
         let cpu = window.finish()?;
-        (setup, after_setup, traces, wall_ms, cpu)
+        let energy = energy_window.finish();
+        (setup, after_setup, traces, wall_ms, cpu, energy)
     };
 
     let after_ops = du_total(&measured)?;
@@ -669,5 +753,11 @@ pub fn run_write_cell(spec: &WriteCellSpec) -> Result<WriteCellResult, String> {
         storage,
         durability_receipts: receipts,
         first_errors,
+        pkg_j_per_op: energy
+            .pkg_j
+            .filter(|_| ops_ok > 0)
+            .map(|j| j / ops_ok as f64),
+        energy: Some(energy),
+        group_commit: group_stats,
     })
 }

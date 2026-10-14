@@ -16,7 +16,9 @@
 
 pub mod conflict;
 pub mod conformance;
+pub mod energy;
 pub mod fixture;
+pub mod floor;
 pub mod git_arm;
 pub mod gitcmd;
 pub mod host;

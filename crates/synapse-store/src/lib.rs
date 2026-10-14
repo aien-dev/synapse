@@ -23,6 +23,13 @@ use synapse_core::{
     SynapseResult, WalSeq,
 };
 
+#[cfg(test)]
+mod group_tests;
+mod shared;
+pub mod wal2;
+
+pub use shared::{GroupCommitStats, SharedStore};
+
 /// Magic bytes for a Synapse WAL frame (`b"SWAL"`).
 pub const WAL_MAGIC: [u8; 4] = *b"SWAL";
 
@@ -39,7 +46,37 @@ pub const DOMAIN_WAL_FRAME_V1: &[u8] = b"SYNAPSE_WAL_FRAME_V1\0";
 pub const CHECKPOINT_VERSION: u16 = 1;
 
 /// Castagnoli CRC-32C (`0x82F63B78` reflected polynomial).
+///
+/// Uses the Arm `crc` instructions when the CPU has them (detected at run time) and the
+/// portable bitwise loop otherwise. Both produce identical values (tested).
 pub fn crc32c(bytes: &[u8]) -> u32 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("crc") {
+            // SAFETY: the `crc` target feature was detected at run time.
+            return unsafe { crc32c_aarch64(bytes) };
+        }
+    }
+    crc32c_portable(bytes)
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "crc")]
+unsafe fn crc32c_aarch64(bytes: &[u8]) -> u32 {
+    use std::arch::aarch64::{__crc32cb, __crc32cd};
+    let mut crc: u32 = !0;
+    let (chunks, rest) = bytes.as_chunks::<8>();
+    for c in chunks {
+        crc = __crc32cd(crc, u64::from_le_bytes(*c));
+    }
+    for &b in rest {
+        crc = __crc32cb(crc, b);
+    }
+    !crc
+}
+
+/// Portable bitwise CRC-32C (reference implementation).
+pub fn crc32c_portable(bytes: &[u8]) -> u32 {
     let mut crc: u32 = !0;
     for &b in bytes {
         crc ^= u32::from(b);
@@ -61,6 +98,31 @@ pub enum FsyncPolicy {
     /// commits (or on explicit `sync()`). Survives user-space process crashes once written
     /// to the kernel page cache, but does not claim physical power-loss durability until synced.
     BatchWindow { max_records: u32 },
+    /// Group commit with the same guarantee as `EveryCommit` (`FsyncBeforeAck`): records
+    /// go to WAL v2 (`wal.v2.log`, blobs stored inline), and every batch of up to
+    /// `max_batch_records` records is made durable with one write and one `fdatasync`
+    /// into pre-written log space before any record in it is acknowledged. Concurrent
+    /// submitters batch through [`SharedStore`]; the leader waits at most
+    /// `max_batch_delay_us` microseconds for a batch to fill (0 = natural batching only:
+    /// whatever queued while the previous batch was syncing). Opening a store with this
+    /// policy switches it to WAL v2 permanently (a marker frame in `wal.log` makes older
+    /// binaries refuse the store instead of missing commits).
+    GroupCommit {
+        max_batch_records: u32,
+        max_batch_delay_us: u32,
+    },
+}
+
+impl FsyncPolicy {
+    /// Group commit with natural batching and at most 256 records per batch.
+    pub const GROUP_COMMIT_DEFAULT: Self = Self::GroupCommit {
+        max_batch_records: 256,
+        max_batch_delay_us: 0,
+    };
+
+    fn is_group_commit(&self) -> bool {
+        matches!(self, Self::GroupCommit { .. })
+    }
 }
 
 /// Tested vs hardware durability classification attached to commit receipts.
@@ -95,6 +157,15 @@ pub struct StoreLimits {
     pub max_total_changeset_bytes: u64,
     pub max_inflight_admissions: usize,
     pub default_retention_window_ms: u64,
+    /// WAL v2 only: bytes of zero-filled, synced log space kept ahead of the write
+    /// position. Extending it costs one `sync_all` (journal commit) per extension, so a
+    /// larger value moves that cost out of more commits.
+    #[serde(default = "default_wal_prealloc_bytes")]
+    pub wal_prealloc_bytes: u64,
+}
+
+fn default_wal_prealloc_bytes() -> u64 {
+    64 * 1024 * 1024
 }
 
 impl Default for StoreLimits {
@@ -105,6 +176,7 @@ impl Default for StoreLimits {
             max_total_changeset_bytes: 64 * 1024 * 1024, // 64 MiB per changeset
             max_inflight_admissions: 64,
             default_retention_window_ms: 3_600_000, // 1 hour default speculative retention
+            wal_prealloc_bytes: default_wal_prealloc_bytes(),
         }
     }
 }
@@ -128,7 +200,25 @@ pub enum FaultInjection {
     InjectNextWalSequenceGap,
     /// Write the next WAL frame with duplicate `seq` (reusing the current `committed_seq`).
     InjectDuplicateWalSequence,
+    /// WAL v2: write only the first `bytes_written` bytes of the next batch, then fail the
+    /// write. The batch extent is rolled back (zeroed and synced); nothing is acknowledged.
+    FailNextBatchWrite { bytes_written: usize },
+    /// WAL v2: write the next batch completely, then report an `fdatasync` failure. The
+    /// batch is rolled back; nothing is acknowledged.
+    FailNextBatchSync,
+    /// WAL v2: as `FailNextBatchSync`, and the rollback fails too. The store refuses all
+    /// further writes until it is reopened (poisoned).
+    FailNextBatchSyncAndRollback,
+    /// WAL v2: write the first `bytes_written` bytes of the next batch, then terminate the
+    /// process with exit code [`FAULT_CRASH_EXIT_CODE`] (crash in the middle of a batch).
+    CrashMidBatchWrite { bytes_written: usize },
+    /// WAL v2: write the whole next batch without syncing, then terminate the process with
+    /// exit code [`FAULT_CRASH_EXIT_CODE`].
+    CrashBeforeBatchSync,
 }
+
+/// Exit code used by the process-terminating fault injections.
+pub const FAULT_CRASH_EXIT_CODE: i32 = 42;
 
 /// Review verdict attached to a committed changeset.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -266,6 +356,99 @@ pub struct SynapseStore {
     github_projections: BTreeMap<u64, GitHubPullRequestProjection>,
     canonical_heads: BTreeMap<RepoId, RadicleCanonicalHead>,
     torn_frames_truncated_on_open: usize,
+    /// True once `wal.log` ends with the WAL v2 marker: all new frames go to `wal.v2.log`.
+    v2_mode: bool,
+    /// WAL v2 writer (taken out by the group-commit leader while it writes a batch).
+    wal_v2: Option<wal2::WalV2Writer>,
+    /// Read handle on `wal.v2.log` for inline blob reads.
+    wal_v2_reader: Option<File>,
+    /// End of the valid WAL v2 log found by recovery.
+    wal_v2_recovered_end: u64,
+    /// Inline blob locations in `wal.v2.log`: digest to (absolute offset, length).
+    blob_locations: BTreeMap<BlobDigest, (u64, u32)>,
+    /// Set when a failed batch could not be rolled back: every write is refused until reopen.
+    poisoned: Option<String>,
+}
+
+/// One upsert check from ingest step 7, evaluated in mutation order.
+#[derive(Debug, Clone)]
+enum UpsertCheck {
+    /// The provided blob has a different size than the mutation declares.
+    SizeMismatch(SynapseError),
+    /// The blob was not provided, so it must already be committed.
+    MustBeVisible { digest: BlobDigest, path: String },
+}
+
+/// Stateless half of an ingest, computed without any store lock (signature check,
+/// blob digests, limits, and for WAL v2 the encoded payload with its SHA-256 and CRC-32C).
+/// Errors from these checks are deferred so that the stateful half reports refusals in
+/// exactly the same order as [`SynapseStore::ingest_changeset`] always has.
+#[derive(Debug, Clone)]
+pub struct PreparedIngest {
+    envelope: ChangesetEnvelope,
+    changeset_id: ChangesetId,
+    path_count_error: Option<SynapseError>,
+    blob_error: Option<SynapseError>,
+    upsert_checks: Vec<UpsertCheck>,
+    new_blobs: Vec<BlobDigest>,
+    /// Provided blobs, unique and in digest order (v1 writes all of them as files).
+    provided: Vec<(BlobDigest, Vec<u8>)>,
+    encoded: Option<wal2::EncodedRecord>,
+}
+
+impl PreparedIngest {
+    /// Changeset id computed from the validated envelope.
+    pub fn changeset_id(&self) -> ChangesetId {
+        self.changeset_id
+    }
+
+    /// The validated envelope.
+    pub fn envelope(&self) -> &ChangesetEnvelope {
+        &self.envelope
+    }
+
+    fn record(&self) -> WalRecord {
+        WalRecord::ChangesetIngest {
+            envelope: self.envelope.clone(),
+            changeset_id: self.changeset_id,
+            new_blobs: self.new_blobs.clone(),
+        }
+    }
+}
+
+/// Pending (not yet durable) effects of earlier records in the same batch.
+#[derive(Debug, Default)]
+struct BatchOverlay {
+    idempotency: BTreeMap<(RepoId, IdempotencyKey), (WalSeq, ChangesetId)>,
+    changesets: BTreeMap<ChangesetId, RepoId>,
+    blobs: BTreeSet<BlobDigest>,
+}
+
+/// Result of the stateful half of an ingest.
+#[derive(Debug)]
+enum Planned {
+    /// Already committed (or pending in this batch when `depends_on_batch`).
+    Duplicate {
+        wal_seq: WalSeq,
+        changeset_id: ChangesetId,
+        depends_on_batch: bool,
+    },
+    /// Refused (because of a pending record in this batch when `depends_on_batch`).
+    Refused {
+        error: SynapseError,
+        depends_on_batch: bool,
+    },
+    /// Accepted: becomes the next frame.
+    Accept,
+}
+
+/// A WAL v2 batch in flight: the writer and fault taken out of the store, plus the
+/// chain position the batch starts from.
+pub(crate) struct V2Ticket {
+    writer: wal2::WalV2Writer,
+    fault: FaultInjection,
+    base_seq: WalSeq,
+    prev_sha: [u8; 32],
 }
 
 impl SynapseStore {
@@ -301,10 +484,54 @@ impl SynapseStore {
             github_projections: BTreeMap::new(),
             canonical_heads: BTreeMap::new(),
             torn_frames_truncated_on_open: 0,
+            v2_mode: false,
+            wal_v2: None,
+            wal_v2_reader: None,
+            wal_v2_recovered_end: 0,
+            blob_locations: BTreeMap::new(),
+            poisoned: None,
         };
 
         store.recover(recovery_policy)?;
+        if fsync_policy.is_group_commit() {
+            if !store.v2_mode {
+                store.write_v2_marker_append()?;
+            }
+            let path = store.root_dir.join(wal2::WAL_V2_FILE);
+            let writer = wal2::WalV2Writer::open(
+                &path,
+                store.wal_v2_recovered_end,
+                store.limits.wal_prealloc_bytes,
+            )?;
+            store.wal_v2_reader = Some(File::open(&path).map_err(io_err)?);
+            store.wal_v2 = Some(writer);
+        } else if store.v2_mode {
+            return Err(SynapseError::new(
+                RefusalCode::WalVersionUnsupported,
+                "store uses WAL v2 (wal.log ends with the v2 marker); open it with FsyncPolicy::GroupCommit",
+            ));
+        }
         Ok(store)
+    }
+
+    /// True when this store writes WAL v2 (group commit).
+    pub fn is_wal_v2(&self) -> bool {
+        self.v2_mode
+    }
+
+    /// The fsync policy this store was opened with.
+    pub fn fsync_policy(&self) -> FsyncPolicy {
+        self.fsync_policy
+    }
+
+    /// Admission limits.
+    pub fn limits(&self) -> &StoreLimits {
+        &self.limits
+    }
+
+    /// `Some(reason)` when a failed batch could not be rolled back; writes are refused.
+    pub fn poisoned(&self) -> Option<&str> {
+        self.poisoned.as_deref()
     }
 
     /// Return the current committed WAL sequence watermark.
@@ -334,7 +561,11 @@ impl SynapseStore {
 
     /// Explicitly `fsync` (`sync_all`) the WAL file and reset the batch counter.
     pub fn sync_wal(&mut self) -> SynapseResult<()> {
-        if self.wal_path.exists() {
+        if let Some(w) = &self.wal_v2 {
+            // Every v2 batch is already synced before acknowledgment; this is a no-op
+            // apart from the system call.
+            w.sync()?;
+        } else if self.wal_path.exists() {
             let f = OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -363,130 +594,191 @@ impl SynapseStore {
             ));
         }
 
-        // 2. Validate canonical envelope and Ed25519 signature
+        // 2. Validate canonical envelope and Ed25519 signature (the stateless halves of
+        //    steps 4, 6 and 7 are computed here too; their errors are reported in order).
+        let prepared = Self::prepare_ingest(&self.limits, envelope, blobs, self.v2_mode)?;
+        self.ingest_prepared(prepared)
+    }
+
+    /// Stateless half of [`Self::ingest_changeset`]: validates the envelope and signature,
+    /// checks limits and blob digests, and (when `encode_v2`) encodes the WAL v2 payload
+    /// with its SHA-256 and CRC-32C. Needs no store lock, so concurrent submitters run it
+    /// in parallel. Only a validation failure (step 2) is returned here; refusals from
+    /// steps 4, 6 and 7 are deferred to the stateful half so their order is unchanged.
+    pub fn prepare_ingest(
+        limits: &StoreLimits,
+        envelope: ChangesetEnvelope,
+        blobs: &[(BlobDigest, Vec<u8>)],
+        encode_v2: bool,
+    ) -> SynapseResult<PreparedIngest> {
         let changeset_id = envelope.validate()?;
 
-        // 3. Check idempotency index before mutating state
-        let idem_key = (envelope.repo_id.clone(), envelope.idempotency_key);
-        if let Some(&(existing_seq, existing_cs_id)) = self.idempotency_index.get(&idem_key) {
-            if existing_cs_id == changeset_id {
-                return Ok(IngestOutcome::IdempotentDuplicate {
-                    wal_seq: existing_seq,
-                    changeset_id: existing_cs_id,
-                });
-            }
-            return Err(SynapseError::new(
-                RefusalCode::IdempotencyKeyConflict,
-                format!(
-                    "idempotency key {} already bound to changeset {}, cannot rebind to {}",
-                    envelope.idempotency_key.to_hex(),
-                    existing_cs_id,
-                    changeset_id
-                ),
-            ));
-        }
-
-        // 4. Enforce path count and payload size limits
-        if envelope.mutations.len() > self.limits.max_paths_per_changeset {
-            return Err(SynapseError::new(
-                RefusalCode::QuotaTooManyPaths,
-                format!(
-                    "changeset touches {} paths, exceeding limit {}",
-                    envelope.mutations.len(),
-                    self.limits.max_paths_per_changeset
-                ),
-            ));
-        }
-
-        // 5. Verify all parent changesets exist in committed state
-        for parent_id in &envelope.parent_changesets {
-            let parent = self.changesets.get(parent_id).ok_or_else(|| {
+        // 4. Path count limit (deferred).
+        let path_count_error =
+            (envelope.mutations.len() > limits.max_paths_per_changeset).then(|| {
                 SynapseError::new(
-                    RefusalCode::ParentChangesetNotFound,
-                    format!("parent changeset {parent_id} not found"),
+                    RefusalCode::QuotaTooManyPaths,
+                    format!(
+                        "changeset touches {} paths, exceeding limit {}",
+                        envelope.mutations.len(),
+                        limits.max_paths_per_changeset
+                    ),
                 )
-            })?;
-            if parent.envelope.repo_id != envelope.repo_id {
-                return Err(SynapseError::new(
-                    RefusalCode::AuthCrossRepoDenied,
-                    "parent changeset belongs to a different repository",
-                ));
-            }
-        }
+            });
 
-        // 6. Index provided blobs and verify digests and size limits
+        // 6. Index provided blobs and verify digests and size limits (deferred).
         let mut provided_map: BTreeMap<BlobDigest, &[u8]> = BTreeMap::new();
         let mut total_bytes = 0u64;
+        let mut blob_error = None;
         for (declared_digest, bytes) in blobs {
             let len = bytes.len() as u64;
-            if len > self.limits.max_blob_bytes {
-                return Err(SynapseError::new(
+            if len > limits.max_blob_bytes {
+                blob_error = Some(SynapseError::new(
                     RefusalCode::QuotaPayloadTooLarge,
                     format!(
                         "blob size {len} exceeds max_blob_bytes {}",
-                        self.limits.max_blob_bytes
+                        limits.max_blob_bytes
                     ),
                 ));
+                break;
             }
             total_bytes = total_bytes.saturating_add(len);
-            if total_bytes > self.limits.max_total_changeset_bytes {
-                return Err(SynapseError::new(
+            if total_bytes > limits.max_total_changeset_bytes {
+                blob_error = Some(SynapseError::new(
                     RefusalCode::QuotaPayloadTooLarge,
                     format!(
                         "total blob payload {total_bytes} exceeds max_total_changeset_bytes {}",
-                        self.limits.max_total_changeset_bytes
+                        limits.max_total_changeset_bytes
                     ),
                 ));
+                break;
             }
             let actual_digest = BlobDigest::compute(bytes);
             if actual_digest != *declared_digest {
-                return Err(SynapseError::new(
+                blob_error = Some(SynapseError::new(
                     RefusalCode::BlobDigestMismatch,
                     format!(
                         "declared blob digest {} does not match computed {}",
                         declared_digest, actual_digest
                     ),
                 ));
+                break;
             }
             provided_map.insert(*declared_digest, bytes.as_slice());
         }
 
-        // 7. Verify every Upsert mutation has its blob either provided now or already visible
+        // 7. Upsert checks in mutation order (size mismatches and blobs that must already
+        //    be committed; the latter needs store state and is checked later).
+        let mut upsert_checks = Vec::new();
         let mut new_blobs = Vec::new();
-        for m in &envelope.mutations {
-            if let MutationOp::Upsert {
-                blob_digest,
-                size_bytes,
-                ..
-            } = &m.op
-            {
-                if let Some(raw) = provided_map.get(blob_digest) {
-                    if raw.len() as u64 != *size_bytes {
-                        return Err(SynapseError::new(
-                            RefusalCode::BlobDigestMismatch,
-                            format!(
-                                "mutation path {} declared size {} but blob is {} bytes",
-                                m.path,
-                                size_bytes,
-                                raw.len()
-                            ),
-                        ));
+        if blob_error.is_none() {
+            for m in &envelope.mutations {
+                if let MutationOp::Upsert {
+                    blob_digest,
+                    size_bytes,
+                    ..
+                } = &m.op
+                {
+                    if let Some(raw) = provided_map.get(blob_digest) {
+                        if raw.len() as u64 != *size_bytes {
+                            upsert_checks.push(UpsertCheck::SizeMismatch(SynapseError::new(
+                                RefusalCode::BlobDigestMismatch,
+                                format!(
+                                    "mutation path {} declared size {} but blob is {} bytes",
+                                    m.path,
+                                    size_bytes,
+                                    raw.len()
+                                ),
+                            )));
+                        } else {
+                            new_blobs.push(*blob_digest);
+                        }
+                    } else {
+                        upsert_checks.push(UpsertCheck::MustBeVisible {
+                            digest: *blob_digest,
+                            path: m.path.clone(),
+                        });
                     }
-                    new_blobs.push(*blob_digest);
-                } else if !self.blob_first_visible_seq.contains_key(blob_digest) {
-                    return Err(SynapseError::new(
-                        RefusalCode::BlobNotFound,
-                        format!(
-                            "mutation path {} references missing blob {}",
-                            m.path, blob_digest
-                        ),
-                    ));
                 }
             }
         }
 
+        let clean = path_count_error.is_none()
+            && blob_error.is_none()
+            && !upsert_checks
+                .iter()
+                .any(|c| matches!(c, UpsertCheck::SizeMismatch(_)));
+        let mut prepared = PreparedIngest {
+            envelope,
+            changeset_id,
+            path_count_error,
+            blob_error,
+            upsert_checks,
+            new_blobs,
+            provided: Vec::new(),
+            encoded: None,
+        };
+        if encode_v2 {
+            if clean {
+                let mut inline: Vec<(BlobDigest, &[u8])> = Vec::new();
+                for d in &prepared.new_blobs {
+                    if !inline.iter().any(|(x, _)| x == d) {
+                        inline.push((*d, provided_map[d]));
+                    }
+                }
+                prepared.encoded = Some(wal2::encode_record(&prepared.record(), &inline)?);
+            }
+        } else {
+            prepared.provided = provided_map
+                .into_iter()
+                .map(|(d, b)| (d, b.to_vec()))
+                .collect();
+        }
+        Ok(prepared)
+    }
+
+    /// Stateful half of [`Self::ingest_changeset`], committing one prepared changeset
+    /// on its own (one record, one sync).
+    pub fn ingest_prepared(&mut self, prepared: PreparedIngest) -> SynapseResult<IngestOutcome> {
+        self.check_writable()?;
+        match self.plan_ingest(&prepared, &BatchOverlay::default()) {
+            Planned::Duplicate {
+                wal_seq,
+                changeset_id,
+                ..
+            } => {
+                return Ok(IngestOutcome::IdempotentDuplicate {
+                    wal_seq,
+                    changeset_id,
+                })
+            }
+            Planned::Refused { error, .. } => return Err(error),
+            Planned::Accept => {}
+        }
+        let changeset_id = prepared.changeset_id;
+        let record = prepared.record();
+
+        if self.v2_mode {
+            let encoded = prepared.encoded.ok_or_else(|| {
+                SynapseError::new(
+                    RefusalCode::IoFailure,
+                    "changeset was prepared for WAL v1 but the store writes WAL v2",
+                )
+            })?;
+            let mut ticket = self.v2_begin()?;
+            let result = Self::v2_write(&mut ticket, &[&encoded]);
+            let placed = self.v2_finish(ticket, result)?;
+            self.apply_v2_ingest(&placed[0], record, &encoded.inline);
+            return Ok(IngestOutcome::Committed {
+                wal_seq: placed[0].seq,
+                changeset_id,
+                frame_sha256: placed[0].frame_sha256,
+                durability: DurabilityGuarantee::FsyncBeforeAck,
+            });
+        }
+
         // 8. Write all provided blobs to the content-addressed store BEFORE appending the WAL frame
-        for (digest, raw) in &provided_map {
+        for (digest, raw) in &prepared.provided {
             self.write_blob_file(*digest, raw)?;
         }
 
@@ -499,11 +791,6 @@ impl SynapseStore {
         }
 
         // 9. Append the WAL frame
-        let record = WalRecord::ChangesetIngest {
-            envelope: envelope.clone(),
-            changeset_id,
-            new_blobs: new_blobs.clone(),
-        };
         let (wal_seq, frame_sha256, durability) = self.append_wal_record(&record)?;
 
         // 10. Advance in-memory visibility atomically with `wal_seq`
@@ -515,6 +802,295 @@ impl SynapseStore {
             frame_sha256,
             durability,
         })
+    }
+
+    /// Stateful checks of an ingest (steps 3, 4, 5, 6, 7 in the original order) against
+    /// committed state plus the not-yet-durable records earlier in the same batch.
+    fn plan_ingest(&self, p: &PreparedIngest, overlay: &BatchOverlay) -> Planned {
+        // 3. Idempotency
+        let idem_key = (p.envelope.repo_id.clone(), p.envelope.idempotency_key);
+        let (existing, mut dep) = match self.idempotency_index.get(&idem_key) {
+            Some(v) => (Some(*v), false),
+            None => (overlay.idempotency.get(&idem_key).copied(), true),
+        };
+        if let Some((existing_seq, existing_cs_id)) = existing {
+            if existing_cs_id == p.changeset_id {
+                return Planned::Duplicate {
+                    wal_seq: existing_seq,
+                    changeset_id: existing_cs_id,
+                    depends_on_batch: dep,
+                };
+            }
+            return Planned::Refused {
+                error: SynapseError::new(
+                    RefusalCode::IdempotencyKeyConflict,
+                    format!(
+                        "idempotency key {} already bound to changeset {}, cannot rebind to {}",
+                        p.envelope.idempotency_key.to_hex(),
+                        existing_cs_id,
+                        p.changeset_id
+                    ),
+                ),
+                depends_on_batch: dep,
+            };
+        }
+        dep = false;
+        let refuse = |error: SynapseError, dep: bool| Planned::Refused {
+            error,
+            depends_on_batch: dep,
+        };
+
+        // 4. Path count
+        if let Some(e) = &p.path_count_error {
+            return refuse(e.clone(), dep);
+        }
+
+        // 5. Parents must be committed (or earlier in this batch)
+        for parent_id in &p.envelope.parent_changesets {
+            let parent_repo = if let Some(parent) = self.changesets.get(parent_id) {
+                &parent.envelope.repo_id
+            } else if let Some(repo) = overlay.changesets.get(parent_id) {
+                dep = true;
+                repo
+            } else {
+                return refuse(
+                    SynapseError::new(
+                        RefusalCode::ParentChangesetNotFound,
+                        format!("parent changeset {parent_id} not found"),
+                    ),
+                    dep,
+                );
+            };
+            if parent_repo != &p.envelope.repo_id {
+                return refuse(
+                    SynapseError::new(
+                        RefusalCode::AuthCrossRepoDenied,
+                        "parent changeset belongs to a different repository",
+                    ),
+                    dep,
+                );
+            }
+        }
+
+        // 6. Blob sizes and digests
+        if let Some(e) = &p.blob_error {
+            return refuse(e.clone(), dep);
+        }
+
+        // 7. Upserts: provided with the right size, or already committed
+        for c in &p.upsert_checks {
+            match c {
+                UpsertCheck::SizeMismatch(e) => return refuse(e.clone(), dep),
+                UpsertCheck::MustBeVisible { digest, path } => {
+                    if self.blob_first_visible_seq.contains_key(digest) {
+                        continue;
+                    }
+                    if overlay.blobs.contains(digest) {
+                        dep = true;
+                        continue;
+                    }
+                    return refuse(
+                        SynapseError::new(
+                            RefusalCode::BlobNotFound,
+                            format!("mutation path {path} references missing blob {digest}"),
+                        ),
+                        dep,
+                    );
+                }
+            }
+        }
+        Planned::Accept
+    }
+
+    fn check_writable(&self) -> SynapseResult<()> {
+        match &self.poisoned {
+            Some(reason) => Err(SynapseError::new(
+                RefusalCode::IoFailure,
+                format!("store refuses writes until it is reopened: {reason}"),
+            )),
+            None => Ok(()),
+        }
+    }
+
+    /// Take the WAL v2 writer and the pending fault for one batch.
+    pub(crate) fn v2_begin(&mut self) -> SynapseResult<V2Ticket> {
+        self.check_writable()?;
+        let writer = self.wal_v2.take().ok_or_else(|| {
+            SynapseError::new(RefusalCode::IoFailure, "WAL v2 writer is not available")
+        })?;
+        Ok(V2Ticket {
+            writer,
+            fault: std::mem::replace(&mut self.fault_injection, FaultInjection::None),
+            base_seq: self.committed_seq,
+            prev_sha: self.last_frame_sha256,
+        })
+    }
+
+    /// Build one batch from `records` and make it durable (one write, one `fdatasync`).
+    /// Needs no store lock: the ticket owns the writer and the chain position.
+    pub(crate) fn v2_write(
+        ticket: &mut V2Ticket,
+        records: &[&wal2::EncodedRecord],
+    ) -> Result<Vec<wal2::PlacedFrame>, wal2::BatchFailure> {
+        use wal2::{BatchIoFault as Io, FrameFault as Fr};
+        let first_len = records.first().map_or(0, |r| r.payload.len());
+        let (frame_fault, io_fault) = match ticket.fault {
+            FaultInjection::None => (Fr::None, Io::None),
+            FaultInjection::CrashAfterBlobWriteBeforeWalAppend => {
+                return Err(wal2::BatchFailure::RolledBack(SynapseError::new(
+                    RefusalCode::IoFailure,
+                    "injected fault: crash before WAL v2 batch write",
+                )))
+            }
+            FaultInjection::TornWalHeaderWrite { bytes_written } => (
+                Fr::None,
+                Io::TornThenStop {
+                    bytes_written: wal2::WAL_V2_BATCH_HEADER_LEN
+                        + bytes_written.min(WAL_HEADER_LEN - 1),
+                },
+            ),
+            FaultInjection::TornWalPayloadWrite { bytes_written } => (
+                Fr::None,
+                Io::TornThenStop {
+                    bytes_written: wal2::WAL_V2_BATCH_HEADER_LEN
+                        + WAL_HEADER_LEN
+                        + bytes_written.min(first_len.saturating_sub(1)),
+                },
+            ),
+            FaultInjection::CorruptNextWalCrc => (Fr::CorruptCrc, Io::None),
+            FaultInjection::CorruptNextWalChain => (Fr::CorruptChain, Io::None),
+            FaultInjection::InjectNextWalSequenceGap => (Fr::SequenceGap, Io::None),
+            FaultInjection::InjectDuplicateWalSequence => (Fr::DuplicateSequence, Io::None),
+            FaultInjection::FailNextBatchWrite { bytes_written } => {
+                (Fr::None, Io::FailWrite { bytes_written })
+            }
+            FaultInjection::FailNextBatchSync => (Fr::None, Io::FailSync),
+            FaultInjection::FailNextBatchSyncAndRollback => (Fr::None, Io::FailSyncAndRollback),
+            FaultInjection::CrashMidBatchWrite { bytes_written } => (
+                Fr::None,
+                Io::CrashAfterBytes {
+                    bytes_written,
+                    code: FAULT_CRASH_EXIT_CODE,
+                },
+            ),
+            FaultInjection::CrashBeforeBatchSync => (
+                Fr::None,
+                Io::CrashBeforeSync {
+                    code: FAULT_CRASH_EXIT_CODE,
+                },
+            ),
+        };
+        let capacity = wal2::WAL_V2_BATCH_HEADER_LEN
+            + records
+                .iter()
+                .map(|r| WAL_HEADER_LEN + r.payload.len())
+                .sum::<usize>();
+        let mut builder = wal2::BatchBuilder::new(ticket.writer.write_offset, capacity);
+        let mut seq = ticket.base_seq;
+        let mut prev = ticket.prev_sha;
+        let mut placed = Vec::with_capacity(records.len());
+        for (i, r) in records.iter().enumerate() {
+            seq = seq.next();
+            let fault = if i == 0 { frame_fault } else { Fr::None };
+            let p = builder.push(seq, prev, r, fault);
+            prev = p.frame_sha256;
+            placed.push(p);
+        }
+        let buf = builder.finish();
+        ticket.writer.write_batch(&buf, io_fault)?;
+        Ok(placed)
+    }
+
+    /// Return the writer to the store and advance the chain after a durable batch.
+    /// On failure nothing advances; an unrecoverable failure poisons the store.
+    pub(crate) fn v2_finish(
+        &mut self,
+        ticket: V2Ticket,
+        result: Result<Vec<wal2::PlacedFrame>, wal2::BatchFailure>,
+    ) -> SynapseResult<Vec<wal2::PlacedFrame>> {
+        self.wal_v2 = Some(ticket.writer);
+        match result {
+            Ok(placed) => {
+                if let Some(last) = placed.last() {
+                    self.committed_seq = last.seq;
+                    self.last_frame_sha256 = last.frame_sha256;
+                }
+                Ok(placed)
+            }
+            Err(wal2::BatchFailure::RolledBack(e)) => Err(e),
+            Err(wal2::BatchFailure::Poisoned(e)) => {
+                self.poisoned = Some(e.message.clone());
+                Err(e)
+            }
+        }
+    }
+
+    /// Make a durable WAL v2 ingest frame visible: inline blob locations, then state.
+    pub(crate) fn apply_v2_ingest(
+        &mut self,
+        placed: &wal2::PlacedFrame,
+        record: WalRecord,
+        inline: &[(BlobDigest, u32, u32)],
+    ) {
+        for &(digest, off, len) in inline {
+            self.blob_locations
+                .entry(digest)
+                .or_insert((placed.payload_offset + u64::from(off), len));
+        }
+        self.apply_record(placed.seq, record);
+    }
+
+    fn read_inline_blob(&self, digest: BlobDigest, off: u64, len: u32) -> SynapseResult<Vec<u8>> {
+        use std::os::unix::fs::FileExt;
+        let f = self.wal_v2_reader.as_ref().ok_or_else(|| {
+            SynapseError::new(
+                RefusalCode::BlobNotFound,
+                "WAL v2 log is not open for reads",
+            )
+        })?;
+        let mut bytes = vec![0u8; len as usize];
+        f.read_exact_at(&mut bytes, off).map_err(|e| {
+            SynapseError::new(
+                RefusalCode::BlobNotFound,
+                format!("read inline blob {digest} from wal.v2.log: {e}"),
+            )
+        })?;
+        let computed = BlobDigest::compute(&bytes);
+        if computed != digest {
+            return Err(SynapseError::new(
+                RefusalCode::BlobDigestMismatch,
+                format!("on-disk inline blob corruption for {digest}: computed {computed}"),
+            ));
+        }
+        Ok(bytes)
+    }
+
+    /// Append the WAL v2 marker to `wal.log` (switches the store to WAL v2 for good).
+    fn write_v2_marker_append(&mut self) -> SynapseResult<()> {
+        let header = v2_marker_header(self.committed_seq, self.last_frame_sha256);
+        let mut f = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.wal_path)
+            .map_err(io_err)?;
+        f.write_all(&header).map_err(io_err)?;
+        f.sync_all().map_err(io_err)?;
+        sync_dir(&self.root_dir)?;
+        self.v2_mode = true;
+        Ok(())
+    }
+
+    /// Atomically replace `wal.log` with a file holding only the WAL v2 marker.
+    fn replace_wal_log_with_v2_marker(&self) -> SynapseResult<()> {
+        let header = v2_marker_header(self.committed_seq, self.last_frame_sha256);
+        let tmp = self.root_dir.join("wal.log.tmp");
+        {
+            let mut f = File::create(&tmp).map_err(io_err)?;
+            f.write_all(&header).map_err(io_err)?;
+            f.sync_all().map_err(io_err)?;
+        }
+        fs::rename(&tmp, &self.wal_path).map_err(io_err)?;
+        sync_dir(&self.root_dir)
     }
 
     /// Attach a machine evaluation receipt to an existing changeset.
@@ -675,6 +1251,9 @@ impl SynapseStore {
                 ),
             ));
         }
+        if let Some(&(off, len)) = self.blob_locations.get(&digest) {
+            return self.read_inline_blob(digest, off, len);
+        }
         let path = self.blob_path(digest);
         let bytes = fs::read(&path).map_err(|_| {
             SynapseError::new(
@@ -743,6 +1322,7 @@ impl SynapseStore {
     /// Write an atomic checkpoint, compact `wal.log`, and sweep unreferenced speculative blobs
     /// outside active `GarbageRoot`s.
     pub fn checkpoint_and_compact(&mut self, now_ms: u64) -> SynapseResult<CompactionReport> {
+        self.check_writable()?;
         // 1. Identify garbage roots:
         //    - Canonical head changeset lineages
         //    - Open (non-merged) or merged GitHub PR projection changeset lineages
@@ -798,6 +1378,21 @@ impl SynapseStore {
         self.blob_first_visible_seq
             .retain(|digest, _| retained_blobs.contains(digest));
 
+        // 2b. WAL v2: retained blobs stored inline in `wal.v2.log` become blob files
+        //     (synced) before the checkpoint makes the log disposable.
+        if self.v2_mode {
+            let inline: Vec<(BlobDigest, (u64, u32))> = self
+                .blob_locations
+                .iter()
+                .filter(|(d, _)| retained_blobs.contains(d))
+                .map(|(d, l)| (*d, *l))
+                .collect();
+            for (digest, (off, len)) in inline {
+                let bytes = self.read_inline_blob(digest, off, len)?;
+                self.write_blob_file(digest, &bytes)?;
+            }
+        }
+
         // 3. Persist atomic checkpoint file `checkpoint.v1`
         let manifest = CheckpointManifest {
             version: CHECKPOINT_VERSION,
@@ -842,7 +1437,18 @@ impl SynapseStore {
         sync_dir(&self.root_dir)?;
 
         // 4. Compact `wal.log` (truncate to empty since all state up to `checkpoint_seq` is in `checkpoint.v1`)
-        {
+        if self.v2_mode {
+            // WAL v2: `wal.log` keeps only the marker (so older binaries still refuse the
+            // store), then `wal.v2.log` is emptied and pre-written again.
+            self.replace_wal_log_with_v2_marker()?;
+            self.wal_v2
+                .as_mut()
+                .ok_or_else(|| {
+                    SynapseError::new(RefusalCode::IoFailure, "WAL v2 writer is not available")
+                })?
+                .reset()?;
+            self.blob_locations.clear();
+        } else {
             let f = OpenOptions::new()
                 .create(true)
                 .write(true)
@@ -923,23 +1529,45 @@ impl SynapseStore {
                     format!("on-disk blob {digest} conflicts with immutable content"),
                 ));
             }
+            if self.syncs_blob_files() {
+                // The file may be left over from a crash before its WAL frame (never
+                // synced); make it durable before a frame that references it is.
+                File::open(&final_path)
+                    .and_then(|f| f.sync_all())
+                    .map_err(io_err)?;
+                sync_dir(final_path.parent().expect("blob shard parent"))?;
+            }
             return Ok(());
         }
         let shard_dir = final_path.parent().expect("blob shard parent");
-        fs::create_dir_all(shard_dir).map_err(io_err)?;
+        if !shard_dir.exists() {
+            fs::create_dir_all(shard_dir).map_err(io_err)?;
+            if self.syncs_blob_files() {
+                sync_dir(&self.blobs_dir)?;
+            }
+        }
         let tmp_path = shard_dir.join(format!("{}.tmp.{}", digest.to_hex(), std::process::id()));
         {
             let mut f = File::create(&tmp_path).map_err(io_err)?;
             f.write_all(bytes).map_err(io_err)?;
-            if matches!(self.fsync_policy, FsyncPolicy::EveryCommit) {
+            if self.syncs_blob_files() {
                 f.sync_all().map_err(io_err)?;
             }
         }
         fs::rename(&tmp_path, &final_path).map_err(io_err)?;
-        if matches!(self.fsync_policy, FsyncPolicy::EveryCommit) {
+        if self.syncs_blob_files() {
             sync_dir(shard_dir)?;
         }
         Ok(())
+    }
+
+    /// Blob files are synced under `EveryCommit` and when `GroupCommit` compaction moves
+    /// inline blobs out of the log.
+    fn syncs_blob_files(&self) -> bool {
+        matches!(
+            self.fsync_policy,
+            FsyncPolicy::EveryCommit | FsyncPolicy::GroupCommit { .. }
+        )
     }
 
     fn sweep_unreferenced_blobs(
@@ -981,6 +1609,17 @@ impl SynapseStore {
         &mut self,
         record: &WalRecord,
     ) -> SynapseResult<(WalSeq, [u8; 32], DurabilityGuarantee)> {
+        if self.v2_mode {
+            let encoded = wal2::encode_record(record, &[])?;
+            let mut ticket = self.v2_begin()?;
+            let result = Self::v2_write(&mut ticket, &[&encoded]);
+            let placed = self.v2_finish(ticket, result)?;
+            return Ok((
+                placed[0].seq,
+                placed[0].frame_sha256,
+                DurabilityGuarantee::FsyncBeforeAck,
+            ));
+        }
         let payload = serde_json::to_vec(record).map_err(|e| {
             SynapseError::new(RefusalCode::IoFailure, format!("serialize WAL record: {e}"))
         })?;
@@ -1050,7 +1689,9 @@ impl SynapseStore {
         }
 
         let durability = match self.fsync_policy {
-            FsyncPolicy::EveryCommit => {
+            // GroupCommit stores always write WAL v2 (handled above); syncing here keeps
+            // the guarantee if that invariant were ever broken.
+            FsyncPolicy::EveryCommit | FsyncPolicy::GroupCommit { .. } => {
                 f.sync_all().map_err(io_err)?;
                 self.unflushed_frames = 0;
                 DurabilityGuarantee::FsyncBeforeAck
@@ -1188,11 +1829,14 @@ impl SynapseStore {
             }
         }
 
-        // 2. Replay wal.log if present
-        if !self.wal_path.exists() {
-            return Ok(());
+        // 2. Replay wal.log (v1 frames, possibly ending in the WAL v2 marker), then wal.v2.log
+        if self.wal_path.exists() {
+            self.recover_v1(recovery_policy)?;
         }
+        self.recover_v2(recovery_policy)
+    }
 
+    fn recover_v1(&mut self, recovery_policy: RecoveryPolicy) -> SynapseResult<()> {
         let mut f = OpenOptions::new()
             .read(true)
             .write(true)
@@ -1218,6 +1862,34 @@ impl SynapseStore {
                 ));
             }
             let version = u16::from_le_bytes(header[4..6].try_into().unwrap());
+            if version == wal2::WAL_V2_VERSION && header[6] == WAL_V2_MARKER_KIND {
+                // WAL v2 marker: the log continues in wal.v2.log. It must be the last
+                // frame, continue the chain without advancing it, and hash correctly.
+                if offset + WAL_HEADER_LEN as u64 != file_len {
+                    return Err(SynapseError::new(
+                        RefusalCode::WalMagicInvalid,
+                        format!("unexpected bytes after the WAL v2 marker at offset {offset}"),
+                    ));
+                }
+                let seq = WalSeq(u64::from_le_bytes(header[8..16].try_into().unwrap()));
+                if seq != self.committed_seq {
+                    return Err(SynapseError::new(
+                        RefusalCode::WalSequenceGap,
+                        format!(
+                            "WAL v2 marker at {seq} does not follow committed {}",
+                            self.committed_seq
+                        ),
+                    ));
+                }
+                if header != v2_marker_header(self.committed_seq, self.last_frame_sha256) {
+                    return Err(SynapseError::new(
+                        RefusalCode::WalChainMismatch,
+                        format!("WAL v2 marker at offset {offset} does not match the chain"),
+                    ));
+                }
+                self.v2_mode = true;
+                break;
+            }
             if version != WAL_VERSION {
                 return Err(SynapseError::new(
                     RefusalCode::WalVersionUnsupported,
@@ -1327,6 +1999,104 @@ impl SynapseStore {
         Ok(())
     }
 
+    /// Replay `wal.v2.log`: whole batches only (all frames valid or none applied).
+    fn recover_v2(&mut self, recovery_policy: RecoveryPolicy) -> SynapseResult<()> {
+        let path = self.root_dir.join(wal2::WAL_V2_FILE);
+        if !path.exists() {
+            return Ok(());
+        }
+        let buf = fs::read(&path).map_err(io_err)?;
+        if !self.v2_mode {
+            if buf.iter().any(|b| *b != 0) {
+                return Err(SynapseError::new(
+                    RefusalCode::WalVersionUnsupported,
+                    "wal.v2.log holds data but wal.log does not end with the WAL v2 marker",
+                ));
+            }
+            return Ok(());
+        }
+        let hlen = wal2::WAL_V2_BATCH_HEADER_LEN;
+        let mut off = 0usize;
+        while off < buf.len() {
+            let header_end = (off + hlen).min(buf.len());
+            let header_zero = buf[off..header_end].iter().all(|b| *b == 0);
+            if header_zero && buf[off..].iter().all(|b| *b == 0) {
+                break; // clean end of the log
+            }
+            let result = if header_zero {
+                Err(SynapseError::new(
+                    RefusalCode::WalTornFrame,
+                    format!("non-zero bytes after an empty WAL v2 batch header at {off}"),
+                ))
+            } else {
+                wal2::validate_batch(&buf, off, self.committed_seq.next(), self.last_frame_sha256)
+            };
+            match result {
+                Ok((frames, next)) => {
+                    for fr in frames {
+                        if let WalRecord::ChangesetIngest { envelope, .. } = &fr.record {
+                            for m in &envelope.mutations {
+                                if let MutationOp::Upsert { blob_digest, .. } = &m.op {
+                                    let inline = fr.inline.iter().any(|(d, _, _)| d == blob_digest);
+                                    if inline || self.blob_locations.contains_key(blob_digest) {
+                                        continue;
+                                    }
+                                    let raw = fs::read(self.blob_path(*blob_digest)).map_err(|_| {
+                                        SynapseError::new(
+                                            RefusalCode::BlobNotFound,
+                                            format!("committed blob {blob_digest} missing during WAL v2 replay"),
+                                        )
+                                    })?;
+                                    if BlobDigest::compute(&raw) != *blob_digest {
+                                        return Err(SynapseError::new(
+                                            RefusalCode::BlobDigestMismatch,
+                                            format!("committed blob {blob_digest} corrupt during WAL v2 replay"),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        for &(d, abs, len) in &fr.inline {
+                            self.blob_locations.entry(d).or_insert((abs, len));
+                        }
+                        self.committed_seq = fr.seq;
+                        self.last_frame_sha256 = fr.frame_sha256;
+                        self.apply_record(fr.seq, fr.record);
+                    }
+                    off = next;
+                }
+                Err(e) => {
+                    let torn =
+                        !wal2::valid_batch_after(&buf, off + 1) && wal2::torn_evidence(&buf, off);
+                    if !torn {
+                        return Err(e);
+                    }
+                    match recovery_policy {
+                        RecoveryPolicy::StrictFailClosed => {
+                            return Err(SynapseError::new(
+                                RefusalCode::WalTornFrame,
+                                format!("torn WAL v2 batch at byte offset {off}: {}", e.message),
+                            ))
+                        }
+                        RecoveryPolicy::TruncateTornTail => {
+                            use std::os::unix::fs::FileExt;
+                            let last_nonzero = buf.iter().rposition(|b| *b != 0).unwrap_or(off);
+                            let end = wal2::align_up(last_nonzero as u64 + 1) as usize;
+                            let f = OpenOptions::new().write(true).open(&path).map_err(io_err)?;
+                            f.write_all_at(&vec![0u8; end - off], off as u64)
+                                .map_err(io_err)?;
+                            f.sync_data().map_err(io_err)?;
+                            self.torn_frames_truncated_on_open += 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        self.wal_v2_recovered_end = off as u64;
+        Ok(())
+    }
+
     fn handle_torn_tail(
         &mut self,
         f: &mut File,
@@ -1347,6 +2117,24 @@ impl SynapseStore {
             }
         }
     }
+}
+
+/// Frame kind of the WAL v2 marker written at the end of `wal.log`.
+const WAL_V2_MARKER_KIND: u8 = 0xFF;
+
+/// The 88-byte WAL v2 marker: v1 header layout with version 2, kind `0xFF`, an empty
+/// payload, `seq` and `prev_frame_sha256` equal to the last committed frame. Binaries
+/// that only know v1 refuse it (`WalVersionUnsupported`) instead of missing v2 commits.
+fn v2_marker_header(seq: WalSeq, prev: [u8; 32]) -> [u8; WAL_HEADER_LEN] {
+    wal2::frame_header(
+        seq,
+        prev,
+        WAL_V2_MARKER_KIND,
+        0,
+        crc32c(&[]),
+        &wal2::payload_digest(&[]),
+    )
+    .0
 }
 
 fn compute_wal_frame_sha256(header_prefix_56: &[u8], payload: &[u8]) -> [u8; 32] {
@@ -1373,7 +2161,7 @@ mod tests {
     use std::process::Command;
     use synapse_core::{FileMode, GitOid, PathMutation, SYNAPSE_ENVELOPE_VERSION};
 
-    fn temp_store_dir(label: &str) -> PathBuf {
+    pub(crate) fn temp_store_dir(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "synapse-store-test-{}-{}-{}",
             label,
@@ -1388,7 +2176,7 @@ mod tests {
         dir
     }
 
-    fn make_signed_changeset(
+    pub(crate) fn make_signed_changeset(
         signing_key: &SigningKey,
         idem_label: &str,
         path: &str,
