@@ -43,7 +43,18 @@ impl SynapseService {
         let payload = &req.payload;
         let tree = self.materialize_virtual_tree(payload.target, payload.snapshot_seq)?;
         let dir = target_dir(&tree, &payload.path)?;
-        CrumbContext::resolve(&dir, |crumb_path| match tree.get(crumb_path) {
+        self.resolve_crumb_context(&tree, &dir, payload.snapshot_seq)
+    }
+
+    /// Resolve the context chain for `dir` in an already materialized `tree`. No
+    /// authorization: callers authorize once before materializing.
+    pub(crate) fn resolve_crumb_context(
+        &self,
+        tree: &BTreeMap<String, VirtualTreeEntry>,
+        dir: &str,
+        snapshot_seq: Option<WalSeq>,
+    ) -> SynapseResult<CrumbContext> {
+        CrumbContext::resolve(dir, |crumb_path| match tree.get(crumb_path) {
             None => Ok(CrumbFile::Missing),
             Some(e) if e.mode == FileMode::Symlink120000 => Ok(CrumbFile::NotRegularFile {
                 blob_digest: e.blob_digest,
@@ -53,7 +64,7 @@ impl SynapseService {
                 size: e.size_bytes,
             }),
             Some(e) => self
-                .read_blob_bytes(e.blob_digest, payload.snapshot_seq)
+                .read_blob_bytes(e.blob_digest, snapshot_seq)
                 .map(CrumbFile::Bytes),
         })
     }

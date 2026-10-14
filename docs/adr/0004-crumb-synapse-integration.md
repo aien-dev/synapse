@@ -83,6 +83,21 @@ This workstream sits at the Phase 7 to Phase 8 boundary: after the AI-native mod
 4. **D4 Evidence receipts.** A receipt binding `ChangesetId`, `CrumbContextDigest`, and the source revision, so evidence states which context it was produced under.
 5. **D5 Combined qualification.** One qualification run over D1 to D4, including forged records and a Git round trip.
 
+### 2.6 Pre-submit advisory (D3) behaviour
+
+`SynapseService::changeset_advisory` is a read beside the submission path, not part of it: it authorizes once under `Capability::Read` and changes nothing in `submit`, `synapse-store` or `synapse-coord`. For each path a changeset would mutate it returns:
+
+* the `CrumbContext` and `CrumbContextDigest` of the path's directory at the base snapshot (a path absent from the base, such as a new file, gets its parent directory);
+* unexpired claims on the path, or on a directory above it, held by agents other than the caller, read from a supplied `CoordStore` with its read-only `sniff` (no lock taken, nothing written). A lock record with no holder is malformed and skipped. Claim keys resolve through a `PathOracle` over the base snapshot, as `crumb claim` resolves them against a checkout. The caller's agent name is self-declared, so it can only hide the caller's own claims. If the store cannot be read, the advisory still answers and says so;
+* overlapping open proposals: visible changesets outside the base's lineage and the canonical head's promoted lineage that mutate the same path or collide as file and directory. Synapse has no other "closed" state for a changeset today, so this is the working definition of open;
+* pending `.crumb` changes: open proposals that mutate the `.crumb` of the path's directory or of any directory above it, whether or not they touch the path itself. Each also adds a guidance note, so a pending rewrite of the guidance is never silent;
+* the context's invariants as guidance notes (nearest crumb first, then inherited), enforced by nothing;
+* two staleness flags, each the path's context digest at the base against the same directory at a later snapshot. `staleness` compares against the snapshot the caller names, or by default the most recently committed visible changeset, promoted or not (`Unknown` when there is none). `canonical_staleness` compares against the changeset the canonical head promotes (`Unknown` when there is none). An unrelated newer proposal can mask a pending `.crumb` rewrite from `staleness`; the pending `.crumb` changes above cannot be masked.
+
+All reads use one pinned snapshot (`snapshot_seq`, default the committed state). The store keeps only the current canonical head, with no history, so the head is used only when the pinned snapshot is the committed state; at an older snapshot the result says `NotAtSnapshot`, the canonical lineage is not settled, and its proposals are reported as open.
+
+A request naming more than 256 paths is refused (`QuotaTooManyPaths`), as are repeated (`PathDuplicate`) and invalid (`PathInvalid`) paths. Nothing in the result blocks or authorizes a submit; Synapse source conflicts stay the only hard refusal at this layer.
+
 ## 3. Consequences
 
 * Agents get the same directory context from a Synapse snapshot as from a Git checkout, with every gap (missing, invalid, unknown dialect) visible.
