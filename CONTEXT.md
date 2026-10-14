@@ -89,7 +89,7 @@ The declared set of paths (later, symbols) a change intends to touch. Every actu
 _Avoid_: diff, touched files after the fact
 
 **ObsolescenceMarker**:
-A signed record that one revision was replaced by zero (pruned), one (rewritten), or several (split) successors. Pruning needs the change's creating chain or one that dominates it. Dependent `Private` and `Draft` revisions without receipts are rebased onto successors lazily, when they are next used.
+A signed record that one revision was replaced by zero (pruned), one (rewritten), or several (split) successors. Pruning needs the change's creating chain or one that dominates it. Dependent `Private` and `Draft` revisions without receipts are rebased onto successors lazily: a read returns a computed view and admits nothing; the rebased revision is admitted only on proposal or at the request of the creating chain.
 _Avoid_: reflog entry, deleted changeset
 
 **RevisionState**:
@@ -169,7 +169,7 @@ One record mapping each linked repository's `repo_id` to its canonical `TreeDige
 _Avoid_: compensating revert, distributed lock
 
 **OwnerRetention**:
-The v2 garbage-collection rule: an owner's revisions, operations, and views are kept while its grant or a lease it holds is live and for a server-clock window after, within a storage quota partitioned down its delegation chain. One owner's write volume never shortens another owner's retention.
+The v2 garbage-collection rule: an owner's revisions, operations, and views are kept while its grant or a lease it holds is live and for a server-clock window after, within a storage quota partitioned down its delegation chain. One owner's write volume never shortens another owner's retention. A final discard, issued only by the owner chain and not undoable, stops the work counting against quota at once and makes it collectable unless another root reaches it.
 _Avoid_: retention counted in WalSeq, client created_at_ms
 
 **CryptographicErasure**:
