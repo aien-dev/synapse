@@ -1,0 +1,15 @@
+# E0 green: same tests after implementing crates/synapse-radicle/src/identity.rs
+# command: cargo test --offline -p synapse-radicle --test e0_identity_document
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running tests/e0_identity_document.rs (target/debug/deps/e0_identity_document-41dfe8eff02347de)
+
+running 6 tests
+test e0_genesis_needs_its_own_threshold_and_a_valid_document ... ok
+test e0_edit_signed_by_fewer_than_threshold_is_refused ... ok
+test e0_edit_signed_by_threshold_applies ... ok
+test e0_edits_chain_and_cannot_be_replayed_or_reordered ... ok
+test e0_removed_executor_later_receipts_are_refused ... ok
+test e0_binary_format_round_trips_and_refuses_malformed_bytes ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
