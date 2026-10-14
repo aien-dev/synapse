@@ -1,0 +1,17 @@
+# J3 green: default build (sha2 with asm, instruction backend selected at run time). 2026-10-14T18:44:36Z
+$ cargo test -p synapse-bench --lib crypto_vectors
+
+running 10 tests
+test crypto_vectors::tests::decoder_refuses_malformed_corpora_with_typed_errors ... ok
+test crypto_vectors::tests::every_length_across_the_block_boundaries_is_in_the_corpus ... ok
+test crypto_vectors::tests::corpus_round_trips_byte_for_byte ... ok
+test crypto_vectors::tests::published_sha256_answers_match_the_rust_crate_and_are_in_the_corpus ... ok
+test crypto_vectors::tests::workspace_sha2_is_built_with_its_aarch64_instruction_backend ... ok
+test crypto_vectors::tests::corpus_pins_the_edge_case_decisions ... ok
+test crypto_vectors::tests::rfc8032_vectors_match_the_rust_crate_and_are_in_the_corpus ... ok
+test crypto_vectors::tests::a0_instruction_code_gives_every_corpus_digest ... ok
+test crypto_vectors::tests::every_corpus_answer_is_the_rust_crates_answer ... ok
+test crypto_vectors::tests::sealed_corpus_matches_the_rust_crates_exactly ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.05s
+

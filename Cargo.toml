@@ -28,7 +28,9 @@ libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha1 = "0.10"
-sha2 = "0.10"
+# `asm` compiles the aarch64 SHA-2 instruction backend (run-time detected, portable
+# fallback) into sha2 0.10; without it aarch64 always uses the software backend (J3).
+sha2 = { version = "0.10", features = ["asm"] }
 synapse-api = { path = "crates/synapse-api" }
 synapse-auth = { path = "crates/synapse-auth" }
 synapse-bench = { path = "crates/synapse-bench" }

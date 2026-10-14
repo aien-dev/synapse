@@ -1,0 +1,7 @@
+# Which SHA-256 code each test binary links: functions containing the sha256h instruction (objdump -d -C).
+# default build:    target/debug/deps/synapse_bench-699bc828b03dbb93
+<core::core_arch::arm_shared::neon::generated::vsha256hq_u32>:
+<sha2::sha256::aarch64::sha256_compress>:
+# force-soft build: target/debug/deps/synapse_bench-7dfd73146ba6fa41
+<core::core_arch::arm_shared::neon::generated::vsha256hq_u32>:
+# (vsha256hq_u32 in both is the A0 probe's own instruction code, bounds::arm; sha2::sha256::aarch64::sha256_compress is the sha2 crate's instruction backend, chosen at run time by cpufeatures when the CPU reports sha2: sha2)
