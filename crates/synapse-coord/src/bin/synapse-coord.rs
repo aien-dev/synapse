@@ -8,6 +8,8 @@
 //!   whisper <from> <dir> <to|-> <message> [priority] [target_file]
 //!   close <agent> <dir> <target> [action] [message]
 //!   sniff <agent> <dir>
+//!
+//! synapse-coord canon <file>   parse a record and print it re-serialized (format parity check)
 
 use std::process::ExitCode;
 use synapse_coord::{
@@ -33,6 +35,19 @@ fn ttl(s: Option<&String>) -> Result<Option<i64>, String> {
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if args.len() == 2 && args[0] == "canon" {
+        return match std::fs::read(&args[1])
+            .ok()
+            .and_then(|b| synapse_coord::json::parse(&b))
+        {
+            Some(j) => {
+                use std::io::Write;
+                let _ = std::io::stdout().write_all(&j.dump());
+                ExitCode::SUCCESS
+            }
+            None => die(format!("{} is not valid JSON", args[1])),
+        };
+    }
     let (mut store, mut top) = (None, None);
     let mut holder = Holder::default();
     let mut no_tree = false;
