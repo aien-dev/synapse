@@ -1,6 +1,6 @@
 # ADR 0003: The AI-Native Source Control Model
 
-* **Status**: Proposed (for the owner's acceptance)
+* **Status**: Accepted (by the orchestrator on 2026-10-14 under the owner's standing direction to build Synapse as the new Git for AI without waiting for sign-off; the owner can reopen it)
 * **Date**: 2026-10-14
 * **Builds on**: [ADR 0002](0002-synapse-first-git-as-bridge.md) (Synapse-first, Git as a bridge, section 2.6 performance rule) and [ADR 0001](0001-synapse-architecture-and-boundaries.md)
 * **Tracking Issue**: [aien-spark/synapse#8](https://github.com/aien-spark/synapse/issues/8) (Phase 7: AI-native model)
