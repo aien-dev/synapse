@@ -345,6 +345,7 @@ dependencies = [
  "sha2",
  "synapse-auth",
  "synapse-core",
+ "synapse-crumb",
  "synapse-store",
 ]
 
