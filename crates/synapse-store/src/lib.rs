@@ -24,10 +24,14 @@ use synapse_core::{
 };
 
 #[cfg(test)]
+mod a1_tests;
+pub mod codec;
+#[cfg(test)]
 mod group_tests;
 mod shared;
 pub mod wal2;
 
+pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
 pub use shared::{GroupCommitStats, SharedStore};
 
 /// Magic bytes for a Synapse WAL frame (`b"SWAL"`).
@@ -162,10 +166,21 @@ pub struct StoreLimits {
     /// larger value moves that cost out of more commits.
     #[serde(default = "default_wal_prealloc_bytes")]
     pub wal_prealloc_bytes: u64,
+    /// Largest WAL record payload the store writes or reads (the frame length cap). A
+    /// frame declaring a longer payload is refused before anything is allocated for it,
+    /// and the writer refuses a record above it, so every written frame stays readable.
+    /// Must exceed `max_total_changeset_bytes` plus envelope metadata (WAL v2 frames carry
+    /// their blobs inline).
+    #[serde(default = "default_max_wal_record_bytes")]
+    pub max_wal_record_bytes: u64,
 }
 
 fn default_wal_prealloc_bytes() -> u64 {
     64 * 1024 * 1024
+}
+
+fn default_max_wal_record_bytes() -> u64 {
+    128 * 1024 * 1024
 }
 
 impl Default for StoreLimits {
@@ -177,6 +192,7 @@ impl Default for StoreLimits {
             max_inflight_admissions: 64,
             default_retention_window_ms: 3_600_000, // 1 hour default speculative retention
             wal_prealloc_bytes: default_wal_prealloc_bytes(),
+            max_wal_record_bytes: default_max_wal_record_bytes(),
         }
     }
 }
@@ -368,6 +384,16 @@ pub struct SynapseStore {
     blob_locations: BTreeMap<BlobDigest, (u64, u32)>,
     /// Set when a failed batch could not be rolled back: every write is refused until reopen.
     poisoned: Option<String>,
+    /// Codec new WAL records are written with (ADR 0003 A1).
+    codec: RecordCodec,
+    /// Chain of the binary checkpoint (`checkpoint.v2`) this store holds.
+    checkpoint_chain: Option<CheckpointChain>,
+    /// The store holds v1 history: a v1 checkpoint or replayed v1 JSON frames.
+    v1_history: bool,
+    /// A binary checkpoint or a binary frame was replayed: v1 JSON frames are refused.
+    binary_seen: bool,
+    /// `checkpoint.v1` is not yet the tombstone although `checkpoint.v2` exists.
+    tombstone_pending: bool,
 }
 
 /// One upsert check from ingest step 7, evaluated in mutation order.
@@ -490,9 +516,17 @@ impl SynapseStore {
             wal_v2_recovered_end: 0,
             blob_locations: BTreeMap::new(),
             poisoned: None,
+            codec: RecordCodec::BinaryV2,
+            checkpoint_chain: None,
+            v1_history: false,
+            binary_seen: false,
+            tombstone_pending: false,
         };
 
         store.recover(recovery_policy)?;
+        if store.tombstone_pending {
+            store.write_v1_tombstone()?;
+        }
         if fsync_policy.is_group_commit() {
             if !store.v2_mode {
                 store.write_v2_marker_append()?;
@@ -512,6 +546,16 @@ impl SynapseStore {
             ));
         }
         Ok(store)
+    }
+
+    /// Codec this store writes new WAL records with (ADR 0003 A1).
+    pub fn record_codec(&self) -> RecordCodec {
+        self.codec
+    }
+
+    /// Chain fields of the binary checkpoint this store holds, if it has one.
+    pub fn checkpoint_chain(&self) -> Option<CheckpointChain> {
+        self.checkpoint_chain
     }
 
     /// True when this store writes WAL v2 (group commit).
@@ -596,20 +640,26 @@ impl SynapseStore {
 
         // 2. Validate canonical envelope and Ed25519 signature (the stateless halves of
         //    steps 4, 6 and 7 are computed here too; their errors are reported in order).
-        let prepared = Self::prepare_ingest(&self.limits, envelope, blobs, self.v2_mode)?;
+        let prepared = Self::prepare_ingest(
+            &self.limits,
+            envelope,
+            blobs,
+            self.v2_mode.then_some(self.codec),
+        )?;
         self.ingest_prepared(prepared)
     }
 
     /// Stateless half of [`Self::ingest_changeset`]: validates the envelope and signature,
-    /// checks limits and blob digests, and (when `encode_v2`) encodes the WAL v2 payload
-    /// with its SHA-256 and CRC-32C. Needs no store lock, so concurrent submitters run it
+    /// checks limits and blob digests, and (when `wal_v2_codec` is set) encodes the WAL v2
+    /// payload with that record codec, its SHA-256 and CRC-32C. A store re-encodes it at
+    /// commit if its codec changed in between (migration checkpoint). Needs no store lock, so concurrent submitters run it
     /// in parallel. Only a validation failure (step 2) is returned here; refusals from
     /// steps 4, 6 and 7 are deferred to the stateful half so their order is unchanged.
     pub fn prepare_ingest(
         limits: &StoreLimits,
         envelope: ChangesetEnvelope,
         blobs: &[(BlobDigest, Vec<u8>)],
-        encode_v2: bool,
+        wal_v2_codec: Option<RecordCodec>,
     ) -> SynapseResult<PreparedIngest> {
         let changeset_id = envelope.validate()?;
 
@@ -718,7 +768,7 @@ impl SynapseStore {
             provided: Vec::new(),
             encoded: None,
         };
-        if encode_v2 {
+        if let Some(codec) = wal_v2_codec {
             if clean {
                 let mut inline: Vec<(BlobDigest, &[u8])> = Vec::new();
                 for d in &prepared.new_blobs {
@@ -726,7 +776,7 @@ impl SynapseStore {
                         inline.push((*d, provided_map[d]));
                     }
                 }
-                prepared.encoded = Some(wal2::encode_record(&prepared.record(), &inline)?);
+                prepared.encoded = Some(wal2::encode_record(&prepared.record(), &inline, codec)?);
             }
         } else {
             prepared.provided = provided_map
@@ -739,7 +789,10 @@ impl SynapseStore {
 
     /// Stateful half of [`Self::ingest_changeset`], committing one prepared changeset
     /// on its own (one record, one sync).
-    pub fn ingest_prepared(&mut self, prepared: PreparedIngest) -> SynapseResult<IngestOutcome> {
+    pub fn ingest_prepared(
+        &mut self,
+        mut prepared: PreparedIngest,
+    ) -> SynapseResult<IngestOutcome> {
         self.check_writable()?;
         match self.plan_ingest(&prepared, &BatchOverlay::default()) {
             Planned::Duplicate {
@@ -759,12 +812,8 @@ impl SynapseStore {
         let record = prepared.record();
 
         if self.v2_mode {
-            let encoded = prepared.encoded.ok_or_else(|| {
-                SynapseError::new(
-                    RefusalCode::IoFailure,
-                    "changeset was prepared for WAL v1 but the store writes WAL v2",
-                )
-            })?;
+            self.conform_v2(&mut prepared)?;
+            let encoded = prepared.encoded.expect("conform_v2 checked it");
             let mut ticket = self.v2_begin()?;
             let result = Self::v2_write(&mut ticket, &[&encoded]);
             let placed = self.v2_finish(ticket, result)?;
@@ -776,6 +825,10 @@ impl SynapseStore {
                 durability: DurabilityGuarantee::FsyncBeforeAck,
             });
         }
+
+        // The frame payload is encoded (and checked against the frame cap) before any
+        // blob is written.
+        let payload = self.encode_v1_payload(&record)?;
 
         // 8. Write all provided blobs to the content-addressed store BEFORE appending the WAL frame
         for (digest, raw) in &prepared.provided {
@@ -791,7 +844,8 @@ impl SynapseStore {
         }
 
         // 9. Append the WAL frame
-        let (wal_seq, frame_sha256, durability) = self.append_wal_record(&record)?;
+        let (wal_seq, frame_sha256, durability) =
+            self.append_v1_payload(record.kind_byte(), &payload)?;
 
         // 10. Advance in-memory visibility atomically with `wal_seq`
         self.apply_record(wal_seq, record);
@@ -1315,24 +1369,16 @@ impl SynapseStore {
     /// Compute a deterministic SHA-256 digest of all visible state up to `snapshot_seq`.
     pub fn state_root_digest(&self, snapshot_seq: Option<WalSeq>) -> SynapseResult<[u8; 32]> {
         let snap = self.resolve_snapshot_seq(None, snapshot_seq)?;
-        let mut hasher = Sha256::new();
-        hasher.update(b"SYNAPSE_STATE_ROOT_V1\0");
-        hasher.update(snap.0.to_le_bytes());
-        for (id, cs) in &self.changesets {
-            if cs.committed_seq <= snap {
-                hasher.update(id.0);
-                hasher.update(cs.committed_seq.0.to_le_bytes());
-                hasher.update((cs.evaluations.len() as u32).to_le_bytes());
-                hasher.update((cs.reviews.len() as u32).to_le_bytes());
-            }
-        }
-        Ok(hasher.finalize().into())
+        Ok(codec::state_root_of(&self.changesets, snap))
     }
 
     /// Write an atomic checkpoint, compact `wal.log`, and sweep unreferenced speculative blobs
     /// outside active `GarbageRoot`s.
     pub fn checkpoint_and_compact(&mut self, now_ms: u64) -> SynapseResult<CompactionReport> {
         self.check_writable()?;
+        // The last v1 state root, taken before eviction changes the state (used only by a
+        // v1 store's migration checkpoint).
+        let v1_state_root_at_entry = self.state_root_digest(None)?;
         // 1. Identify garbage roots:
         //    - Canonical head changeset lineages
         //    - Open (non-merged) or merged GitHub PR projection changeset lineages
@@ -1403,53 +1449,55 @@ impl SynapseStore {
             }
         }
 
-        // 3. Persist atomic checkpoint file `checkpoint.v1`. Every logged frame is made
-        //    durable first, so frames the checkpoint covers are never torn if the process
-        //    dies before the logs are emptied (recovery verifies and skips them).
+        // 3. Persist the atomic binary checkpoint `checkpoint.v2`. Every logged frame is
+        //    made durable first, so frames the checkpoint covers are never torn if the
+        //    process dies before the logs are emptied (recovery verifies and skips them).
+        //    The first binary checkpoint records the last v1 state root (or the empty
+        //    root for a store that never wrote v1) and chains its own root to it; every
+        //    later one chains to the previous checkpoint root.
         self.sync_wal()?;
-        let manifest = CheckpointManifest {
-            version: CHECKPOINT_VERSION,
+        let (v1_state_root, prev_checkpoint_root) = match self.checkpoint_chain {
+            Some(c) => (c.v1_state_root, c.checkpoint_root),
+            None if self.v1_history => (v1_state_root_at_entry, v1_state_root_at_entry),
+            None => (codec::empty_state_root(), codec::empty_state_root()),
+        };
+        let state = CheckpointState {
             checkpoint_seq: self.committed_seq,
             anchor_frame_sha256: self.last_frame_sha256,
-            changesets: self
-                .changesets
-                .iter()
-                .map(|(k, v)| (k.to_hex(), v.clone()))
-                .collect(),
-            idempotency_index: self
-                .idempotency_index
-                .iter()
-                .map(|((repo, key), v)| (format!("{}::{}", repo.as_str(), key.to_hex()), *v))
-                .collect(),
-            blob_first_visible_seq: self
-                .blob_first_visible_seq
-                .iter()
-                .map(|(k, v)| (k.to_hex(), *v))
-                .collect(),
-            github_projections: self.github_projections.clone(),
-            canonical_heads: self
-                .canonical_heads
-                .iter()
-                .map(|(k, v)| (k.as_str().to_string(), v.clone()))
-                .collect(),
+            changesets: std::mem::take(&mut self.changesets),
+            idempotency_index: std::mem::take(&mut self.idempotency_index),
+            blob_first_visible_seq: std::mem::take(&mut self.blob_first_visible_seq),
+            github_projections: std::mem::take(&mut self.github_projections),
+            canonical_heads: std::mem::take(&mut self.canonical_heads),
         };
-
-        let encoded = serde_json::to_vec(&manifest).map_err(|e| {
-            SynapseError::new(
+        let encoded = codec::encode_checkpoint_v2(&state, v1_state_root, prev_checkpoint_root);
+        self.changesets = state.changesets;
+        self.idempotency_index = state.idempotency_index;
+        self.blob_first_visible_seq = state.blob_first_visible_seq;
+        self.github_projections = state.github_projections;
+        self.canonical_heads = state.canonical_heads;
+        let (bytes, chain) = encoded?;
+        // Read back what will be written: it must decode to the same chain and root.
+        let (_, check) = codec::decode_checkpoint_v2(&bytes)?;
+        if check != chain || chain.state_root != self.state_root_digest(None)? {
+            return Err(SynapseError::new(
                 RefusalCode::CheckpointCorrupt,
-                format!("serialize checkpoint: {e}"),
-            )
-        })?;
-        let tmp_ckpt = self.root_dir.join("checkpoint.v1.tmp");
-        {
-            let mut f = File::create(&tmp_ckpt).map_err(io_err)?;
-            f.write_all(&encoded).map_err(io_err)?;
-            f.sync_all().map_err(io_err)?;
+                "checkpoint.v2 does not decode back to the state it was written from",
+            ));
         }
-        fs::rename(&tmp_ckpt, &self.checkpoint_path).map_err(io_err)?;
-        sync_dir(&self.root_dir)?;
+        write_file_atomic(
+            &self.root_dir,
+            &self.root_dir.join("checkpoint.v2.tmp"),
+            &self.root_dir.join(codec::CHECKPOINT_V2_FILE),
+            &bytes,
+        )?;
+        self.checkpoint_chain = Some(chain);
+        self.codec = RecordCodec::BinaryV2;
+        self.binary_seen = true;
+        // checkpoint.v1 becomes the tombstone only after checkpoint.v2 is durable.
+        self.write_v1_tombstone()?;
 
-        // 4. Compact `wal.log` (truncate to empty since all state up to `checkpoint_seq` is in `checkpoint.v1`)
+        // 4. Compact `wal.log` (truncate to empty since all state up to `checkpoint_seq` is in `checkpoint.v2`)
         if self.v2_mode {
             // WAL v2: `wal.log` keeps only the marker (so older binaries still refuse the
             // store), then `wal.v2.log` is emptied and pre-written again.
@@ -1618,12 +1666,50 @@ impl SynapseStore {
         Ok(swept)
     }
 
+    /// Refuse a WAL payload above `StoreLimits::max_wal_record_bytes` (replay would refuse it).
+    fn check_frame_cap(&self, payload_len: usize) -> SynapseResult<()> {
+        if payload_len as u64 > self.limits.max_wal_record_bytes {
+            return Err(SynapseError::new(
+                RefusalCode::QuotaPayloadTooLarge,
+                format!(
+                    "WAL record of {payload_len} bytes exceeds max_wal_record_bytes {}",
+                    self.limits.max_wal_record_bytes
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// `record` as a `wal.log` payload in this store's codec, checked against the cap.
+    fn encode_v1_payload(&self, record: &WalRecord) -> SynapseResult<Vec<u8>> {
+        let payload = codec::encode_record_with(record, self.codec)?;
+        self.check_frame_cap(payload.len())?;
+        Ok(payload)
+    }
+
+    /// Bring a prepared WAL v2 payload to this store's codec (it changes once, at the
+    /// migration checkpoint, possibly between prepare and commit) and check the cap.
+    pub(crate) fn conform_v2(&self, p: &mut PreparedIngest) -> SynapseResult<()> {
+        let enc = p.encoded.as_ref().ok_or_else(|| {
+            SynapseError::new(
+                RefusalCode::IoFailure,
+                "changeset was prepared for WAL v1 but the store writes WAL v2",
+            )
+        })?;
+        if enc.codec() != self.codec {
+            let recoded = enc.recode(&p.record(), self.codec)?;
+            p.encoded = Some(recoded);
+        }
+        self.check_frame_cap(p.encoded.as_ref().map_or(0, |e| e.payload.len()))
+    }
+
     fn append_wal_record(
         &mut self,
         record: &WalRecord,
     ) -> SynapseResult<(WalSeq, [u8; 32], DurabilityGuarantee)> {
         if self.v2_mode {
-            let encoded = wal2::encode_record(record, &[])?;
+            let encoded = wal2::encode_record(record, &[], self.codec)?;
+            self.check_frame_cap(encoded.payload.len())?;
             let mut ticket = self.v2_begin()?;
             let result = Self::v2_write(&mut ticket, &[&encoded]);
             let placed = self.v2_finish(ticket, result)?;
@@ -1633,9 +1719,15 @@ impl SynapseStore {
                 DurabilityGuarantee::FsyncBeforeAck,
             ));
         }
-        let payload = serde_json::to_vec(record).map_err(|e| {
-            SynapseError::new(RefusalCode::IoFailure, format!("serialize WAL record: {e}"))
-        })?;
+        let payload = self.encode_v1_payload(record)?;
+        self.append_v1_payload(record.kind_byte(), &payload)
+    }
+
+    fn append_v1_payload(
+        &mut self,
+        kind: u8,
+        payload: &[u8],
+    ) -> SynapseResult<(WalSeq, [u8; 32], DurabilityGuarantee)> {
         let fault = std::mem::replace(&mut self.fault_injection, FaultInjection::None);
 
         let next_seq = match fault {
@@ -1649,7 +1741,7 @@ impl SynapseStore {
             prev_sha[0] ^= 0xff;
         }
 
-        let mut crc = crc32c(&payload);
+        let mut crc = crc32c(payload);
         if fault == FaultInjection::CorruptNextWalCrc {
             crc ^= 0xdead_beef;
         }
@@ -1657,14 +1749,14 @@ impl SynapseStore {
         let mut header_prefix = [0u8; 56];
         header_prefix[0..4].copy_from_slice(&WAL_MAGIC);
         header_prefix[4..6].copy_from_slice(&WAL_VERSION.to_le_bytes());
-        header_prefix[6] = record.kind_byte();
-        header_prefix[7] = 0;
+        header_prefix[6] = kind;
+        header_prefix[7] = self.codec.frame_flags();
         header_prefix[8..16].copy_from_slice(&next_seq.0.to_le_bytes());
         header_prefix[16..48].copy_from_slice(&prev_sha);
         header_prefix[48..52].copy_from_slice(&(payload.len() as u32).to_le_bytes());
         header_prefix[52..56].copy_from_slice(&crc.to_le_bytes());
 
-        let frame_sha256 = compute_wal_frame_sha256(&header_prefix, &payload);
+        let frame_sha256 = compute_wal_frame_sha256(&header_prefix, payload);
         let mut header = [0u8; WAL_HEADER_LEN];
         header[0..56].copy_from_slice(&header_prefix);
         header[56..88].copy_from_slice(&frame_sha256);
@@ -1697,7 +1789,7 @@ impl SynapseStore {
             }
             _ => {
                 f.write_all(&header).map_err(io_err)?;
-                f.write_all(&payload).map_err(io_err)?;
+                f.write_all(payload).map_err(io_err)?;
             }
         }
 
@@ -1796,50 +1888,54 @@ impl SynapseStore {
     }
 
     fn recover(&mut self, recovery_policy: RecoveryPolicy) -> SynapseResult<()> {
-        // 1. Load checkpoint.v1 if present
-        if self.checkpoint_path.exists() {
+        // 1. Load the checkpoint: checkpoint.v2 (binary, chained) when present, else
+        //    checkpoint.v1 (JSON). Once checkpoint.v2 exists, checkpoint.v1 is the
+        //    tombstone that makes binaries knowing only v1 refuse the store.
+        let v2_path = self.root_dir.join(codec::CHECKPOINT_V2_FILE);
+        if v2_path.exists() {
+            let raw = fs::read(&v2_path).map_err(io_err)?;
+            let (state, chain) = codec::decode_checkpoint_v2(&raw)?;
+            if self.checkpoint_path.exists() {
+                let v1 = fs::read(&self.checkpoint_path).map_err(io_err)?;
+                if v1 != codec::v1_tombstone_bytes() {
+                    // A crash between writing checkpoint.v2 and the tombstone leaves the
+                    // older v1 checkpoint; it must not be ahead of checkpoint.v2.
+                    let m: CheckpointManifest = serde_json::from_slice(&v1).map_err(|e| {
+                        SynapseError::new(
+                            RefusalCode::CheckpointCorrupt,
+                            format!("corrupt checkpoint.v1 next to checkpoint.v2: {e}"),
+                        )
+                    })?;
+                    if m.version != CHECKPOINT_VERSION || m.checkpoint_seq > chain.checkpoint_seq {
+                        return Err(SynapseError::new(
+                            RefusalCode::CheckpointCorrupt,
+                            "checkpoint.v1 is neither the tombstone nor older than checkpoint.v2",
+                        ));
+                    }
+                    self.tombstone_pending = true;
+                }
+            } else {
+                self.tombstone_pending = true;
+            }
+            self.load_checkpoint_state(state);
+            self.checkpoint_chain = Some(chain);
+            self.binary_seen = true;
+        } else if self.checkpoint_path.exists() {
             let raw = fs::read(&self.checkpoint_path).map_err(io_err)?;
+            if raw == codec::v1_tombstone_bytes() {
+                return Err(SynapseError::new(
+                    RefusalCode::CheckpointCorrupt,
+                    "checkpoint.v1 is the v2 tombstone but checkpoint.v2 is missing",
+                ));
+            }
             let manifest: CheckpointManifest = serde_json::from_slice(&raw).map_err(|e| {
                 SynapseError::new(
                     RefusalCode::CheckpointCorrupt,
                     format!("corrupt checkpoint.v1: {e}"),
                 )
             })?;
-            if manifest.version != CHECKPOINT_VERSION {
-                return Err(SynapseError::new(
-                    RefusalCode::WalVersionUnsupported,
-                    format!("unsupported checkpoint version {}", manifest.version),
-                ));
-            }
-            self.committed_seq = manifest.checkpoint_seq;
-            self.last_frame_sha256 = manifest.anchor_frame_sha256;
-            for (k, v) in manifest.changesets {
-                let id = ChangesetId::from_hex(&k)?;
-                self.changesets.insert(id, v);
-            }
-            for (k, v) in manifest.idempotency_index {
-                let (repo_s, idem_hex) = k.split_once("::").ok_or_else(|| {
-                    SynapseError::new(RefusalCode::CheckpointCorrupt, "invalid idempotency key")
-                })?;
-                let repo = RepoId::new(repo_s)?;
-                let idem_bytes = hex::decode(idem_hex).map_err(|_| {
-                    SynapseError::new(RefusalCode::CheckpointCorrupt, "invalid idempotency hex")
-                })?;
-                let idem_arr: [u8; 32] = idem_bytes.try_into().map_err(|_| {
-                    SynapseError::new(RefusalCode::CheckpointCorrupt, "invalid idempotency len")
-                })?;
-                self.idempotency_index
-                    .insert((repo, IdempotencyKey(idem_arr)), v);
-            }
-            for (k, v) in manifest.blob_first_visible_seq {
-                let digest = BlobDigest::from_hex(&k)?;
-                self.blob_first_visible_seq.insert(digest, v);
-            }
-            self.github_projections = manifest.github_projections;
-            for (k, v) in manifest.canonical_heads {
-                let repo = RepoId::new(k)?;
-                self.canonical_heads.insert(repo, v);
-            }
+            self.load_checkpoint_state(CheckpointState::from_v1_manifest(manifest)?);
+            self.v1_history = true;
         }
 
         // 2. Replay wal.log (v1 frames, possibly ending in the WAL v2 marker), then wal.v2.log.
@@ -1850,7 +1946,65 @@ impl SynapseStore {
             self.recover_v1(recovery_policy, &mut overlap)?;
         }
         self.recover_v2(recovery_policy, &mut overlap)?;
-        overlap.close(self.committed_seq, self.last_frame_sha256)
+        overlap.close(self.committed_seq, self.last_frame_sha256)?;
+
+        // 3. A store with v1 history keeps writing v1 JSON until its first binary
+        //    checkpoint (the migration checkpoint); every other store writes binary v2.
+        self.codec = if self.checkpoint_chain.is_some() || !self.v1_history {
+            RecordCodec::BinaryV2
+        } else {
+            RecordCodec::JsonV1
+        };
+        Ok(())
+    }
+
+    fn load_checkpoint_state(&mut self, s: CheckpointState) {
+        self.committed_seq = s.checkpoint_seq;
+        self.last_frame_sha256 = s.anchor_frame_sha256;
+        self.changesets = s.changesets;
+        self.idempotency_index = s.idempotency_index;
+        self.blob_first_visible_seq = s.blob_first_visible_seq;
+        self.github_projections = s.github_projections;
+        self.canonical_heads = s.canonical_heads;
+    }
+
+    /// Admit a replayed (not checkpoint-covered) frame written with `codec`: the codec
+    /// moves from v1 JSON to binary v2 only at the migration checkpoint, never back.
+    fn admit_replayed_codec(&mut self, codec: RecordCodec, seq: WalSeq) -> SynapseResult<()> {
+        match codec {
+            RecordCodec::JsonV1 if self.binary_seen => Err(SynapseError::new(
+                RefusalCode::WalVersionUnsupported,
+                format!("v1 JSON WAL record at {seq} after binary v2 records"),
+            )),
+            RecordCodec::JsonV1 => {
+                self.v1_history = true;
+                Ok(())
+            }
+            RecordCodec::BinaryV2 if self.v1_history && self.checkpoint_chain.is_none() => {
+                Err(SynapseError::new(
+                    RefusalCode::WalVersionUnsupported,
+                    format!(
+                        "binary v2 WAL record at {seq} in a v1 store before its migration checkpoint"
+                    ),
+                ))
+            }
+            RecordCodec::BinaryV2 => {
+                self.binary_seen = true;
+                Ok(())
+            }
+        }
+    }
+
+    /// Replace `checkpoint.v1` with the tombstone (atomic: temp file, sync, rename, sync).
+    fn write_v1_tombstone(&mut self) -> SynapseResult<()> {
+        write_file_atomic(
+            &self.root_dir,
+            &self.root_dir.join("checkpoint.v1.tmp"),
+            &self.checkpoint_path,
+            &codec::v1_tombstone_bytes(),
+        )?;
+        self.tombstone_pending = false;
+        Ok(())
     }
 
     fn recover_v1(
@@ -1928,18 +2082,30 @@ impl SynapseStore {
                 ));
             }
             let flags = header[7];
-            if flags != 0 {
-                return Err(SynapseError::new(
+            let frame_codec = RecordCodec::from_frame_flags(flags).ok_or_else(|| {
+                SynapseError::new(
                     RefusalCode::WalFlagsNonZero,
-                    format!("non-zero WAL flags {flags} at offset {offset}"),
-                ));
-            }
+                    format!("unknown WAL flags {flags} at offset {offset}"),
+                )
+            })?;
 
             let seq = WalSeq(u64::from_le_bytes(header[8..16].try_into().unwrap()));
             let prev_sha: [u8; 32] = header[16..48].try_into().unwrap();
             let payload_len = u32::from_le_bytes(header[48..52].try_into().unwrap()) as u64;
             let expected_crc = u32::from_le_bytes(header[52..56].try_into().unwrap());
             let expected_frame_sha: [u8; 32] = header[56..88].try_into().unwrap();
+
+            // The declared length is checked against the cap before it is trusted (so a
+            // damaged length is never taken for a torn tail) and before any allocation.
+            if payload_len > self.limits.max_wal_record_bytes {
+                return Err(SynapseError::new(
+                    RefusalCode::QuotaPayloadTooLarge,
+                    format!(
+                        "WAL frame at offset {offset} declares {payload_len} payload bytes, above max_wal_record_bytes {}",
+                        self.limits.max_wal_record_bytes
+                    ),
+                ));
+            }
 
             if remaining < (WAL_HEADER_LEN as u64 + payload_len) {
                 return self.handle_torn_tail(
@@ -2014,12 +2180,18 @@ impl SynapseStore {
                 ));
             }
 
-            let record: WalRecord = serde_json::from_slice(&payload).map_err(|e| {
-                SynapseError::new(
-                    RefusalCode::WalCrcMismatch,
-                    format!("corrupt WAL record JSON at {seq}: {e}"),
-                )
-            })?;
+            self.admit_replayed_codec(frame_codec, seq)?;
+            let record =
+                codec::decode_record_with(&payload, frame_codec, self.limits.max_wal_record_bytes)
+                    .map_err(|e| {
+                        SynapseError::new(e.code, format!("WAL record at {seq}: {}", e.message))
+                    })?;
+            if frame_codec == RecordCodec::BinaryV2 && record.kind_byte() != header[6] {
+                return Err(SynapseError::new(
+                    RefusalCode::WalRecordMalformed,
+                    format!("record kind byte does not match payload at {seq}"),
+                ));
+            }
 
             // Verify that all blobs referenced by a committed ChangesetIngest exist and match digest
             if let WalRecord::ChangesetIngest { ref envelope, .. } = record {
@@ -2091,8 +2263,13 @@ impl SynapseStore {
                         // skipped chain must still end at the checkpoint anchor.
                         None => (first, wal2::first_frame_prev(&buf, off)),
                     };
-                    let (frames, next) =
-                        wal2::validate_batch(&buf, off, expected_seq, expected_prev)?;
+                    let (frames, next) = wal2::validate_batch(
+                        &buf,
+                        off,
+                        expected_seq,
+                        expected_prev,
+                        self.limits.max_wal_record_bytes,
+                    )?;
                     for fr in &frames {
                         if fr.seq > self.committed_seq {
                             return Err(SynapseError::new(
@@ -2116,11 +2293,18 @@ impl SynapseStore {
                     format!("non-zero bytes after an empty WAL v2 batch header at {off}"),
                 ))
             } else {
-                wal2::validate_batch(&buf, off, self.committed_seq.next(), self.last_frame_sha256)
+                wal2::validate_batch(
+                    &buf,
+                    off,
+                    self.committed_seq.next(),
+                    self.last_frame_sha256,
+                    self.limits.max_wal_record_bytes,
+                )
             };
             match result {
                 Ok((frames, next)) => {
                     for fr in frames {
+                        self.admit_replayed_codec(fr.codec, fr.seq)?;
                         if let WalRecord::ChangesetIngest { envelope, .. } = &fr.record {
                             for m in &envelope.mutations {
                                 if let MutationOp::Upsert { blob_digest, .. } = &m.op {
@@ -2153,6 +2337,10 @@ impl SynapseStore {
                     off = next;
                 }
                 Err(e) => {
+                    // A length above the cap is never taken for a torn tail.
+                    if e.code == RefusalCode::QuotaPayloadTooLarge {
+                        return Err(e);
+                    }
                     let torn =
                         !wal2::valid_batch_after(&buf, off + 1) && wal2::torn_evidence(&buf, off);
                     if !torn {
@@ -2282,6 +2470,7 @@ fn v2_marker_header(seq: WalSeq, prev: [u8; 32]) -> [u8; WAL_HEADER_LEN] {
         prev,
         WAL_V2_MARKER_KIND,
         0,
+        0,
         crc32c(&[]),
         &wal2::payload_digest(&[]),
     )
@@ -2296,9 +2485,168 @@ fn compute_wal_frame_sha256(header_prefix_56: &[u8], payload: &[u8]) -> [u8; 32]
     hasher.finalize().into()
 }
 
+/// One `wal.log` frame (88-byte header plus payload) decoded and verified on its own:
+/// header fields, length cap, CRC-32C, frame digest, record codec and kind. Sequence and
+/// chain continuity are the caller's (recovery checks them against the previous frame).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedFrame {
+    pub seq: WalSeq,
+    pub prev_frame_sha256: [u8; 32],
+    pub frame_sha256: [u8; 32],
+    pub codec: RecordCodec,
+    pub record: WalRecord,
+    /// Bytes the frame occupies (header plus payload).
+    pub frame_len: usize,
+}
+
+/// Build a `wal.log` frame around `payload` (any bytes) with header `kind` and `flags`.
+/// Returns the frame and its `frame_sha256`. Used by the writer and by test corpora.
+pub fn wal_frame_from_payload(
+    seq: WalSeq,
+    prev_frame_sha256: [u8; 32],
+    kind: u8,
+    flags: u8,
+    payload: &[u8],
+) -> (Vec<u8>, [u8; 32]) {
+    let mut header_prefix = [0u8; 56];
+    header_prefix[0..4].copy_from_slice(&WAL_MAGIC);
+    header_prefix[4..6].copy_from_slice(&WAL_VERSION.to_le_bytes());
+    header_prefix[6] = kind;
+    header_prefix[7] = flags;
+    header_prefix[8..16].copy_from_slice(&seq.0.to_le_bytes());
+    header_prefix[16..48].copy_from_slice(&prev_frame_sha256);
+    header_prefix[48..52].copy_from_slice(&(payload.len() as u32).to_le_bytes());
+    header_prefix[52..56].copy_from_slice(&crc32c(payload).to_le_bytes());
+    let sha = compute_wal_frame_sha256(&header_prefix, payload);
+    let mut frame = Vec::with_capacity(WAL_HEADER_LEN + payload.len());
+    frame.extend_from_slice(&header_prefix);
+    frame.extend_from_slice(&sha);
+    frame.extend_from_slice(payload);
+    (frame, sha)
+}
+
+/// Encode `record` with `codec` as one `wal.log` frame. Refuses a payload above `cap`.
+pub fn encode_wal_frame(
+    seq: WalSeq,
+    prev_frame_sha256: [u8; 32],
+    record: &WalRecord,
+    codec: RecordCodec,
+    cap: u64,
+) -> SynapseResult<(Vec<u8>, [u8; 32])> {
+    let payload = codec::encode_record_with(record, codec)?;
+    if payload.len() as u64 > cap {
+        return Err(SynapseError::new(
+            RefusalCode::QuotaPayloadTooLarge,
+            format!(
+                "WAL record of {} bytes exceeds the cap {cap}",
+                payload.len()
+            ),
+        ));
+    }
+    Ok(wal_frame_from_payload(
+        seq,
+        prev_frame_sha256,
+        record.kind_byte(),
+        codec.frame_flags(),
+        &payload,
+    ))
+}
+
+/// Decode and verify the `wal.log` frame at the start of `buf`; `cap` is the largest
+/// payload length accepted (`StoreLimits::max_wal_record_bytes`).
+pub fn decode_wal_frame(buf: &[u8], cap: u64) -> SynapseResult<DecodedFrame> {
+    let header = buf.get(..WAL_HEADER_LEN).ok_or_else(|| {
+        SynapseError::new(
+            RefusalCode::WalTornFrame,
+            format!("{} bytes cannot hold a WAL frame header", buf.len()),
+        )
+    })?;
+    if header[0..4] != WAL_MAGIC {
+        return Err(SynapseError::new(
+            RefusalCode::WalMagicInvalid,
+            "invalid WAL magic",
+        ));
+    }
+    let version = u16::from_le_bytes([header[4], header[5]]);
+    if version != WAL_VERSION {
+        return Err(SynapseError::new(
+            RefusalCode::WalVersionUnsupported,
+            format!("unsupported WAL version {version}"),
+        ));
+    }
+    let codec = RecordCodec::from_frame_flags(header[7]).ok_or_else(|| {
+        SynapseError::new(
+            RefusalCode::WalFlagsNonZero,
+            format!("unknown WAL flags {}", header[7]),
+        )
+    })?;
+    let seq = WalSeq(u64::from_le_bytes(
+        header[8..16].try_into().expect("8 bytes"),
+    ));
+    let prev_frame_sha256: [u8; 32] = header[16..48].try_into().expect("32 bytes");
+    let payload_len = u32::from_le_bytes(header[48..52].try_into().expect("4 bytes"));
+    let crc = u32::from_le_bytes(header[52..56].try_into().expect("4 bytes"));
+    let frame_sha256: [u8; 32] = header[56..88].try_into().expect("32 bytes");
+    if u64::from(payload_len) > cap {
+        return Err(SynapseError::new(
+            RefusalCode::QuotaPayloadTooLarge,
+            format!("WAL frame {seq} declares {payload_len} payload bytes, above the cap {cap}"),
+        ));
+    }
+    let frame_len = WAL_HEADER_LEN + payload_len as usize;
+    let payload = buf.get(WAL_HEADER_LEN..frame_len).ok_or_else(|| {
+        SynapseError::new(
+            RefusalCode::WalTornFrame,
+            format!(
+                "WAL frame {seq} declares {payload_len} payload bytes, {} present",
+                buf.len() - WAL_HEADER_LEN
+            ),
+        )
+    })?;
+    if crc32c(payload) != crc {
+        return Err(SynapseError::new(
+            RefusalCode::WalCrcMismatch,
+            format!("WAL payload CRC32C mismatch at {seq}"),
+        ));
+    }
+    if compute_wal_frame_sha256(&header[0..56], payload) != frame_sha256 {
+        return Err(SynapseError::new(
+            RefusalCode::WalChainMismatch,
+            format!("WAL frame_sha256 mismatch at {seq}"),
+        ));
+    }
+    let record = codec::decode_record_with(payload, codec, cap)?;
+    if record.kind_byte() != header[6] {
+        return Err(SynapseError::new(
+            RefusalCode::WalRecordMalformed,
+            format!("record kind byte does not match payload at {seq}"),
+        ));
+    }
+    Ok(DecodedFrame {
+        seq,
+        prev_frame_sha256,
+        frame_sha256,
+        codec,
+        record,
+        frame_len,
+    })
+}
+
 fn sync_dir(dir: &Path) -> SynapseResult<()> {
     let f = File::open(dir).map_err(io_err)?;
     f.sync_all().map_err(io_err)
+}
+
+/// Write `bytes` to `path` atomically: `tmp` is written and synced, renamed over `path`,
+/// and `dir` is synced.
+fn write_file_atomic(dir: &Path, tmp: &Path, path: &Path, bytes: &[u8]) -> SynapseResult<()> {
+    {
+        let mut f = File::create(tmp).map_err(io_err)?;
+        f.write_all(bytes).map_err(io_err)?;
+        f.sync_all().map_err(io_err)?;
+    }
+    fs::rename(tmp, path).map_err(io_err)?;
+    sync_dir(dir)
 }
 
 fn io_err(e: std::io::Error) -> SynapseError {

@@ -1,0 +1,152 @@
+
+running 13 tests
+test a1_tests::a1_state_root_helpers_match_the_store ... FAILED
+test a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused ... FAILED
+test a1_tests::a1_every_record_kind_matches_its_v1_json_form_in_both_directions ... FAILED
+test a1_tests::a1_fresh_store_writes_binary_frames_and_records_the_empty_v1_root ... FAILED
+test a1_tests::a1_v1_readers_refuse_the_tombstone ... FAILED
+test a1_tests::a1_encoder_refuses_a_repository_id_that_rejects_validation ... FAILED
+test a1_tests::a1_edge_records_match_their_json_form_in_both_directions ... FAILED
+test a1_tests::a1_checkpoint_state_matches_its_v1_json_form_in_both_directions ... FAILED
+test a1_tests::a1_codec_never_goes_back_and_never_runs_ahead_of_the_migration ... FAILED
+test a1_tests::a1_frame_length_cap_is_enforced_on_write_and_on_replay ... FAILED
+test a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_log ... FAILED
+test a1_tests::a1_damaged_checkpoint_v2_is_refused ... FAILED
+test a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_v2_log ... FAILED
+
+failures:
+
+---- a1_tests::a1_state_root_helpers_match_the_store stdout ----
+
+thread 'a1_tests::a1_state_root_helpers_match_the_store' (4080758) panicked at crates/synapse-store/src/a1_tests.rs:492:5:
+assertion `left == right` failed
+  left: [188, 214, 123, 142, 82, 117, 212, 237, 18, 80, 73, 62, 27, 118, 56, 142, 8, 183, 191, 22, 229, 163, 179, 216, 73, 188, 44, 37, 222, 204, 192, 38]
+ right: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+---- a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused stdout ----
+
+thread 'a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused' (4080749) panicked at crates/synapse-store/src/a1_tests.rs:363:41:
+called `Result::unwrap()` on an `Err` value: VersionUnsupported { found: 0 }
+
+---- a1_tests::a1_every_record_kind_matches_its_v1_json_form_in_both_directions stdout ----
+
+thread 'a1_tests::a1_every_record_kind_matches_its_v1_json_form_in_both_directions' (4080753) panicked at crates/synapse-store/src/a1_tests.rs:165:5:
+fixture holds 16 records
+
+---- a1_tests::a1_fresh_store_writes_binary_frames_and_records_the_empty_v1_root stdout ----
+
+thread 'a1_tests::a1_fresh_store_writes_binary_frames_and_records_the_empty_v1_root' (4080757) panicked at crates/synapse-store/src/a1_tests.rs:623:5:
+assertion `left == right` failed
+  left: JsonV1
+ right: BinaryV2
+
+---- a1_tests::a1_v1_readers_refuse_the_tombstone stdout ----
+
+thread 'a1_tests::a1_v1_readers_refuse_the_tombstone' (4080759) panicked at crates/synapse-store/src/a1_tests.rs:604:79:
+called `Result::unwrap()` on an `Err` value: Error("EOF while parsing a value", line: 1, column: 0)
+
+---- a1_tests::a1_encoder_refuses_a_repository_id_that_rejects_validation stdout ----
+
+thread 'a1_tests::a1_encoder_refuses_a_repository_id_that_rejects_validation' (4080752) panicked at crates/synapse-store/src/a1_tests.rs:321:27:
+called `Result::unwrap_err()` on an `Ok` value: []
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a1_tests::a1_edge_records_match_their_json_form_in_both_directions stdout ----
+
+thread 'a1_tests::a1_edge_records_match_their_json_form_in_both_directions' (4080751) panicked at crates/synapse-store/src/a1_tests.rs:148:5:
+assertion `left == right` failed: codec version byte
+  left: None
+ right: Some(2)
+
+---- a1_tests::a1_checkpoint_state_matches_its_v1_json_form_in_both_directions stdout ----
+
+thread 'a1_tests::a1_checkpoint_state_matches_its_v1_json_form_in_both_directions' (4080746) panicked at crates/synapse-store/src/a1_tests.rs:450:69:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: CheckpointCorrupt, message: "not implemented" }
+
+---- a1_tests::a1_codec_never_goes_back_and_never_runs_ahead_of_the_migration stdout ----
+
+thread 'a1_tests::a1_codec_never_goes_back_and_never_runs_ahead_of_the_migration' (4080747) panicked at crates/synapse-store/src/a1_tests.rs:697:5:
+assertion `left == right` failed
+  left: None
+ right: Some(WalVersionUnsupported)
+
+---- a1_tests::a1_frame_length_cap_is_enforced_on_write_and_on_replay stdout ----
+
+thread 'a1_tests::a1_frame_length_cap_is_enforced_on_write_and_on_replay' (4080756) panicked at crates/synapse-store/src/a1_tests.rs:787:41:
+called `Result::unwrap_err()` on an `Ok` value: Committed { wal_seq: WalSeq(1), changeset_id: ChangesetId(81552a5c6eff7c3d0a7f57cf4c0bb3653e3274bfac69317c803cf6fa8272685a), frame_sha256: [136, 9, 1, 42, 54, 92, 105, 81, 83, 110, 139, 4, 17, 168, 34, 82, 144, 28, 63, 121, 227, 21, 76, 58, 23, 114, 222, 164, 147, 106, 158, 178], durability: FsyncBeforeAck }
+
+---- a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_log stdout ----
+
+thread 'a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_log' (4080754) panicked at crates/synapse-store/src/a1_tests.rs:535:38:
+first v2 checkpoint
+
+---- a1_tests::a1_damaged_checkpoint_v2_is_refused stdout ----
+
+thread 'a1_tests::a1_damaged_checkpoint_v2_is_refused' (4080748) panicked at crates/synapse-store/src/a1_tests.rs:746:32:
+called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+
+---- a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_v2_log stdout ----
+
+thread 'a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_v2_log' (4080755) panicked at crates/synapse-store/src/a1_tests.rs:535:38:
+first v2 checkpoint
+
+
+failures:
+    a1_tests::a1_checkpoint_state_matches_its_v1_json_form_in_both_directions
+    a1_tests::a1_codec_never_goes_back_and_never_runs_ahead_of_the_migration
+    a1_tests::a1_damaged_checkpoint_v2_is_refused
+    a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused
+    a1_tests::a1_edge_records_match_their_json_form_in_both_directions
+    a1_tests::a1_encoder_refuses_a_repository_id_that_rejects_validation
+    a1_tests::a1_every_record_kind_matches_its_v1_json_form_in_both_directions
+    a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_log
+    a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_v2_log
+    a1_tests::a1_frame_length_cap_is_enforced_on_write_and_on_replay
+    a1_tests::a1_fresh_store_writes_binary_frames_and_records_the_empty_v1_root
+    a1_tests::a1_state_root_helpers_match_the_store
+    a1_tests::a1_v1_readers_refuse_the_tombstone
+
+test result: FAILED. 0 passed; 13 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.07s
+
+error: test failed, to rerun pass `-p synapse-store --lib`
+
+running 1 test
+test a1_malformed_frame_corpus_is_refused_typed_without_panic_or_allocation_above_the_cap ... FAILED
+
+failures:
+
+---- a1_malformed_frame_corpus_is_refused_typed_without_panic_or_allocation_above_the_cap stdout ----
+
+thread 'a1_malformed_frame_corpus_is_refused_typed_without_panic_or_allocation_above_the_cap' (4080987) panicked at crates/synapse-store/tests/a1_malformed_corpus.rs:173:29:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: IoFailure, message: "not implemented" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a1_malformed_frame_corpus_is_refused_typed_without_panic_or_allocation_above_the_cap
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p synapse-store --test a1_malformed_corpus`
+
+running 2 tests
+test conformance::tests::wal_suite_stores_write_binary_codec_frames ... FAILED
+test conformance::tests::wal_suite_cases_pass ... ok
+
+failures:
+
+---- conformance::tests::wal_suite_stores_write_binary_codec_frames stdout ----
+
+thread 'conformance::tests::wal_suite_stores_write_binary_codec_frames' (4089788) panicked at crates/synapse-bench/src/conformance.rs:1029:13:
+assertion `left == right` failed: frame 0 flags
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    conformance::tests::wal_suite_stores_write_binary_codec_frames
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.59s
+
+error: test failed, to rerun pass `-p synapse-bench --lib`

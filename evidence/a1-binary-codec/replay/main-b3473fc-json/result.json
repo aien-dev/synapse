@@ -1,0 +1,105 @@
+{
+  "populate_fsync_policy": "BatchWindow { max_records: 1024 }, then sync_wal",
+  "cache_note": "reopens follow population immediately (warm page cache)",
+  "sizes": [
+    {
+      "changesets": 100,
+      "populate_ms": 32.077,
+      "wal_bytes": 162987,
+      "store_apparent_bytes": 1311311,
+      "store_allocated_bytes": 2232320,
+      "blob_files": 163,
+      "store_open_raw_wal_ms": {
+        "median": 1.36,
+        "min": 1.338,
+        "max": 1.791,
+        "reps": 7
+      },
+      "service_open_raw_wal_ms": {
+        "median": 1.38,
+        "min": 1.372,
+        "max": 1.438,
+        "reps": 7
+      },
+      "checkpoint_compact_ms": 14.595,
+      "wal_bytes_after_checkpoint": 0,
+      "checkpoint_bytes": 179631,
+      "store_open_after_checkpoint_ms": {
+        "median": 0.402,
+        "min": 0.388,
+        "max": 0.48,
+        "reps": 7
+      },
+      "checkpoint_evicted_changesets": 0,
+      "committed_seq_preserved": true,
+      "state_root_preserved": true,
+      "reopen_failures": 0
+    },
+    {
+      "changesets": 1000,
+      "populate_ms": 152.525,
+      "wal_bytes": 1567507,
+      "store_apparent_bytes": 10834778,
+      "store_allocated_bytes": 15208448,
+      "blob_files": 1445,
+      "store_open_raw_wal_ms": {
+        "median": 12.853,
+        "min": 12.766,
+        "max": 14.439,
+        "reps": 7
+      },
+      "service_open_raw_wal_ms": {
+        "median": 13.67,
+        "min": 13.453,
+        "max": 14.141,
+        "reps": 7
+      },
+      "checkpoint_compact_ms": 34.851,
+      "wal_bytes_after_checkpoint": 0,
+      "checkpoint_bytes": 1743288,
+      "store_open_after_checkpoint_ms": {
+        "median": 4.206,
+        "min": 4.182,
+        "max": 4.544,
+        "reps": 7
+      },
+      "checkpoint_evicted_changesets": 0,
+      "committed_seq_preserved": true,
+      "state_root_preserved": true,
+      "reopen_failures": 0
+    },
+    {
+      "changesets": 10000,
+      "populate_ms": 1630.153,
+      "wal_bytes": 15879186,
+      "store_apparent_bytes": 117196369,
+      "store_allocated_bytes": 153960448,
+      "blob_files": 14957,
+      "store_open_raw_wal_ms": {
+        "median": 156.076,
+        "min": 154.553,
+        "max": 162.981,
+        "reps": 7
+      },
+      "service_open_raw_wal_ms": {
+        "median": 164.656,
+        "min": 164.479,
+        "max": 167.798,
+        "reps": 7
+      },
+      "checkpoint_compact_ms": 232.301,
+      "wal_bytes_after_checkpoint": 0,
+      "checkpoint_bytes": 17645939,
+      "store_open_after_checkpoint_ms": {
+        "median": 43.907,
+        "min": 43.862,
+        "max": 48.238,
+        "reps": 7
+      },
+      "checkpoint_evicted_changesets": 0,
+      "committed_seq_preserved": true,
+      "state_root_preserved": true,
+      "reopen_failures": 0
+    }
+  ]
+}

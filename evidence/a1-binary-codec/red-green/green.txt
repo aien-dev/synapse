@@ -1,0 +1,53 @@
+# Green (2026-10-14, at the merge with main b3473fc; workspace 228 passed, 0 failed; clippy -D warnings and fmt clean)
+
+test a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused ... ok
+test a1_tests::a1_encoder_refuses_a_repository_id_that_rejects_validation ... ok
+test a1_tests::a1_edge_records_match_their_json_form_in_both_directions ... ok
+test a1_tests::a1_every_record_kind_matches_its_v1_json_form_in_both_directions ... ok
+test a1_tests::a1_checkpoint_state_matches_its_v1_json_form_in_both_directions ... ok
+test a1_tests::a1_v1_readers_refuse_the_tombstone ... ok
+test a1_tests::a1_state_root_helpers_match_the_store ... ok
+test a1_tests::a1_frame_length_cap_is_enforced_on_write_and_on_replay ... ok
+test a1_tests::a1_codec_never_goes_back_and_never_runs_ahead_of_the_migration ... ok
+test a1_tests::a1_v1_checkpoint_ahead_of_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_damaged_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_v1_records_appended_in_the_crash_window_are_refused ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_log ... ok
+test a1_tests::a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_log ... ok
+test a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_log ... ok
+test a1_tests::a1_record_prepared_before_the_migration_commits_in_the_new_codec ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_v2_log ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_v2_log ... ok
+test a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_v2_log ... ok
+test a1_tests::a1_fresh_store_writes_binary_frames_and_records_the_empty_v1_root ... ok
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.52s
+
+   Compiling synapse-store v0.1.0 (/home/drakestapleton/.t3/projects/synapse/.claude/worktrees/a1/crates/synapse-store)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.53s
+     Running tests/a1_malformed_corpus.rs (target/debug/deps/a1_malformed_corpus-92ac8758d699544c)
+A1 malformed corpus (cap 2048 bytes, largest valid payload 434 bytes):
+  bit_flipped: 12016 refused, largest allocation 100 bytes, codes {"QuotaPayloadTooLarge": 126, "WalChainMismatch": 3510, "WalCrcMismatch": 8008, "WalFlagsNonZero": 42, "WalMagicInvalid": 192, "WalTornFrame": 42, "WalVersionUnsupported": 96}
+  checkpoint_bit_flipped: 15232 refused, largest allocation 90 bytes, codes {"CheckpointCorrupt": 15232}
+  checkpoint_truncated: 1904 refused, largest allocation 90 bytes, codes {"CheckpointCorrupt": 1904}
+  oversized_frame_length: 18 refused, largest allocation 100 bytes, codes {"QuotaPayloadTooLarge": 18}
+  oversized_inner_length: 18 refused, largest allocation 136 bytes, codes {"WalRecordMalformed": 18}
+  truncated: 1502 refused, largest allocation 88 bytes, codes {"WalTornFrame": 1502}
+  total: 30690 refused, 0 panics, 0 accepted
+test a1_malformed_frame_corpus_is_refused_typed_without_panic_or_allocation_above_the_cap ... ok
+A1 resealed corpus (checksums and digests recomputed; record cap 2048 bytes, checkpoint bound 3976 bytes = max(undamaged decode peak 3976, content 1688)):
+  checkpoint_bit_flipped: 13504 reached the decoder, 3094 refused, 10410 accepted (canonical), largest allocation 3976 bytes
+  checkpoint_false_length: 5055 reached the decoder, 1983 refused, 3072 accepted (canonical), largest allocation 3976 bytes
+  checkpoint_truncated: 1688 reached the decoder, 1688 refused, 0 accepted (canonical), largest allocation 3976 bytes
+  record_bit_flipped: 7792 reached the decoder, 1225 refused, 6567 accepted (canonical), largest allocation 1224 bytes
+  record_false_length: 2868 reached the decoder, 877 refused, 1991 accepted (canonical), largest allocation 576 bytes
+  record_truncated: 974 reached the decoder, 974 refused, 0 accepted (canonical), largest allocation 72 bytes
+  total reaching the decoder: 31881, 0 panics, 0 non-canonical accepts
+test a1_resealed_corpus_reaches_the_decoder_and_is_refused_or_canonical ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.58s
+
+test conformance::tests::wal_suite_stores_write_binary_codec_frames ... ok
+test conformance::tests::wal_suite_cases_pass ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 56 filtered out; finished in 0.58s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
