@@ -1,0 +1,6 @@
+$ synapse-bench bounds-verify --evidence <copy of the sealed evidence>
+verified: report.json recomputed byte for byte from protocol.json (a29fb25df1476355e5524834c104ce2e09c4d3e454627a7435c0b7eabe217bd5) and raw.json (2adaf836080b7a7585704f2f5c2bc813c5c266a59d5a4a0c0fa201261ab997a0)
+exit status: 0
+--- one raw elapsed_ns increased by 1 ns:
+synapse-bench: REPORT_MISMATCH: recomputed report differs from report.json at byte 163
+exit status: 1
