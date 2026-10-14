@@ -10,6 +10,7 @@ members = [
     "crates/synapse-bench",
     "crates/synapse-crumb",
     "crates/synapse-coord",
+    "crates/synapse-evidence",
 ]
 
 [workspace.package]
@@ -34,6 +35,7 @@ synapse-bench = { path = "crates/synapse-bench" }
 synapse-coord = { path = "crates/synapse-coord" }
 synapse-core = { path = "crates/synapse-core" }
 synapse-crumb = { path = "crates/synapse-crumb" }
+synapse-evidence = { path = "crates/synapse-evidence" }
 synapse-git = { path = "crates/synapse-git" }
 synapse-radicle = { path = "crates/synapse-radicle" }
 synapse-store = { path = "crates/synapse-store" }

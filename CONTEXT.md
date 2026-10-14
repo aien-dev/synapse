@@ -148,7 +148,12 @@ _Avoid_: test name, CI job ID
 
 **EvidenceReceipt**:
 A signed record of one action's result that applies only to the exact input root in its `ActionDigest`. Its deterministic part (exit status plus declared output digests) is its identity, the result digest; its observation part (logs, seconds, joules when measured) is stored but never part of that identity. It also records the hermetic flag and the executor machine key. Only receipts from registered executors (machine keys listed in the identity document, running a sandbox the requesting agent does not control) count toward promotion.
+Record version 1 exists today (ADR 0004 D4, crate `synapse-evidence`): a separate record that references a `ChangesetId` and binds the source revision, two `CrumbContextDigest`s for each changed directory (at the changeset's base, what the author saw; and in the changeset's own tree, what the runner tested under), a single-repository input root, the test identity, and a typed outcome (`Pass`, `Fail`, `Flaky`, `Error`; only `Pass` is a pass), signed by the runner's Ed25519 key under its canonical `did:key`. Synapse reports a receipt whose bound context differs on either side as `Stale`, naming the side (`AtBase` or `InChangeset`). The hermetic flag, registered executors, resources, and the composite input root come in a later record version. A receipt never grants publication, and no coordination record (claim, scent, whisper) ever enters one.
 _Avoid_: EvidenceAttachment (v1, unbound), PASS label, CI badge
+
+**Receipt identity**:
+The `EvidenceReceiptId` (`"SYNAPSE_EVIDENCE_RECEIPT_ID_V1\0"`): a digest over the record version, the action digest (what was run, on which changeset, base, Crumb contexts, and input root), the result digest (exit status, outcome, declared output digests), and the executor. Logs and timings are excluded, so two runs differing only in those share one identity.
+_Avoid_: digest of the whole record, ChangesetId, BlobDigest, CrumbContextDigest
 
 **ActionCache**:
 The map from `ActionDigest` to stored results that returns a result for an identical hermetic action from a registered executor instead of running it again. Receipts are compared by result digest only (exit status plus declared outputs), so differing logs agree; differing result digests make the entry `Flaky`. A receipt is served only while its inputs and outputs are retained.

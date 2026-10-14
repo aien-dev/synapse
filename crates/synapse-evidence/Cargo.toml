@@ -1,0 +1,15 @@
+[package]
+name = "synapse-evidence"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Versioned, Ed25519-signed evidence receipts bound to a ChangesetId and the CrumbContextDigest the runner saw (ADR 0004 D4)"
+
+[dependencies]
+ed25519-dalek.workspace = true
+hex.workspace = true
+sha2.workspace = true
+synapse-core.workspace = true
+synapse-crumb.workspace = true

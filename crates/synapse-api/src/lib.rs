@@ -20,11 +20,16 @@ use synapse_store::{
 
 mod advisory;
 mod crumb;
+mod evidence;
 pub use advisory::{
     ChangesetAdvisory, ChangesetAdvisoryPayload, CoordinationStatus, GuidanceNote,
     OverlappingProposal, PathAdvisory, Staleness, MAX_ADVISORY_PATHS,
 };
 pub use crumb::CrumbContextQueryPayload;
+pub use evidence::{
+    EvidenceBase, EvidenceBaseQueryPayload, ReceiptMismatch, ReceiptVerification, StaleContext,
+    StaleReason, VerifyEvidenceReceiptPayload,
+};
 
 /// Default maximum page size for bounded API queries.
 pub const DEFAULT_MAX_PAGE_SIZE: usize = 256;
