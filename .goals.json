@@ -26,7 +26,32 @@
     {
       "id": "GATE-4",
       "title": "Comparative concurrent agent benchmark against Git worktrees, conformance suites, and qualification receipt",
+      "status": "completed"
+    },
+    {
+      "id": "PHASE-5",
+      "title": "Close the Gate 4 measured gaps: durable group commit, faster reads than git cat-file --batch, bounded virtual tree cache, compact wire format and local daemon socket",
       "status": "in_progress"
+    },
+    {
+      "id": "PHASE-6",
+      "title": "Small Git bridge: native ref and history contracts, full-history Git import and export, git-remote-synapse remote helper",
+      "status": "pending"
+    },
+    {
+      "id": "PHASE-7",
+      "title": "AI-native model: best ideas from every system, each adopted only for a concrete AI-agent need (ADR 0003)",
+      "status": "pending"
+    },
+    {
+      "id": "PHASE-8",
+      "title": "Agent cutover: hive agents use Synapse as their primary system after the ADR 0002 cutover gates pass; legacy human edge adapters removed",
+      "status": "pending"
+    },
+    {
+      "id": "PHASE-9",
+      "title": "Native on AIEN hardware: Synapse store on AIENOS, Git as an import and export edge only",
+      "status": "pending"
     }
   ]
 }
