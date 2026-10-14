@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "name": "fixture-root",
+  "layer": "root",
+  "purpose": "Parity fixture repository root.",
+  "invariants": [
+    "root invariant one",
+    "root invariant two"
+  ]
+}

@@ -1,0 +1,37 @@
+### sniff .
+sniff <ROOT> as parity
+  .crumb: fixture-root | Parity fixture repository root.
+  invariant: root invariant one
+  invariant: root invariant two
+### sniff d1
+sniff <ROOT>/d1 as parity
+  .crumb: d1 | RFC-0001 directory with one invariant.
+  invariant: d1 invariant
+### sniff d1/nested
+sniff <ROOT>/d1/nested as parity
+  .crumb: d1/nested | Nested RFC-0001 directory under d1.
+  invariant: nested invariant A
+  invariant: nested invariant B
+### sniff d1/nested/deeper
+sniff <ROOT>/d1/nested/deeper as parity
+  no .crumb here
+### sniff d2
+sniff <ROOT>/d2 as parity
+  .crumb: ? | (legacy format)
+### sniff d3
+sniff <ROOT>/d3 as parity
+  no .crumb here
+### sniff badjson
+sniff <ROOT>/badjson as parity
+  no .crumb here
+### sniff gap
+sniff <ROOT>/gap as parity
+  no .crumb here
+### sniff gap/inner
+sniff <ROOT>/gap/inner as parity
+  .crumb: gap/inner | Below a directory with no .crumb.
+  invariant: inner invariant
+### sniff unknown
+sniff <ROOT>/unknown as parity
+  .crumb: unknown-object | JSON object with neither schema_version nor version.
+  invariant: unknown invariant
