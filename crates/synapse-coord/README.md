@@ -118,7 +118,10 @@ through one bounded read (`src/record.rs`):
 A refusal is `CoordError::RefusedRecord { path, reason }` with `reason` one of `Symlink`,
 `NotRegular("fifo" | "socket" | "char device" | ...)` or `TooLarge { limit }`. It is handled
 exactly like a corrupt record: the operation fails, nothing is written, the file is left as
-found, and the D3 pre-submit advisory reports `CoordinationStatus::Unavailable`. Mutations
+found, and the D3 pre-submit advisory reports `CoordinationStatus::Unavailable`. The scope is
+store-wide, because every mutation and `sniff` load every record: a FIFO planted at
+`dirs/sub/x.json` also fails `claim . other/y.c`. The error names the file; an operator
+moves it aside to restore the store. Mutations
 also refuse to rename over a non-regular file and to write a record over the cap; their
 temporary file is created fresh with `O_EXCL | O_NOFOLLOW`. Directory listing never opens an
 entry: it uses the entry type, does not walk symlinked directories, and ignores names that
