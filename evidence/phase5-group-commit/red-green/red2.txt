@@ -1,0 +1,8 @@
+thread 'group_tests::test_injected_write_failure_acks_nothing_and_retry_commits_once' (2105744) panicked at crates/synapse-store/src/group_tests.rs:33:71:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: WalTornFrame, message: "torn WAL v2 batch at byte offset 4096: WAL payload CRC32C mismatch at wal:2: expected 0xd22ddc9c, computed 0x6da03dd5" }
+--
+thread 'group_tests::test_injected_sync_failure_acks_nothing_and_retry_commits_once' (2105743) panicked at crates/synapse-store/src/group_tests.rs:368:9:
+assertion `left == right` failed: failed batch visible after reopen
+--
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.28s
+

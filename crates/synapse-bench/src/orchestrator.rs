@@ -8,6 +8,7 @@
 
 use crate::conflict::{run_conflict_cell, ConflictResult, ConflictSpec};
 use crate::conformance::{run_suite, CaseOutcome, SuiteResult};
+use crate::energy::EnergyReading;
 use crate::fixture::{self, clone_no_checkout, configure_bench_clone};
 use crate::gitcmd::{git_line, git_ok};
 use crate::host::{self, FsyncProbe, GitConfigValue, HostInfo, UNKNOWN};
@@ -63,6 +64,12 @@ pub struct RunConfig {
     pub source_digest: String,
     pub smoke: bool,
     pub command_line: Vec<String>,
+    /// Run only the write cells (no query, conformance, conflict, recovery or import cells).
+    #[serde(default)]
+    pub write_only: bool,
+    /// Length of the IDLE energy window measured before the cells, seconds.
+    #[serde(default)]
+    pub idle_window_s: f64,
 }
 
 impl RunConfig {
@@ -97,6 +104,8 @@ impl RunConfig {
             source_digest: UNKNOWN.into(),
             smoke: false,
             command_line: Vec::new(),
+            write_only: false,
+            idle_window_s: 10.0,
         }
     }
 
@@ -200,6 +209,19 @@ pub struct ArmTierSummary {
     pub storage_ops_allocated_bytes_per_op: Option<Spread>,
     pub mean_wire_bytes: Option<Spread>,
     pub final_sync_ms: Option<Spread>,
+    /// Wall time per acknowledged change: timed window divided by acknowledged changes, ms.
+    #[serde(default)]
+    pub ms_per_change: Option<Spread>,
+    /// SoC package energy per acknowledged change over the timed window, mJ.
+    #[serde(default)]
+    pub pkg_mj_per_change: Option<Spread>,
+    /// As `pkg_mj_per_change` minus the idle package power times the window, mJ
+    /// (COUNTERFACTUAL: idle measured in a separate window).
+    #[serde(default)]
+    pub pkg_mj_per_change_above_idle: Option<Spread>,
+    /// Mean SoC package power over the timed window, W.
+    #[serde(default)]
+    pub pkg_mean_w: Option<Spread>,
 }
 
 /// Compact headline row (medians across repetitions).
@@ -261,6 +283,9 @@ pub struct Report {
     pub import_probe: Option<ImportProbeResult>,
     pub failures: Vec<CellFailure>,
     pub scope_notes: Vec<String>,
+    /// IDLE energy window measured before the cells (absent in Gate 4 reports).
+    #[serde(default)]
+    pub idle_energy: Option<EnergyReading>,
 }
 
 /// Fixture identity and read-only evidence for the original repository.
@@ -437,6 +462,7 @@ fn summarize_write(
     cells: &[WriteCellResult],
     arms: &[ArmKind],
     tiers: &[usize],
+    idle: Option<&EnergyReading>,
 ) -> Vec<ArmTierSummary> {
     let mut out = Vec::new();
     for &agents in tiers {
@@ -487,6 +513,14 @@ fn summarize_write(
                 }),
                 mean_wire_bytes: f(&|c| c.mean_wire_bytes),
                 final_sync_ms: f(&|c| c.final_sync_ms),
+                ms_per_change: f(&|c| (c.ops_ok > 0).then(|| c.wall_ms / c.ops_ok as f64)),
+                pkg_mj_per_change: f(&|c| c.pkg_j_per_op.map(|j| j * 1000.0)),
+                pkg_mj_per_change_above_idle: f(&|c| {
+                    let e = c.energy.as_ref()?;
+                    let above = e.pkg_above_idle_j(idle?)?;
+                    (c.ops_ok > 0).then(|| above / c.ops_ok as f64 * 1000.0)
+                }),
+                pkg_mean_w: f(&|c| c.energy.as_ref().and_then(|e| e.pkg_mean_w)),
             });
         }
     }
@@ -763,6 +797,12 @@ pub fn run_qualification(cfg: &RunConfig) -> Result<(), String> {
                 });
             }
         }
+        if cfg.write_only {
+            let mut rng = SplitMix64::derive(order_seed, &[rep as u64]);
+            rng.shuffle(&mut block);
+            planned.extend(block);
+            continue;
+        }
         let label = format!("query-r{rep}");
         let root = cells_root.join(&label);
         block.push(Planned {
@@ -814,6 +854,9 @@ pub fn run_qualification(cfg: &RunConfig) -> Result<(), String> {
         ("import-probe", "import-probe"),
     ];
     for (label, kind) in singles {
+        if cfg.write_only {
+            break;
+        }
         let root = cells_root.join(label);
         let work_item = match kind {
             "conflict" => Work::Conflict(ConflictSpec {
@@ -855,6 +898,11 @@ pub fn run_qualification(cfg: &RunConfig) -> Result<(), String> {
     for (i, p) in planned.iter_mut().enumerate() {
         p.entry.order = i;
     }
+
+    // IDLE energy baseline (the harness sleeps; other tenants keep running).
+    let idle = crate::energy::idle_window(std::time::Duration::from_secs_f64(
+        cfg.idle_window_s.max(1.0),
+    ));
 
     // Execute.
     let total = planned.len();
@@ -944,7 +992,7 @@ pub fn run_qualification(cfg: &RunConfig) -> Result<(), String> {
         });
     }
 
-    let write_summary = summarize_write(&write_cells, &cfg.arms, &cfg.tiers);
+    let write_summary = summarize_write(&write_cells, &cfg.arms, &cfg.tiers, Some(&idle));
     let report = Report {
         schema: REPORT_SCHEMA.into(),
         smoke: cfg.smoke,
@@ -970,6 +1018,7 @@ pub fn run_qualification(cfg: &RunConfig) -> Result<(), String> {
         import_probe,
         failures,
         scope_notes: scope_notes(),
+        idle_energy: Some(idle),
     };
     write_json(&cfg.out_dir.join("report.json"), &report)?;
 

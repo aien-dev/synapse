@@ -1,0 +1,3733 @@
+{
+  "schema": "synapse-gate4-qualification-report/v1",
+  "smoke": false,
+  "generated_at_utc": "2026-10-14T17:59:17Z",
+  "arms": [
+    {
+      "code": "S1",
+      "description": "Synapse submit, FsyncPolicy::EveryCommit (blob files, shard dirs, and WAL fsynced before ack)",
+      "durability": "fsync before ack (blobs, shard directories, WAL)"
+    },
+    {
+      "code": "S3",
+      "description": "Synapse submit, FsyncPolicy::GroupCommit through SharedStore (WAL v2, blobs inline, one fdatasync per batch of concurrent submitters; service lock held only for admission and path indexing)",
+      "durability": "fsync before ack (one fdatasync per batch into pre-written WAL v2 space; blobs inside the batch)"
+    }
+  ],
+  "headline": [
+    {
+      "agents": 1,
+      "arm": "S1",
+      "ops_per_cell": 4000,
+      "throughput_ops_per_s_median": 70.339,
+      "write_p50_ms_median": 12.164,
+      "write_p99_ms_median": 29.78
+    },
+    {
+      "agents": 1,
+      "arm": "S3",
+      "ops_per_cell": 4000,
+      "throughput_ops_per_s_median": 488.296,
+      "write_p50_ms_median": 1.86,
+      "write_p99_ms_median": 5.093
+    },
+    {
+      "agents": 4,
+      "arm": "S1",
+      "ops_per_cell": 4000,
+      "throughput_ops_per_s_median": 71.273,
+      "write_p50_ms_median": 54.291,
+      "write_p99_ms_median": 162.143
+    },
+    {
+      "agents": 4,
+      "arm": "S3",
+      "ops_per_cell": 4000,
+      "throughput_ops_per_s_median": 1377.749,
+      "write_p50_ms_median": 2.713,
+      "write_p99_ms_median": 5.607
+    },
+    {
+      "agents": 8,
+      "arm": "S1",
+      "ops_per_cell": 4000,
+      "throughput_ops_per_s_median": 73.408,
+      "write_p50_ms_median": 106.081,
+      "write_p99_ms_median": 291.89
+    },
+    {
+      "agents": 8,
+      "arm": "S3",
+      "ops_per_cell": 4000,
+      "throughput_ops_per_s_median": 2433.511,
+      "write_p50_ms_median": 2.988,
+      "write_p99_ms_median": 6.694
+    },
+    {
+      "agents": 32,
+      "arm": "S1",
+      "ops_per_cell": 4000,
+      "throughput_ops_per_s_median": 71.236,
+      "write_p50_ms_median": 427.614,
+      "write_p99_ms_median": 1371.617
+    },
+    {
+      "agents": 32,
+      "arm": "S3",
+      "ops_per_cell": 4000,
+      "throughput_ops_per_s_median": 2866.916,
+      "write_p50_ms_median": 9.951,
+      "write_p99_ms_median": 28.337
+    }
+  ],
+  "write_summary": [
+    {
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "reps": 3,
+      "ops_ok_total": 12000,
+      "ops_failed_total": 0,
+      "latency_n_per_rep": [
+        4000,
+        4000,
+        4000
+      ],
+      "throughput_ops_per_s": {
+        "median": 70.339,
+        "min": 69.839,
+        "max": 71.286,
+        "reps": 3
+      },
+      "latency_p50_ms": {
+        "median": 12.164,
+        "min": 12.087,
+        "max": 12.496,
+        "reps": 3
+      },
+      "latency_p95_ms": {
+        "median": 24.711,
+        "min": 24.485,
+        "max": 25.591,
+        "reps": 3
+      },
+      "latency_p99_ms": {
+        "median": 29.78,
+        "min": 29.079,
+        "max": 31.257,
+        "reps": 3
+      },
+      "latency_max_ms": {
+        "median": 54.917,
+        "min": 36.303,
+        "max": 86.43,
+        "reps": 3
+      },
+      "queue_wait_p50_ms": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "cpu_ms_per_op": {
+        "median": 1.09,
+        "min": 1.067,
+        "max": 1.09,
+        "reps": 3
+      },
+      "peak_rss_arm_process_kib": {
+        "median": 216768.0,
+        "min": 216308.0,
+        "max": 217412.0,
+        "reps": 3
+      },
+      "peak_rss_largest_git_child_kib": null,
+      "setup_description": "open SynapseService, register the base tree held in memory, issue grants",
+      "setup_units": 1,
+      "setup_ms_per_unit": {
+        "median": 380.159,
+        "min": 379.993,
+        "max": 380.642,
+        "reps": 3
+      },
+      "storage_setup_apparent_bytes": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "storage_ops_apparent_bytes_per_op": {
+        "median": 11543.066,
+        "min": 11341.945,
+        "max": 11554.388,
+        "reps": 3
+      },
+      "storage_ops_allocated_bytes_per_op": {
+        "median": 15204.352,
+        "min": 15008.768,
+        "max": 15228.928,
+        "reps": 3
+      },
+      "mean_wire_bytes": {
+        "median": 36795.613,
+        "min": 36051.534,
+        "max": 36820.139,
+        "reps": 3
+      },
+      "final_sync_ms": null,
+      "ms_per_change": {
+        "median": 14.217,
+        "min": 14.028,
+        "max": 14.319,
+        "reps": 3
+      },
+      "pkg_mj_per_change": {
+        "median": 305.165,
+        "min": 276.293,
+        "max": 336.514,
+        "reps": 3
+      },
+      "pkg_mj_per_change_above_idle": {
+        "median": -18.005,
+        "min": -42.586,
+        "max": 11.03,
+        "reps": 3
+      },
+      "pkg_mean_w": {
+        "median": 21.465,
+        "min": 19.696,
+        "max": 23.502,
+        "reps": 3
+      }
+    },
+    {
+      "arm": "S3",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "reps": 3,
+      "ops_ok_total": 12000,
+      "ops_failed_total": 0,
+      "latency_n_per_rep": [
+        4000,
+        4000,
+        4000
+      ],
+      "throughput_ops_per_s": {
+        "median": 488.296,
+        "min": 451.287,
+        "max": 536.713,
+        "reps": 3
+      },
+      "latency_p50_ms": {
+        "median": 1.86,
+        "min": 1.698,
+        "max": 2.0,
+        "reps": 3
+      },
+      "latency_p95_ms": {
+        "median": 3.696,
+        "min": 3.279,
+        "max": 4.002,
+        "reps": 3
+      },
+      "latency_p99_ms": {
+        "median": 5.093,
+        "min": 4.586,
+        "max": 5.294,
+        "reps": 3
+      },
+      "latency_max_ms": {
+        "median": 11.122,
+        "min": 9.12,
+        "max": 13.015,
+        "reps": 3
+      },
+      "queue_wait_p50_ms": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "cpu_ms_per_op": {
+        "median": 0.845,
+        "min": 0.732,
+        "max": 0.941,
+        "reps": 3
+      },
+      "peak_rss_arm_process_kib": {
+        "median": 217884.0,
+        "min": 217552.0,
+        "max": 217980.0,
+        "reps": 3
+      },
+      "peak_rss_largest_git_child_kib": null,
+      "setup_description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+      "setup_units": 1,
+      "setup_ms_per_unit": {
+        "median": 419.822,
+        "min": 408.761,
+        "max": 421.541,
+        "reps": 3
+      },
+      "storage_setup_apparent_bytes": {
+        "median": 67108952.0,
+        "min": 67108952.0,
+        "max": 67108952.0,
+        "reps": 3
+      },
+      "storage_ops_apparent_bytes_per_op": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "storage_ops_allocated_bytes_per_op": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "mean_wire_bytes": {
+        "median": 36796.616,
+        "min": 36051.587,
+        "max": 36816.204,
+        "reps": 3
+      },
+      "final_sync_ms": null,
+      "ms_per_change": {
+        "median": 2.048,
+        "min": 1.863,
+        "max": 2.216,
+        "reps": 3
+      },
+      "pkg_mj_per_change": {
+        "median": 51.731,
+        "min": 40.46,
+        "max": 55.255,
+        "reps": 3
+      },
+      "pkg_mj_per_change_above_idle": {
+        "median": 4.884,
+        "min": -1.894,
+        "max": 5.178,
+        "reps": 3
+      },
+      "pkg_mean_w": {
+        "median": 24.936,
+        "min": 21.715,
+        "max": 25.26,
+        "reps": 3
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "reps": 3,
+      "ops_ok_total": 12000,
+      "ops_failed_total": 0,
+      "latency_n_per_rep": [
+        4000,
+        4000,
+        4000
+      ],
+      "throughput_ops_per_s": {
+        "median": 71.273,
+        "min": 71.19,
+        "max": 72.212,
+        "reps": 3
+      },
+      "latency_p50_ms": {
+        "median": 54.291,
+        "min": 54.248,
+        "max": 55.184,
+        "reps": 3
+      },
+      "latency_p95_ms": {
+        "median": 111.064,
+        "min": 100.008,
+        "max": 114.651,
+        "reps": 3
+      },
+      "latency_p99_ms": {
+        "median": 162.143,
+        "min": 147.406,
+        "max": 168.256,
+        "reps": 3
+      },
+      "latency_max_ms": {
+        "median": 299.987,
+        "min": 294.075,
+        "max": 383.68,
+        "reps": 3
+      },
+      "queue_wait_p50_ms": {
+        "median": 39.527,
+        "min": 39.479,
+        "max": 40.307,
+        "reps": 3
+      },
+      "cpu_ms_per_op": {
+        "median": 1.189,
+        "min": 1.151,
+        "max": 1.196,
+        "reps": 3
+      },
+      "peak_rss_arm_process_kib": {
+        "median": 218880.0,
+        "min": 217628.0,
+        "max": 219800.0,
+        "reps": 3
+      },
+      "peak_rss_largest_git_child_kib": null,
+      "setup_description": "open SynapseService, register the base tree held in memory, issue grants",
+      "setup_units": 1,
+      "setup_ms_per_unit": {
+        "median": 379.948,
+        "min": 379.788,
+        "max": 380.198,
+        "reps": 3
+      },
+      "storage_setup_apparent_bytes": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "storage_ops_apparent_bytes_per_op": {
+        "median": 11551.599,
+        "min": 11309.566,
+        "max": 11706.056,
+        "reps": 3
+      },
+      "storage_ops_allocated_bytes_per_op": {
+        "median": 15209.472,
+        "min": 15041.536,
+        "max": 15422.464,
+        "reps": 3
+      },
+      "mean_wire_bytes": {
+        "median": 36794.088,
+        "min": 36001.187,
+        "max": 37304.945,
+        "reps": 3
+      },
+      "final_sync_ms": null,
+      "ms_per_change": {
+        "median": 14.03,
+        "min": 13.848,
+        "max": 14.047,
+        "reps": 3
+      },
+      "pkg_mj_per_change": {
+        "median": 316.284,
+        "min": 277.802,
+        "max": 333.477,
+        "reps": 3
+      },
+      "pkg_mj_per_change_above_idle": {
+        "median": -3.021,
+        "min": -41.132,
+        "max": 18.687,
+        "reps": 3
+      },
+      "pkg_mean_w": {
+        "median": 22.516,
+        "min": 19.8,
+        "max": 24.081,
+        "reps": 3
+      }
+    },
+    {
+      "arm": "S3",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "reps": 3,
+      "ops_ok_total": 12000,
+      "ops_failed_total": 0,
+      "latency_n_per_rep": [
+        4000,
+        4000,
+        4000
+      ],
+      "throughput_ops_per_s": {
+        "median": 1377.749,
+        "min": 1343.814,
+        "max": 1378.409,
+        "reps": 3
+      },
+      "latency_p50_ms": {
+        "median": 2.713,
+        "min": 2.702,
+        "max": 2.735,
+        "reps": 3
+      },
+      "latency_p95_ms": {
+        "median": 4.281,
+        "min": 4.28,
+        "max": 4.663,
+        "reps": 3
+      },
+      "latency_p99_ms": {
+        "median": 5.607,
+        "min": 5.58,
+        "max": 5.942,
+        "reps": 3
+      },
+      "latency_max_ms": {
+        "median": 12.619,
+        "min": 9.078,
+        "max": 12.631,
+        "reps": 3
+      },
+      "queue_wait_p50_ms": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "cpu_ms_per_op": {
+        "median": 0.729,
+        "min": 0.702,
+        "max": 0.845,
+        "reps": 3
+      },
+      "peak_rss_arm_process_kib": {
+        "median": 219740.0,
+        "min": 218532.0,
+        "max": 220264.0,
+        "reps": 3
+      },
+      "peak_rss_largest_git_child_kib": null,
+      "setup_description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+      "setup_units": 1,
+      "setup_ms_per_unit": {
+        "median": 425.571,
+        "min": 411.06,
+        "max": 434.508,
+        "reps": 3
+      },
+      "storage_setup_apparent_bytes": {
+        "median": 67108952.0,
+        "min": 67108952.0,
+        "max": 67108952.0,
+        "reps": 3
+      },
+      "storage_ops_apparent_bytes_per_op": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "storage_ops_allocated_bytes_per_op": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "mean_wire_bytes": {
+        "median": 36791.213,
+        "min": 36002.089,
+        "max": 37306.409,
+        "reps": 3
+      },
+      "final_sync_ms": null,
+      "ms_per_change": {
+        "median": 0.726,
+        "min": 0.725,
+        "max": 0.744,
+        "reps": 3
+      },
+      "pkg_mj_per_change": {
+        "median": 17.24,
+        "min": 16.135,
+        "max": 19.701,
+        "reps": 3
+      },
+      "pkg_mj_per_change_above_idle": {
+        "median": 0.748,
+        "min": -0.365,
+        "max": 2.785,
+        "reps": 3
+      },
+      "pkg_mean_w": {
+        "median": 23.762,
+        "min": 22.229,
+        "max": 26.474,
+        "reps": 3
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "reps": 3,
+      "ops_ok_total": 12000,
+      "ops_failed_total": 0,
+      "latency_n_per_rep": [
+        4000,
+        4000,
+        4000
+      ],
+      "throughput_ops_per_s": {
+        "median": 73.408,
+        "min": 71.289,
+        "max": 74.991,
+        "reps": 3
+      },
+      "latency_p50_ms": {
+        "median": 106.081,
+        "min": 105.47,
+        "max": 107.124,
+        "reps": 3
+      },
+      "latency_p95_ms": {
+        "median": 205.828,
+        "min": 198.193,
+        "max": 232.442,
+        "reps": 3
+      },
+      "latency_p99_ms": {
+        "median": 291.89,
+        "min": 263.137,
+        "max": 357.263,
+        "reps": 3
+      },
+      "latency_max_ms": {
+        "median": 563.078,
+        "min": 453.806,
+        "max": 653.809,
+        "reps": 3
+      },
+      "queue_wait_p50_ms": {
+        "median": 92.215,
+        "min": 91.195,
+        "max": 93.136,
+        "reps": 3
+      },
+      "cpu_ms_per_op": {
+        "median": 1.185,
+        "min": 1.132,
+        "max": 1.188,
+        "reps": 3
+      },
+      "peak_rss_arm_process_kib": {
+        "median": 220932.0,
+        "min": 220420.0,
+        "max": 221048.0,
+        "reps": 3
+      },
+      "peak_rss_largest_git_child_kib": null,
+      "setup_description": "open SynapseService, register the base tree held in memory, issue grants",
+      "setup_units": 1,
+      "setup_ms_per_unit": {
+        "median": 379.759,
+        "min": 379.617,
+        "max": 379.779,
+        "reps": 3
+      },
+      "storage_setup_apparent_bytes": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "storage_ops_apparent_bytes_per_op": {
+        "median": 11426.913,
+        "min": 11324.979,
+        "max": 11507.109,
+        "reps": 3
+      },
+      "storage_ops_allocated_bytes_per_op": {
+        "median": 15073.28,
+        "min": 14973.952,
+        "max": 15159.296,
+        "reps": 3
+      },
+      "mean_wire_bytes": {
+        "median": 36390.992,
+        "min": 36098.157,
+        "max": 36671.364,
+        "reps": 3
+      },
+      "final_sync_ms": null,
+      "ms_per_change": {
+        "median": 13.623,
+        "min": 13.335,
+        "max": 14.027,
+        "reps": 3
+      },
+      "pkg_mj_per_change": {
+        "median": 376.929,
+        "min": 295.369,
+        "max": 378.623,
+        "reps": 3
+      },
+      "pkg_mj_per_change_above_idle": {
+        "median": 67.27,
+        "min": -23.495,
+        "max": 75.501,
+        "reps": 3
+      },
+      "pkg_mean_w": {
+        "median": 27.67,
+        "min": 21.057,
+        "max": 28.393,
+        "reps": 3
+      }
+    },
+    {
+      "arm": "S3",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "reps": 3,
+      "ops_ok_total": 12000,
+      "ops_failed_total": 0,
+      "latency_n_per_rep": [
+        4000,
+        4000,
+        4000
+      ],
+      "throughput_ops_per_s": {
+        "median": 2433.511,
+        "min": 2347.196,
+        "max": 2577.714,
+        "reps": 3
+      },
+      "latency_p50_ms": {
+        "median": 2.988,
+        "min": 2.832,
+        "max": 3.099,
+        "reps": 3
+      },
+      "latency_p95_ms": {
+        "median": 5.124,
+        "min": 4.881,
+        "max": 5.389,
+        "reps": 3
+      },
+      "latency_p99_ms": {
+        "median": 6.694,
+        "min": 6.39,
+        "max": 6.791,
+        "reps": 3
+      },
+      "latency_max_ms": {
+        "median": 9.56,
+        "min": 8.711,
+        "max": 11.788,
+        "reps": 3
+      },
+      "queue_wait_p50_ms": {
+        "median": 0.365,
+        "min": 0.27,
+        "max": 0.41,
+        "reps": 3
+      },
+      "cpu_ms_per_op": {
+        "median": 0.794,
+        "min": 0.776,
+        "max": 0.839,
+        "reps": 3
+      },
+      "peak_rss_arm_process_kib": {
+        "median": 221856.0,
+        "min": 221012.0,
+        "max": 222080.0,
+        "reps": 3
+      },
+      "peak_rss_largest_git_child_kib": null,
+      "setup_description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+      "setup_units": 1,
+      "setup_ms_per_unit": {
+        "median": 435.522,
+        "min": 414.69,
+        "max": 448.372,
+        "reps": 3
+      },
+      "storage_setup_apparent_bytes": {
+        "median": 67108952.0,
+        "min": 67108952.0,
+        "max": 67108952.0,
+        "reps": 3
+      },
+      "storage_ops_apparent_bytes_per_op": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "storage_ops_allocated_bytes_per_op": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "mean_wire_bytes": {
+        "median": 36390.684,
+        "min": 36097.69,
+        "max": 36672.473,
+        "reps": 3
+      },
+      "final_sync_ms": null,
+      "ms_per_change": {
+        "median": 0.411,
+        "min": 0.388,
+        "max": 0.426,
+        "reps": 3
+      },
+      "pkg_mj_per_change": {
+        "median": 12.851,
+        "min": 11.945,
+        "max": 14.018,
+        "reps": 3
+      },
+      "pkg_mj_per_change_above_idle": {
+        "median": 4.031,
+        "min": 2.26,
+        "max": 4.676,
+        "reps": 3
+      },
+      "pkg_mean_w": {
+        "median": 33.123,
+        "min": 28.036,
+        "max": 34.111,
+        "reps": 3
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "reps": 3,
+      "ops_ok_total": 12000,
+      "ops_failed_total": 0,
+      "latency_n_per_rep": [
+        4000,
+        4000,
+        4000
+      ],
+      "throughput_ops_per_s": {
+        "median": 71.236,
+        "min": 70.913,
+        "max": 73.31,
+        "reps": 3
+      },
+      "latency_p50_ms": {
+        "median": 427.614,
+        "min": 423.459,
+        "max": 431.683,
+        "reps": 3
+      },
+      "latency_p95_ms": {
+        "median": 932.721,
+        "min": 875.077,
+        "max": 935.581,
+        "reps": 3
+      },
+      "latency_p99_ms": {
+        "median": 1371.617,
+        "min": 1257.365,
+        "max": 1397.203,
+        "reps": 3
+      },
+      "latency_max_ms": {
+        "median": 3151.956,
+        "min": 1994.07,
+        "max": 3311.548,
+        "reps": 3
+      },
+      "queue_wait_p50_ms": {
+        "median": 413.418,
+        "min": 409.093,
+        "max": 416.853,
+        "reps": 3
+      },
+      "cpu_ms_per_op": {
+        "median": 1.194,
+        "min": 1.151,
+        "max": 1.217,
+        "reps": 3
+      },
+      "peak_rss_arm_process_kib": {
+        "median": 233364.0,
+        "min": 233300.0,
+        "max": 233628.0,
+        "reps": 3
+      },
+      "peak_rss_largest_git_child_kib": null,
+      "setup_description": "open SynapseService, register the base tree held in memory, issue grants",
+      "setup_units": 1,
+      "setup_ms_per_unit": {
+        "median": 380.383,
+        "min": 380.36,
+        "max": 380.677,
+        "reps": 3
+      },
+      "storage_setup_apparent_bytes": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "storage_ops_apparent_bytes_per_op": {
+        "median": 11440.417,
+        "min": 11416.688,
+        "max": 11498.068,
+        "reps": 3
+      },
+      "storage_ops_allocated_bytes_per_op": {
+        "median": 15114.24,
+        "min": 15102.976,
+        "max": 15168.512,
+        "reps": 3
+      },
+      "mean_wire_bytes": {
+        "median": 36439.489,
+        "min": 36349.848,
+        "max": 36630.731,
+        "reps": 3
+      },
+      "final_sync_ms": null,
+      "ms_per_change": {
+        "median": 14.038,
+        "min": 13.641,
+        "max": 14.102,
+        "reps": 3
+      },
+      "pkg_mj_per_change": {
+        "median": 305.243,
+        "min": 290.528,
+        "max": 329.81,
+        "reps": 3
+      },
+      "pkg_mj_per_change_above_idle": {
+        "median": -13.859,
+        "min": -30.027,
+        "max": 19.737,
+        "reps": 3
+      },
+      "pkg_mean_w": {
+        "median": 21.744,
+        "min": 20.602,
+        "max": 24.178,
+        "reps": 3
+      }
+    },
+    {
+      "arm": "S3",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "reps": 3,
+      "ops_ok_total": 12000,
+      "ops_failed_total": 0,
+      "latency_n_per_rep": [
+        4000,
+        4000,
+        4000
+      ],
+      "throughput_ops_per_s": {
+        "median": 2866.916,
+        "min": 2841.565,
+        "max": 2941.388,
+        "reps": 3
+      },
+      "latency_p50_ms": {
+        "median": 9.951,
+        "min": 9.569,
+        "max": 10.141,
+        "reps": 3
+      },
+      "latency_p95_ms": {
+        "median": 21.326,
+        "min": 20.742,
+        "max": 21.418,
+        "reps": 3
+      },
+      "latency_p99_ms": {
+        "median": 28.337,
+        "min": 28.15,
+        "max": 28.736,
+        "reps": 3
+      },
+      "latency_max_ms": {
+        "median": 45.568,
+        "min": 40.501,
+        "max": 46.445,
+        "reps": 3
+      },
+      "queue_wait_p50_ms": {
+        "median": 7.069,
+        "min": 6.848,
+        "max": 7.385,
+        "reps": 3
+      },
+      "cpu_ms_per_op": {
+        "median": 0.813,
+        "min": 0.801,
+        "max": 0.815,
+        "reps": 3
+      },
+      "peak_rss_arm_process_kib": {
+        "median": 233660.0,
+        "min": 233432.0,
+        "max": 234456.0,
+        "reps": 3
+      },
+      "peak_rss_largest_git_child_kib": null,
+      "setup_description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+      "setup_units": 1,
+      "setup_ms_per_unit": {
+        "median": 419.895,
+        "min": 412.272,
+        "max": 440.683,
+        "reps": 3
+      },
+      "storage_setup_apparent_bytes": {
+        "median": 67108952.0,
+        "min": 67108952.0,
+        "max": 67108952.0,
+        "reps": 3
+      },
+      "storage_ops_apparent_bytes_per_op": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "storage_ops_allocated_bytes_per_op": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "reps": 3
+      },
+      "mean_wire_bytes": {
+        "median": 36440.056,
+        "min": 36347.472,
+        "max": 36630.114,
+        "reps": 3
+      },
+      "final_sync_ms": null,
+      "ms_per_change": {
+        "median": 0.349,
+        "min": 0.34,
+        "max": 0.352,
+        "reps": 3
+      },
+      "pkg_mj_per_change": {
+        "median": 8.457,
+        "min": 8.353,
+        "max": 10.163,
+        "reps": 3
+      },
+      "pkg_mj_per_change_above_idle": {
+        "median": 0.624,
+        "min": 0.528,
+        "max": 2.163,
+        "reps": 3
+      },
+      "pkg_mean_w": {
+        "median": 24.566,
+        "min": 24.244,
+        "max": 28.877,
+        "reps": 3
+      }
+    }
+  ],
+  "write_cells": [
+    {
+      "arm": "S3",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 0,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 8191.749,
+      "throughput_ops_per_s": 488.296,
+      "latency": {
+        "n": 4000,
+        "min_ms": 0.99,
+        "p50_ms": 1.86,
+        "p95_ms": 3.696,
+        "p99_ms": 5.093,
+        "max_ms": 11.122,
+        "mean_ms": 2.046
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.0,
+        "p95_ms": 0.0,
+        "p99_ms": 0.0,
+        "max_ms": 0.004,
+        "mean_ms": 0.0
+      },
+      "mean_wire_bytes": 36796.616,
+      "mean_content_bytes": 9970.759,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 408.761,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3085.695,
+        "self_sys_ms": 295.516,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 3381.211,
+        "peak_rss_self_kib": 217980,
+        "peak_rss_largest_child_kib": 206460
+      },
+      "cpu_ms_per_op": 0.845,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a01-r0/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67125248,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 8.191855454,
+        "valid": true,
+        "refusal": null,
+        "samples": 83,
+        "largest_gap_ms": 100.686,
+        "pkg_j": 206.923,
+        "cpu_p_j": 67.92,
+        "cpu_e_j": 8.102,
+        "rest_j": 130.90099999999998,
+        "pkg_mean_w": 25.25960097342313,
+        "pkg_edge_sd_j": 2.062437783039865,
+        "sys_total_mean_w": 28.309807228915663,
+        "nvme_temp_k": 311.0,
+        "loadavg_start": [
+          1.87,
+          1.92,
+          2.45
+        ],
+        "loadavg_end": [
+          1.88,
+          1.92,
+          2.45
+        ],
+        "machine_busy_cpu_s": 16.139999999897555
+      },
+      "pkg_j_per_op": 0.05173075,
+      "group_commit": {
+        "batches": 4000,
+        "records": 4000,
+        "max_batch_records": 1,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S3",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 0,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 2976.602,
+      "throughput_ops_per_s": 1343.814,
+      "latency": {
+        "n": 4000,
+        "min_ms": 1.005,
+        "p50_ms": 2.735,
+        "p95_ms": 4.663,
+        "p99_ms": 5.942,
+        "max_ms": 9.078,
+        "mean_ms": 2.91
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.0,
+        "p95_ms": 0.665,
+        "p99_ms": 1.124,
+        "max_ms": 1.785,
+        "mean_ms": 0.133
+      },
+      "mean_wire_bytes": 36791.213,
+      "mean_content_bytes": 9969.382,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 411.06,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3092.666,
+        "self_sys_ms": 285.336,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 3378.002,
+        "peak_rss_self_kib": 219740,
+        "peak_rss_largest_child_kib": 206620
+      },
+      "cpu_ms_per_op": 0.845,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a04-r0/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67125248,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 2.976701064,
+        "valid": true,
+        "refusal": null,
+        "samples": 31,
+        "largest_gap_ms": 100.612,
+        "pkg_j": 78.805,
+        "cpu_p_j": 26.851,
+        "cpu_e_j": 3.984,
+        "rest_j": 47.970000000000006,
+        "pkg_mean_w": 26.473938197241832,
+        "pkg_edge_sd_j": 2.161588002173988,
+        "sys_total_mean_w": 30.407774193548388,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          1.97,
+          1.94,
+          2.45
+        ],
+        "loadavg_end": [
+          1.97,
+          1.94,
+          2.45
+        ],
+        "machine_busy_cpu_s": 7.380000000121072
+      },
+      "pkg_j_per_op": 0.01970125,
+      "group_commit": {
+        "batches": 2259,
+        "records": 4000,
+        "max_batch_records": 4,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S3",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 0,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 1407.675,
+      "throughput_ops_per_s": 2841.565,
+      "latency": {
+        "n": 4000,
+        "min_ms": 1.07,
+        "p50_ms": 10.141,
+        "p95_ms": 20.742,
+        "p99_ms": 28.15,
+        "max_ms": 46.445,
+        "mean_ms": 10.81
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 7.385,
+        "p95_ms": 18.068,
+        "p99_ms": 25.295,
+        "max_ms": 42.188,
+        "mean_ms": 8.165
+      },
+      "mean_wire_bytes": 36440.056,
+      "mean_content_bytes": 9861.061,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 412.272,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3056.687,
+        "self_sys_ms": 196.175,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 3252.862,
+        "peak_rss_self_kib": 234456,
+        "peak_rss_largest_child_kib": 206296
+      },
+      "cpu_ms_per_op": 0.813,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a32-r0/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67125248,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 1.407781868,
+        "valid": true,
+        "refusal": null,
+        "samples": 16,
+        "largest_gap_ms": 102.382,
+        "pkg_j": 40.652,
+        "cpu_p_j": 15.656,
+        "cpu_e_j": 2.316,
+        "rest_j": 22.680000000000003,
+        "pkg_mean_w": 28.876632754016978,
+        "pkg_edge_sd_j": 2.3577671912360447,
+        "sys_total_mean_w": 34.3771875,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          1.97,
+          1.94,
+          2.45
+        ],
+        "loadavg_end": [
+          2.21,
+          1.99,
+          2.47
+        ],
+        "machine_busy_cpu_s": 4.169999999925494
+      },
+      "pkg_j_per_op": 0.010163,
+      "group_commit": {
+        "batches": 1122,
+        "records": 4000,
+        "max_batch_records": 16,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 0,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 55392.767,
+      "throughput_ops_per_s": 72.212,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.691,
+        "p50_ms": 54.248,
+        "p95_ms": 100.008,
+        "p99_ms": 147.406,
+        "max_ms": 383.68,
+        "mean_ms": 54.274
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 39.479,
+        "p95_ms": 83.14,
+        "p99_ms": 125.75,
+        "max_ms": 348.332,
+        "mean_ms": 40.117
+      },
+      "mean_wire_bytes": 36794.088,
+      "mean_content_bytes": 9969.382,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 379.948,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 2937.267,
+        "self_sys_ms": 1846.501,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4783.768,
+        "peak_rss_self_kib": 218880,
+        "peak_rss_largest_child_kib": 205728
+      },
+      "cpu_ms_per_op": 1.196,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a04-r0/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 46206396,
+          "allocated_bytes": 60850176
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 46206396,
+        "ops_allocated_bytes": 60837888,
+        "total_apparent_bytes": 46206396,
+        "total_allocated_bytes": 60850176,
+        "ops_apparent_bytes_per_op": 11551.599,
+        "ops_allocated_bytes_per_op": 15209.472
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 55.392870134,
+        "valid": true,
+        "refusal": null,
+        "samples": 555,
+        "largest_gap_ms": 103.049,
+        "pkg_j": 1333.907,
+        "cpu_p_j": 427.047,
+        "cpu_e_j": 36.526,
+        "rest_j": 870.334,
+        "pkg_mean_w": 24.080842837230986,
+        "pkg_edge_sd_j": 1.966192584245702,
+        "sys_total_mean_w": 27.38103243243243,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          2.21,
+          1.99,
+          2.47
+        ],
+        "loadavg_end": [
+          3.03,
+          2.23,
+          2.52
+        ],
+        "machine_busy_cpu_s": 81.19999999995343
+      },
+      "pkg_j_per_op": 0.33347675,
+      "group_commit": null
+    },
+    {
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 0,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 56151.617,
+      "throughput_ops_per_s": 71.236,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.688,
+        "p50_ms": 427.614,
+        "p95_ms": 935.581,
+        "p99_ms": 1371.617,
+        "max_ms": 3311.548,
+        "mean_ms": 425.468
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 413.418,
+        "p95_ms": 922.005,
+        "p99_ms": 1352.234,
+        "max_ms": 3302.24,
+        "mean_ms": 411.127
+      },
+      "mean_wire_bytes": 36439.489,
+      "mean_content_bytes": 9861.061,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 380.677,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3323.428,
+        "self_sys_ms": 1544.303,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4867.731,
+        "peak_rss_self_kib": 233628,
+        "peak_rss_largest_child_kib": 206108
+      },
+      "cpu_ms_per_op": 1.217,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a32-r0/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 45761669,
+          "allocated_bytes": 60424192
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 45761669,
+        "ops_allocated_bytes": 60411904,
+        "total_apparent_bytes": 45761669,
+        "total_allocated_bytes": 60424192,
+        "ops_apparent_bytes_per_op": 11440.417,
+        "ops_allocated_bytes_per_op": 15102.976
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 56.151719783,
+        "valid": true,
+        "refusal": null,
+        "samples": 563,
+        "largest_gap_ms": 102.713,
+        "pkg_j": 1220.973,
+        "cpu_p_j": 300.995,
+        "cpu_e_j": 39.237,
+        "rest_j": 880.741,
+        "pkg_mean_w": 21.744178178664637,
+        "pkg_edge_sd_j": 1.7754047137962947,
+        "sys_total_mean_w": 24.439094138543517,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          3.03,
+          2.23,
+          2.52
+        ],
+        "loadavg_end": [
+          2.91,
+          2.34,
+          2.54
+        ],
+        "machine_busy_cpu_s": 63.15999999991618
+      },
+      "pkg_j_per_op": 0.30524324999999997,
+      "group_commit": null
+    },
+    {
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 0,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 56867.429,
+      "throughput_ops_per_s": 70.339,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.688,
+        "p50_ms": 12.496,
+        "p95_ms": 24.711,
+        "p99_ms": 29.78,
+        "max_ms": 54.917,
+        "mean_ms": 14.215
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.0,
+        "p95_ms": 0.0,
+        "p99_ms": 0.0,
+        "max_ms": 0.0,
+        "mean_ms": 0.0
+      },
+      "mean_wire_bytes": 36795.613,
+      "mean_content_bytes": 9970.759,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 380.642,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3159.668,
+        "self_sys_ms": 1200.404,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4360.072,
+        "peak_rss_self_kib": 216768,
+        "peak_rss_largest_child_kib": 206336
+      },
+      "cpu_ms_per_op": 1.09,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a01-r0/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 46217552,
+          "allocated_bytes": 60928000
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 46217552,
+        "ops_allocated_bytes": 60915712,
+        "total_apparent_bytes": 46217552,
+        "total_allocated_bytes": 60928000,
+        "ops_apparent_bytes_per_op": 11554.388,
+        "ops_allocated_bytes_per_op": 15228.928
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 56.867539073,
+        "valid": true,
+        "refusal": null,
+        "samples": 570,
+        "largest_gap_ms": 102.742,
+        "pkg_j": 1220.661,
+        "cpu_p_j": 294.355,
+        "cpu_e_j": 39.513,
+        "rest_j": 886.793,
+        "pkg_mean_w": 21.464987229938963,
+        "pkg_edge_sd_j": 1.7526088682902463,
+        "sys_total_mean_w": 24.184664912280702,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          2.92,
+          2.35,
+          2.55
+        ],
+        "loadavg_end": [
+          2.79,
+          2.4,
+          2.55
+        ],
+        "machine_busy_cpu_s": 59.86999999987893
+      },
+      "pkg_j_per_op": 0.30516525,
+      "group_commit": null
+    },
+    {
+      "arm": "S3",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 0,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 1551.763,
+      "throughput_ops_per_s": 2577.714,
+      "latency": {
+        "n": 4000,
+        "min_ms": 0.989,
+        "p50_ms": 2.832,
+        "p95_ms": 4.881,
+        "p99_ms": 6.39,
+        "max_ms": 8.711,
+        "mean_ms": 3.018
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.27,
+        "p95_ms": 1.396,
+        "p99_ms": 2.096,
+        "max_ms": 3.37,
+        "mean_ms": 0.419
+      },
+      "mean_wire_bytes": 36672.473,
+      "mean_content_bytes": 9927.812,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 414.69,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 2931.526,
+        "self_sys_ms": 171.723,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 3103.249,
+        "peak_rss_self_kib": 221856,
+        "peak_rss_largest_child_kib": 206016
+      },
+      "cpu_ms_per_op": 0.776,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a08-r0/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67125248,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 1.551870594,
+        "valid": true,
+        "refusal": null,
+        "samples": 17,
+        "largest_gap_ms": 101.724,
+        "pkg_j": 51.402,
+        "cpu_p_j": 23.316,
+        "cpu_e_j": 3.204,
+        "rest_j": 24.882,
+        "pkg_mean_w": 33.122607128929204,
+        "pkg_edge_sd_j": 2.704449547218302,
+        "sys_total_mean_w": 39.72323529411764,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          2.79,
+          2.4,
+          2.55
+        ],
+        "loadavg_end": [
+          3.13,
+          2.48,
+          2.58
+        ],
+        "machine_busy_cpu_s": 6.96999999997206
+      },
+      "pkg_j_per_op": 0.0128505,
+      "group_commit": {
+        "batches": 1283,
+        "records": 4000,
+        "max_batch_records": 7,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 0,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 53339.636,
+      "throughput_ops_per_s": 74.991,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.685,
+        "p50_ms": 105.47,
+        "p95_ms": 198.193,
+        "p99_ms": 263.137,
+        "max_ms": 563.078,
+        "mean_ms": 105.187
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 91.195,
+        "p95_ms": 183.53,
+        "p99_ms": 249.31,
+        "max_ms": 552.827,
+        "mean_ms": 91.537
+      },
+      "mean_wire_bytes": 36671.364,
+      "mean_content_bytes": 9927.812,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 379.779,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3107.188,
+        "self_sys_ms": 1419.117,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4526.305,
+        "peak_rss_self_kib": 221048,
+        "peak_rss_largest_child_kib": 205848
+      },
+      "cpu_ms_per_op": 1.132,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a08-r0/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 46028435,
+          "allocated_bytes": 60649472
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 46028435,
+        "ops_allocated_bytes": 60637184,
+        "total_apparent_bytes": 46028435,
+        "total_allocated_bytes": 60649472,
+        "ops_apparent_bytes_per_op": 11507.109,
+        "ops_allocated_bytes_per_op": 15159.296
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 53.33973902,
+        "valid": true,
+        "refusal": null,
+        "samples": 535,
+        "largest_gap_ms": 101.403,
+        "pkg_j": 1514.493,
+        "cpu_p_j": 605.116,
+        "cpu_e_j": 41.636,
+        "rest_j": 867.741,
+        "pkg_mean_w": 28.393333522538107,
+        "pkg_edge_sd_j": 2.3183059742292955,
+        "sys_total_mean_w": 33.160985046728975,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          3.13,
+          2.48,
+          2.58
+        ],
+        "loadavg_end": [
+          4.38,
+          2.93,
+          2.72
+        ],
+        "machine_busy_cpu_s": 127.36000000010245
+      },
+      "pkg_j_per_op": 0.37862325,
+      "group_commit": null
+    },
+    {
+      "arm": "S3",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 1,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 1643.715,
+      "throughput_ops_per_s": 2433.511,
+      "latency": {
+        "n": 4000,
+        "min_ms": 1.012,
+        "p50_ms": 2.988,
+        "p95_ms": 5.124,
+        "p99_ms": 6.694,
+        "max_ms": 11.788,
+        "mean_ms": 3.202
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.365,
+        "p95_ms": 1.623,
+        "p99_ms": 2.27,
+        "max_ms": 4.387,
+        "mean_ms": 0.508
+      },
+      "mean_wire_bytes": 36390.684,
+      "mean_content_bytes": 9846.931,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 448.372,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 2971.55,
+        "self_sys_ms": 203.148,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 3174.698,
+        "peak_rss_self_kib": 222080,
+        "peak_rss_largest_child_kib": 205728
+      },
+      "cpu_ms_per_op": 0.794,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a08-r1/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67125248,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 1.643823282,
+        "valid": true,
+        "refusal": null,
+        "samples": 18,
+        "largest_gap_ms": 100.32,
+        "pkg_j": 56.072,
+        "cpu_p_j": 27.557,
+        "cpu_e_j": 2.268,
+        "rest_j": 26.247000000000003,
+        "pkg_mean_w": 34.11072261476827,
+        "pkg_edge_sd_j": 2.7851288387932356,
+        "sys_total_mean_w": 40.52638888888889,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          4.38,
+          2.93,
+          2.72
+        ],
+        "loadavg_end": [
+          4.38,
+          2.93,
+          2.72
+        ],
+        "machine_busy_cpu_s": 6.609999999869615
+      },
+      "pkg_j_per_op": 0.014018,
+      "group_commit": {
+        "batches": 1286,
+        "records": 4000,
+        "max_batch_records": 7,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 1,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 54490.11,
+      "throughput_ops_per_s": 73.408,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.69,
+        "p50_ms": 107.124,
+        "p95_ms": 205.828,
+        "p99_ms": 291.89,
+        "max_ms": 453.806,
+        "mean_ms": 106.741
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 93.136,
+        "p95_ms": 190.389,
+        "p99_ms": 273.68,
+        "max_ms": 429.048,
+        "mean_ms": 92.798
+      },
+      "mean_wire_bytes": 36390.992,
+      "mean_content_bytes": 9846.931,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 379.759,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3276.819,
+        "self_sys_ms": 1476.991,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4753.81,
+        "peak_rss_self_kib": 220932,
+        "peak_rss_largest_child_kib": 206052
+      },
+      "cpu_ms_per_op": 1.188,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a08-r1/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 45707653,
+          "allocated_bytes": 60305408
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 45707653,
+        "ops_allocated_bytes": 60293120,
+        "total_apparent_bytes": 45707653,
+        "total_allocated_bytes": 60305408,
+        "ops_apparent_bytes_per_op": 11426.913,
+        "ops_allocated_bytes_per_op": 15073.28
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 54.490222768,
+        "valid": true,
+        "refusal": null,
+        "samples": 546,
+        "largest_gap_ms": 102.95,
+        "pkg_j": 1507.718,
+        "cpu_p_j": 583.719,
+        "cpu_e_j": 41.489,
+        "rest_j": 882.51,
+        "pkg_mean_w": 27.669514335063877,
+        "pkg_edge_sd_j": 2.259206385051036,
+        "sys_total_mean_w": 31.82071428571429,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          4.38,
+          2.93,
+          2.72
+        ],
+        "loadavg_end": [
+          4.15,
+          3.12,
+          2.81
+        ],
+        "machine_busy_cpu_s": 118.47999999998136
+      },
+      "pkg_j_per_op": 0.3769295,
+      "group_commit": null
+    },
+    {
+      "arm": "S3",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 1,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 8863.539,
+      "throughput_ops_per_s": 451.287,
+      "latency": {
+        "n": 4000,
+        "min_ms": 0.99,
+        "p50_ms": 2.0,
+        "p95_ms": 4.002,
+        "p99_ms": 5.294,
+        "max_ms": 9.12,
+        "mean_ms": 2.214
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.0,
+        "p95_ms": 0.0,
+        "p99_ms": 0.0,
+        "max_ms": 0.0,
+        "mean_ms": 0.0
+      },
+      "mean_wire_bytes": 36051.587,
+      "mean_content_bytes": 9761.387,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 419.822,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3386.247,
+        "self_sys_ms": 376.603,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 3762.85,
+        "peak_rss_self_kib": 217552,
+        "peak_rss_largest_child_kib": 205552
+      },
+      "cpu_ms_per_op": 0.941,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a01-r1/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67125248,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 8.86364686,
+        "valid": true,
+        "refusal": null,
+        "samples": 90,
+        "largest_gap_ms": 100.457,
+        "pkg_j": 221.02,
+        "cpu_p_j": 71.586,
+        "cpu_e_j": 8.071,
+        "rest_j": 141.36300000000003,
+        "pkg_mean_w": 24.935560214771467,
+        "pkg_edge_sd_j": 2.035979965887834,
+        "sys_total_mean_w": 27.89206666666667,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          4.15,
+          3.12,
+          2.81
+        ],
+        "loadavg_end": [
+          4.27,
+          3.18,
+          2.83
+        ],
+        "machine_busy_cpu_s": 16.420000000158325
+      },
+      "pkg_j_per_op": 0.055255000000000006,
+      "group_commit": {
+        "batches": 4000,
+        "records": 4000,
+        "max_batch_records": 1,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 1,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 56407.335,
+      "throughput_ops_per_s": 70.913,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.383,
+        "p50_ms": 431.683,
+        "p95_ms": 932.721,
+        "p99_ms": 1397.203,
+        "max_ms": 3151.956,
+        "mean_ms": 427.087
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 416.853,
+        "p95_ms": 918.088,
+        "p99_ms": 1381.094,
+        "max_ms": 3128.615,
+        "mean_ms": 412.711
+      },
+      "mean_wire_bytes": 36349.848,
+      "mean_content_bytes": 9833.225,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 380.36,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3145.033,
+        "self_sys_ms": 1460.078,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4605.111,
+        "peak_rss_self_kib": 233300,
+        "peak_rss_largest_child_kib": 206100
+      },
+      "cpu_ms_per_op": 1.151,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a32-r1/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 45666750,
+          "allocated_bytes": 60469248
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 45666750,
+        "ops_allocated_bytes": 60456960,
+        "total_apparent_bytes": 45666750,
+        "total_allocated_bytes": 60469248,
+        "ops_apparent_bytes_per_op": 11416.688,
+        "ops_allocated_bytes_per_op": 15114.24
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 56.407431843,
+        "valid": true,
+        "refusal": null,
+        "samples": 566,
+        "largest_gap_ms": 101.3,
+        "pkg_j": 1162.113,
+        "cpu_p_j": 242.372,
+        "cpu_e_j": 34.906,
+        "rest_j": 884.835,
+        "pkg_mean_w": 20.60212567795205,
+        "pkg_edge_sd_j": 1.6821565175891156,
+        "sys_total_mean_w": 22.98081448763251,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          4.27,
+          3.18,
+          2.83
+        ],
+        "loadavg_end": [
+          3.57,
+          3.15,
+          2.84
+        ],
+        "machine_busy_cpu_s": 42.21999999997206
+      },
+      "pkg_j_per_op": 0.29052825,
+      "group_commit": null
+    },
+    {
+      "arm": "S3",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 1,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 2901.896,
+      "throughput_ops_per_s": 1378.409,
+      "latency": {
+        "n": 4000,
+        "min_ms": 0.994,
+        "p50_ms": 2.702,
+        "p95_ms": 4.281,
+        "p99_ms": 5.58,
+        "max_ms": 12.619,
+        "mean_ms": 2.829
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.0,
+        "p95_ms": 0.568,
+        "p99_ms": 0.979,
+        "max_ms": 1.984,
+        "mean_ms": 0.106
+      },
+      "mean_wire_bytes": 36002.089,
+      "mean_content_bytes": 9723.611,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 425.571,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 2752.907,
+        "self_sys_ms": 165.087,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 2917.994,
+        "peak_rss_self_kib": 218532,
+        "peak_rss_largest_child_kib": 205252
+      },
+      "cpu_ms_per_op": 0.729,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a04-r1/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67125248,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 2.901998072,
+        "valid": true,
+        "refusal": null,
+        "samples": 31,
+        "largest_gap_ms": 103.017,
+        "pkg_j": 68.958,
+        "cpu_p_j": 20.857,
+        "cpu_e_j": 3.087,
+        "rest_j": 45.014,
+        "pkg_mean_w": 23.76224872970901,
+        "pkg_edge_sd_j": 1.9401794842961608,
+        "sys_total_mean_w": 28.35464516129032,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          3.57,
+          3.15,
+          2.84
+        ],
+        "loadavg_end": [
+          3.61,
+          3.17,
+          2.85
+        ],
+        "machine_busy_cpu_s": 5.260000000009313
+      },
+      "pkg_j_per_op": 0.017239499999999998,
+      "group_commit": {
+        "batches": 2188,
+        "records": 4000,
+        "max_batch_records": 4,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 1,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 56112.382,
+      "throughput_ops_per_s": 71.286,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.685,
+        "p50_ms": 12.087,
+        "p95_ms": 24.485,
+        "p99_ms": 29.079,
+        "max_ms": 36.303,
+        "mean_ms": 14.026
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.0,
+        "p95_ms": 0.0,
+        "p99_ms": 0.0,
+        "max_ms": 0.009,
+        "mean_ms": 0.0
+      },
+      "mean_wire_bytes": 36051.534,
+      "mean_content_bytes": 9761.387,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 380.159,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3135.757,
+        "self_sys_ms": 1133.831,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4269.588,
+        "peak_rss_self_kib": 216308,
+        "peak_rss_largest_child_kib": 205556
+      },
+      "cpu_ms_per_op": 1.067,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a01-r1/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 45367780,
+          "allocated_bytes": 60047360
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 45367780,
+        "ops_allocated_bytes": 60035072,
+        "total_apparent_bytes": 45367780,
+        "total_allocated_bytes": 60047360,
+        "ops_apparent_bytes_per_op": 11341.945,
+        "ops_allocated_bytes_per_op": 15008.768
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 56.112477059,
+        "valid": true,
+        "refusal": null,
+        "samples": 563,
+        "largest_gap_ms": 102.875,
+        "pkg_j": 1105.17,
+        "cpu_p_j": 201.473,
+        "cpu_e_j": 34.246,
+        "rest_j": 869.4510000000001,
+        "pkg_mean_w": 19.695619547109967,
+        "pkg_edge_sd_j": 1.6081406019468576,
+        "sys_total_mean_w": 21.977014209591474,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          3.61,
+          3.17,
+          2.85
+        ],
+        "loadavg_end": [
+          3.0,
+          3.09,
+          2.84
+        ],
+        "machine_busy_cpu_s": 35.829999999841675
+      },
+      "pkg_j_per_op": 0.2762925,
+      "group_commit": null
+    },
+    {
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 1,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 56121.93,
+      "throughput_ops_per_s": 71.273,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.805,
+        "p50_ms": 54.291,
+        "p95_ms": 114.651,
+        "p99_ms": 168.256,
+        "max_ms": 299.987,
+        "mean_ms": 55.108
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 39.527,
+        "p95_ms": 96.912,
+        "p99_ms": 149.393,
+        "max_ms": 280.804,
+        "mean_ms": 40.805
+      },
+      "mean_wire_bytes": 36001.187,
+      "mean_content_bytes": 9723.611,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 380.198,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3133.215,
+        "self_sys_ms": 1472.2,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4605.415,
+        "peak_rss_self_kib": 217628,
+        "peak_rss_largest_child_kib": 205308
+      },
+      "cpu_ms_per_op": 1.151,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a04-r1/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 45238262,
+          "allocated_bytes": 60178432
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 45238262,
+        "ops_allocated_bytes": 60166144,
+        "total_apparent_bytes": 45238262,
+        "total_allocated_bytes": 60178432,
+        "ops_apparent_bytes_per_op": 11309.566,
+        "ops_allocated_bytes_per_op": 15041.536
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 56.122019439,
+        "valid": true,
+        "refusal": null,
+        "samples": 563,
+        "largest_gap_ms": 101.28,
+        "pkg_j": 1111.206,
+        "cpu_p_j": 210.972,
+        "cpu_e_j": 35.746,
+        "rest_j": 864.4879999999999,
+        "pkg_mean_w": 19.799822086013656,
+        "pkg_edge_sd_j": 1.6166487036207426,
+        "sys_total_mean_w": 22.225364120781524,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          3.0,
+          3.09,
+          2.84
+        ],
+        "loadavg_end": [
+          2.44,
+          2.9,
+          2.79
+        ],
+        "machine_busy_cpu_s": 38.889999999897555
+      },
+      "pkg_j_per_op": 0.2778015,
+      "group_commit": null
+    },
+    {
+      "arm": "S3",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 1,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 1359.902,
+      "throughput_ops_per_s": 2941.388,
+      "latency": {
+        "n": 4000,
+        "min_ms": 1.095,
+        "p50_ms": 9.569,
+        "p95_ms": 21.418,
+        "p99_ms": 28.337,
+        "max_ms": 45.568,
+        "mean_ms": 10.564
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 6.848,
+        "p95_ms": 18.342,
+        "p99_ms": 25.62,
+        "max_ms": 43.747,
+        "mean_ms": 7.916
+      },
+      "mean_wire_bytes": 36347.472,
+      "mean_content_bytes": 9833.225,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 419.895,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 2962.793,
+        "self_sys_ms": 241.931,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 3204.724,
+        "peak_rss_self_kib": 233660,
+        "peak_rss_largest_child_kib": 205980
+      },
+      "cpu_ms_per_op": 0.801,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a32-r1/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67121152
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67121152
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67121152,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 1.360001974,
+        "valid": true,
+        "refusal": null,
+        "samples": 15,
+        "largest_gap_ms": 100.231,
+        "pkg_j": 33.41,
+        "cpu_p_j": 10.663,
+        "cpu_e_j": 2.046,
+        "rest_j": 20.700999999999997,
+        "pkg_mean_w": 24.566140813557375,
+        "pkg_edge_sd_j": 2.0058169980858667,
+        "sys_total_mean_w": 30.4542,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          2.44,
+          2.9,
+          2.79
+        ],
+        "loadavg_end": [
+          2.44,
+          2.9,
+          2.79
+        ],
+        "machine_busy_cpu_s": 3.4299999999348074
+      },
+      "pkg_j_per_op": 0.008352499999999999,
+      "group_commit": {
+        "batches": 1085,
+        "records": 4000,
+        "max_batch_records": 13,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S3",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 2,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 7452.77,
+      "throughput_ops_per_s": 536.713,
+      "latency": {
+        "n": 4000,
+        "min_ms": 0.982,
+        "p50_ms": 1.698,
+        "p95_ms": 3.279,
+        "p99_ms": 4.586,
+        "max_ms": 13.015,
+        "mean_ms": 1.861
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.0,
+        "p95_ms": 0.0,
+        "p99_ms": 0.0,
+        "max_ms": 0.0,
+        "mean_ms": 0.0
+      },
+      "mean_wire_bytes": 36816.204,
+      "mean_content_bytes": 9963.63,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 421.541,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 2667.619,
+        "self_sys_ms": 261.762,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 2929.381,
+        "peak_rss_self_kib": 217884,
+        "peak_rss_largest_child_kib": 206524
+      },
+      "cpu_ms_per_op": 0.732,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a01-r2/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67125248,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 7.452888207,
+        "valid": true,
+        "refusal": null,
+        "samples": 76,
+        "largest_gap_ms": 100.792,
+        "pkg_j": 161.839,
+        "cpu_p_j": 38.846,
+        "cpu_e_j": 6.332,
+        "rest_j": 116.661,
+        "pkg_mean_w": 21.714937284044517,
+        "pkg_edge_sd_j": 1.7730172047482349,
+        "sys_total_mean_w": 24.37353947368421,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          2.44,
+          2.9,
+          2.79
+        ],
+        "loadavg_end": [
+          2.22,
+          2.84,
+          2.77
+        ],
+        "machine_busy_cpu_s": 9.640000000130383
+      },
+      "pkg_j_per_op": 0.04045975,
+      "group_commit": {
+        "batches": 4000,
+        "records": 4000,
+        "max_batch_records": 1,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S3",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 2,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 2903.286,
+      "throughput_ops_per_s": 1377.749,
+      "latency": {
+        "n": 4000,
+        "min_ms": 0.995,
+        "p50_ms": 2.713,
+        "p95_ms": 4.28,
+        "p99_ms": 5.607,
+        "max_ms": 12.631,
+        "mean_ms": 2.841
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.0,
+        "p95_ms": 0.542,
+        "p99_ms": 0.939,
+        "max_ms": 1.691,
+        "mean_ms": 0.107
+      },
+      "mean_wire_bytes": 37306.409,
+      "mean_content_bytes": 10118.574,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 434.508,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 2569.985,
+        "self_sys_ms": 236.33,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 2806.315,
+        "peak_rss_self_kib": 220264,
+        "peak_rss_largest_child_kib": 207144
+      },
+      "cpu_ms_per_op": 0.702,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a04-r2/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67125248,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 2.9033882909999997,
+        "valid": true,
+        "refusal": null,
+        "samples": 31,
+        "largest_gap_ms": 100.372,
+        "pkg_j": 64.54,
+        "cpu_p_j": 17.919,
+        "cpu_e_j": 2.384,
+        "rest_j": 44.23700000000001,
+        "pkg_mean_w": 22.22920034501166,
+        "pkg_edge_sd_j": 1.815006607845945,
+        "sys_total_mean_w": 26.536709677419353,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          2.22,
+          2.84,
+          2.77
+        ],
+        "loadavg_end": [
+          2.2,
+          2.83,
+          2.77
+        ],
+        "machine_busy_cpu_s": 4.369999999878928
+      },
+      "pkg_j_per_op": 0.016135,
+      "group_commit": {
+        "batches": 2161,
+        "records": 4000,
+        "max_batch_records": 4,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 2,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 56109.628,
+      "throughput_ops_per_s": 71.289,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.676,
+        "p50_ms": 106.081,
+        "p95_ms": 232.442,
+        "p99_ms": 357.263,
+        "max_ms": 653.809,
+        "mean_ms": 110.01
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 92.215,
+        "p95_ms": 215.403,
+        "p99_ms": 340.247,
+        "max_ms": 627.616,
+        "mean_ms": 95.684
+      },
+      "mean_wire_bytes": 36098.157,
+      "mean_content_bytes": 9753.781,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 379.617,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3225.545,
+        "self_sys_ms": 1512.749,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4738.294,
+        "peak_rss_self_kib": 220420,
+        "peak_rss_largest_child_kib": 205700
+      },
+      "cpu_ms_per_op": 1.185,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a08-r2/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 45299916,
+          "allocated_bytes": 59908096
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 45299916,
+        "ops_allocated_bytes": 59895808,
+        "total_apparent_bytes": 45299916,
+        "total_allocated_bytes": 59908096,
+        "ops_apparent_bytes_per_op": 11324.979,
+        "ops_allocated_bytes_per_op": 14973.952
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 56.109722163,
+        "valid": true,
+        "refusal": null,
+        "samples": 563,
+        "largest_gap_ms": 103.913,
+        "pkg_j": 1181.475,
+        "cpu_p_j": 268.874,
+        "cpu_e_j": 37.08,
+        "rest_j": 875.5209999999998,
+        "pkg_mean_w": 21.056511322009197,
+        "pkg_edge_sd_j": 1.7192569500686463,
+        "sys_total_mean_w": 23.67834458259325,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          2.2,
+          2.83,
+          2.77
+        ],
+        "loadavg_end": [
+          3.24,
+          3.05,
+          2.84
+        ],
+        "machine_busy_cpu_s": 55.12000000011176
+      },
+      "pkg_j_per_op": 0.29536874999999996,
+      "group_commit": null
+    },
+    {
+      "arm": "S3",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 2,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 1395.227,
+      "throughput_ops_per_s": 2866.916,
+      "latency": {
+        "n": 4000,
+        "min_ms": 1.152,
+        "p50_ms": 9.951,
+        "p95_ms": 21.326,
+        "p99_ms": 28.736,
+        "max_ms": 40.501,
+        "mean_ms": 10.753
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 7.069,
+        "p95_ms": 18.609,
+        "p99_ms": 25.812,
+        "max_ms": 38.793,
+        "mean_ms": 8.116
+      },
+      "mean_wire_bytes": 36630.114,
+      "mean_content_bytes": 9918.561,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 440.683,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3043.453,
+        "self_sys_ms": 217.602,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 3261.055,
+        "peak_rss_self_kib": 233432,
+        "peak_rss_largest_child_kib": 205432
+      },
+      "cpu_ms_per_op": 0.815,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a32-r2/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67121152
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67121152
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67121152,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 1.395328162,
+        "valid": true,
+        "refusal": null,
+        "samples": 15,
+        "largest_gap_ms": 101.344,
+        "pkg_j": 33.829,
+        "cpu_p_j": 10.752,
+        "cpu_e_j": 2.008,
+        "rest_j": 21.069,
+        "pkg_mean_w": 24.244475902723163,
+        "pkg_edge_sd_j": 1.979553168095811,
+        "sys_total_mean_w": 30.401,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          3.24,
+          3.05,
+          2.84
+        ],
+        "loadavg_end": [
+          3.22,
+          3.04,
+          2.85
+        ],
+        "machine_busy_cpu_s": 3.4799999999813735
+      },
+      "pkg_j_per_op": 0.00845725,
+      "group_commit": {
+        "batches": 1116,
+        "records": 4000,
+        "max_batch_records": 10,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 2,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 57274.655,
+      "throughput_ops_per_s": 69.839,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.687,
+        "p50_ms": 12.164,
+        "p95_ms": 25.591,
+        "p99_ms": 31.257,
+        "max_ms": 86.43,
+        "mean_ms": 14.316
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.0,
+        "p95_ms": 0.0,
+        "p99_ms": 0.0,
+        "max_ms": 0.0,
+        "mean_ms": 0.0
+      },
+      "mean_wire_bytes": 36820.139,
+      "mean_content_bytes": 9963.63,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 379.993,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3265.598,
+        "self_sys_ms": 1093.463,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4359.061,
+        "peak_rss_self_kib": 217412,
+        "peak_rss_largest_child_kib": 206340
+      },
+      "cpu_ms_per_op": 1.09,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a01-r2/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 46172264,
+          "allocated_bytes": 60829696
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 46172264,
+        "ops_allocated_bytes": 60817408,
+        "total_apparent_bytes": 46172264,
+        "total_allocated_bytes": 60829696,
+        "ops_apparent_bytes_per_op": 11543.066,
+        "ops_allocated_bytes_per_op": 15204.352
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 57.274758891,
+        "valid": true,
+        "refusal": null,
+        "samples": 574,
+        "largest_gap_ms": 101.851,
+        "pkg_j": 1346.055,
+        "cpu_p_j": 402.101,
+        "cpu_e_j": 38.909,
+        "rest_j": 905.045,
+        "pkg_mean_w": 23.501713949799193,
+        "pkg_edge_sd_j": 1.9189069085952488,
+        "sys_total_mean_w": 26.60988850174216,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          3.22,
+          3.04,
+          2.85
+        ],
+        "loadavg_end": [
+          3.39,
+          3.12,
+          2.88
+        ],
+        "machine_busy_cpu_s": 87.77999999979511
+      },
+      "pkg_j_per_op": 0.33651375,
+      "group_commit": null
+    },
+    {
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 2,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 54562.737,
+      "throughput_ops_per_s": 73.31,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.68,
+        "p50_ms": 423.459,
+        "p95_ms": 875.077,
+        "p99_ms": 1257.365,
+        "max_ms": 1994.07,
+        "mean_ms": 418.171
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 409.093,
+        "p95_ms": 860.41,
+        "p99_ms": 1245.09,
+        "max_ms": 1982.839,
+        "mean_ms": 404.215
+      },
+      "mean_wire_bytes": 36630.731,
+      "mean_content_bytes": 9918.561,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 380.383,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3307.006,
+        "self_sys_ms": 1468.284,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4775.29,
+        "peak_rss_self_kib": 233364,
+        "peak_rss_largest_child_kib": 206132
+      },
+      "cpu_ms_per_op": 1.194,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a32-r2/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 45992271,
+          "allocated_bytes": 60686336
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 45992271,
+        "ops_allocated_bytes": 60674048,
+        "total_apparent_bytes": 45992271,
+        "total_allocated_bytes": 60686336,
+        "ops_apparent_bytes_per_op": 11498.068,
+        "ops_allocated_bytes_per_op": 15168.512
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 54.562856736,
+        "valid": true,
+        "refusal": null,
+        "samples": 547,
+        "largest_gap_ms": 102.279,
+        "pkg_j": 1319.24,
+        "cpu_p_j": 413.385,
+        "cpu_e_j": 38.935,
+        "rest_j": 866.9200000000001,
+        "pkg_mean_w": 24.17835280112046,
+        "pkg_edge_sd_j": 1.9741542394579168,
+        "sys_total_mean_w": 27.4084168190128,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          3.36,
+          3.11,
+          2.88
+        ],
+        "loadavg_end": [
+          3.74,
+          3.28,
+          2.95
+        ],
+        "machine_busy_cpu_s": 83.46999999997206
+      },
+      "pkg_j_per_op": 0.32981,
+      "group_commit": null
+    },
+    {
+      "arm": "S3",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 2,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 1704.161,
+      "throughput_ops_per_s": 2347.196,
+      "latency": {
+        "n": 4000,
+        "min_ms": 1.034,
+        "p50_ms": 3.099,
+        "p95_ms": 5.389,
+        "p99_ms": 6.791,
+        "max_ms": 9.56,
+        "mean_ms": 3.305
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 0.41,
+        "p95_ms": 1.753,
+        "p99_ms": 2.575,
+        "max_ms": 5.581,
+        "mean_ms": 0.57
+      },
+      "mean_wire_bytes": 36097.69,
+      "mean_content_bytes": 9753.781,
+      "setup": {
+        "description": "open SynapseService (admission only) and the group-commit SharedStore (WAL v2 pre-written), register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 435.522,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3146.8,
+        "self_sys_ms": 211.066,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 3357.866,
+        "peak_rss_self_kib": 221012,
+        "peak_rss_largest_child_kib": 205340
+      },
+      "cpu_ms_per_op": 0.839,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S3-a08-r2/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "after_ops": {
+          "apparent_bytes": 67108952,
+          "allocated_bytes": 67125248
+        },
+        "setup_apparent_bytes": 67108952,
+        "ops_apparent_bytes": 0,
+        "ops_allocated_bytes": 0,
+        "total_apparent_bytes": 67108952,
+        "total_allocated_bytes": 67125248,
+        "ops_apparent_bytes_per_op": 0.0,
+        "ops_allocated_bytes_per_op": 0.0
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 1.704257616,
+        "valid": true,
+        "refusal": null,
+        "samples": 19,
+        "largest_gap_ms": 100.383,
+        "pkg_j": 47.781,
+        "cpu_p_j": 18.572,
+        "cpu_e_j": 2.644,
+        "rest_j": 26.565,
+        "pkg_mean_w": 28.03625434994095,
+        "pkg_edge_sd_j": 2.289150581874688,
+        "sys_total_mean_w": 35.24226315789474,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          3.6,
+          3.26,
+          2.95
+        ],
+        "loadavg_end": [
+          3.6,
+          3.26,
+          2.95
+        ],
+        "machine_busy_cpu_s": 5.679999999934807
+      },
+      "pkg_j_per_op": 0.01194525,
+      "group_commit": {
+        "batches": 1327,
+        "records": 4000,
+        "max_batch_records": 7,
+        "failed_batches": 0
+      }
+    },
+    {
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 2,
+      "ops_attempted": 4000,
+      "ops_ok": 4000,
+      "ops_failed": 0,
+      "wall_ms": 56187.352,
+      "throughput_ops_per_s": 71.19,
+      "latency": {
+        "n": 4000,
+        "min_ms": 2.691,
+        "p50_ms": 55.184,
+        "p95_ms": 111.064,
+        "p99_ms": 162.143,
+        "max_ms": 294.075,
+        "mean_ms": 56.048
+      },
+      "queue_wait": {
+        "n": 4000,
+        "min_ms": 0.0,
+        "p50_ms": 40.307,
+        "p95_ms": 93.762,
+        "p99_ms": 143.141,
+        "max_ms": 273.091,
+        "mean_ms": 41.698
+      },
+      "mean_wire_bytes": 37304.945,
+      "mean_content_bytes": 10118.574,
+      "setup": {
+        "description": "open SynapseService, register the base tree held in memory, issue grants",
+        "units": 1,
+        "total_ms": 379.788,
+        "per_unit": null
+      },
+      "final_sync_ms": null,
+      "cpu": {
+        "self_user_ms": 3269.973,
+        "self_sys_ms": 1486.455,
+        "children_user_ms": 0.0,
+        "children_sys_ms": 0.0,
+        "total_cpu_ms": 4756.428,
+        "peak_rss_self_kib": 219800,
+        "peak_rss_largest_child_kib": 207128
+      },
+      "cpu_ms_per_op": 1.189,
+      "storage": {
+        "measured_paths": [
+          "/tmp/synapse-p5r.NOUmsF/cells/write-S1-a04-r2/cell/synapse-store"
+        ],
+        "before_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 0
+        },
+        "after_setup": {
+          "apparent_bytes": 0,
+          "allocated_bytes": 12288
+        },
+        "after_ops": {
+          "apparent_bytes": 46824223,
+          "allocated_bytes": 61702144
+        },
+        "setup_apparent_bytes": 0,
+        "ops_apparent_bytes": 46824223,
+        "ops_allocated_bytes": 61689856,
+        "total_apparent_bytes": 46824223,
+        "total_allocated_bytes": 61702144,
+        "ops_apparent_bytes_per_op": 11706.056,
+        "ops_allocated_bytes_per_op": 15422.464
+      },
+      "durability_receipts": [
+        [
+          "FsyncBeforeAck",
+          4000
+        ]
+      ],
+      "first_errors": [],
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 56.187466505,
+        "valid": true,
+        "refusal": null,
+        "samples": 563,
+        "largest_gap_ms": 101.465,
+        "pkg_j": 1265.135,
+        "cpu_p_j": 338.201,
+        "cpu_e_j": 36.474,
+        "rest_j": 890.4599999999999,
+        "pkg_mean_w": 22.516320430418737,
+        "pkg_edge_sd_j": 1.8384498646510008,
+        "sys_total_mean_w": 25.268857904085255,
+        "nvme_temp_k": 312.0,
+        "loadavg_start": [
+          3.6,
+          3.26,
+          2.95
+        ],
+        "loadavg_end": [
+          3.05,
+          3.18,
+          2.94
+        ],
+        "machine_busy_cpu_s": 63.51000000000931
+      },
+      "pkg_j_per_op": 0.31628375,
+      "group_commit": null
+    }
+  ],
+  "query_summary": [],
+  "query_cells": [],
+  "conflict": null,
+  "conformance_summary": [],
+  "conformance_runs": [],
+  "recovery": null,
+  "import_probe": null,
+  "failures": [],
+  "scope_notes": [
+    "Synapse arms call SynapseService in-process; the JSON encode/decode of each request is included as a transport approximation. No socket, daemon, or network stack is measured.",
+    "Single host, single filesystem; every cell starts from a fresh clone, but the page cache is warm (no cache drop between cells).",
+    "Edits are synthetic (generated hunks, added and deleted files on the real fixture tree); no compiler, tests, or agent reasoning time is included.",
+    "Synapse arms hold the full base tree in memory (registered during setup, excluded from per-operation latency).",
+    "Transfer sizes are estimates: Synapse JSON request bytes versus git thin-pack bytes against the base; neither is a measured network transfer."
+  ],
+  "idle_energy": {
+    "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+    "window_s": 30.00015933,
+    "valid": true,
+    "refusal": null,
+    "samples": 301,
+    "largest_gap_ms": 103.5,
+    "pkg_j": 681.946,
+    "cpu_p_j": 191.797,
+    "cpu_e_j": 22.178,
+    "rest_j": 467.971,
+    "pkg_mean_w": 22.73141260680098,
+    "pkg_edge_sd_j": 1.856012067311041,
+    "sys_total_mean_w": 24.909142857142857,
+    "nvme_temp_k": 311.0,
+    "loadavg_start": [
+      2.28,
+      2.0,
+      2.5
+    ],
+    "loadavg_end": [
+      1.85,
+      1.92,
+      2.46
+    ],
+    "machine_busy_cpu_s": 43.22999999998137
+  }
+}

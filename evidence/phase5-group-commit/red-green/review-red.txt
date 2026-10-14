@@ -1,0 +1,19 @@
+thread 'group_tests::test_v1_checkpoint_crash_window_reopens_and_skips_covered_frames' (2933166) panicked at crates/synapse-store/src/group_tests.rs:797:33:
+v1 store must reopen after a checkpoint crash: SynapseError { code: WalSequenceGap, message: "WAL sequence mismatch at offset 0: expected wal:4, found wal:1" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--
+thread 'group_tests::test_v2_upgrade_marker_is_atomic_and_survives_a_stray_temp_file' (2933169) panicked at crates/synapse-store/src/group_tests.rs:957:5:
+assertion failed: !dir.join("wal.log.tmp").exists()
+
+--
+thread 'group_tests::test_corrupt_last_batch_with_zero_sector_in_blob_is_not_dropped' (2933156) panicked at crates/synapse-store/src/group_tests.rs:917:9:
+assertion `left != right` failed: StrictFailClosed: SynapseError { code: WalTornFrame, message: "torn WAL v2 batch at byte offset 4096: WAL payload CRC32C mismatch at wal:2: expected 0x7f0b5bec, computed 0x6f1f67bc" }
+  left: WalTornFrame
+--
+thread 'group_tests::test_v2_checkpoint_crash_window_reopens_and_skips_covered_frames' (2933168) panicked at crates/synapse-store/src/group_tests.rs:742:33:
+before marker replace: store must reopen after a checkpoint crash: SynapseError { code: WalSequenceGap, message: "WAL sequence mismatch at offset 0: expected wal:6, found wal:1" }
+
+--
+thread 'group_tests::test_torn_last_sector_with_short_tail_is_truncatable' (2933165) panicked at crates/synapse-store/src/group_tests.rs:879:5:
+assertion `left == right` failed: SynapseError { code: WalCrcMismatch, message: "WAL payload CRC32C mismatch at wal:2: expected 0xc06d43ad, computed 0x8902612c" }
+  left: WalCrcMismatch

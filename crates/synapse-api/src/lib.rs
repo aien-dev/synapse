@@ -471,6 +471,23 @@ impl SynapseService {
         req: &AuthenticatedRequest<SubmitChangesetPayload>,
         now_ms: u64,
     ) -> SynapseResult<IngestOutcome> {
+        self.admit_submit(req, now_ms)?;
+        let outcome = self
+            .store
+            .ingest_changeset(req.payload.envelope.clone(), &req.payload.blobs)?;
+        self.index_submitted(&outcome, &req.payload.envelope);
+        Ok(outcome)
+    }
+
+    /// API-boundary half of [`Self::submit`]: capability, anti-replay, repository, author
+    /// and base-tree checks, without touching the store. A caller that commits through a
+    /// group-commit `SharedStore` runs this, then `SharedStore::submit`, then
+    /// [`Self::index_submitted`].
+    pub fn admit_submit(
+        &mut self,
+        req: &AuthenticatedRequest<SubmitChangesetPayload>,
+        now_ms: u64,
+    ) -> SynapseResult<()> {
         self.auth.authorize(
             BoundaryKind::Api,
             "submit",
@@ -505,16 +522,16 @@ impl SynapseService {
             ));
         }
 
-        let outcome = self
-            .store
-            .ingest_changeset(req.payload.envelope.clone(), &req.payload.blobs)?;
-        let cs_id = match &outcome {
+        Ok(())
+    }
+
+    /// Index a committed (or duplicate) submission in the path index.
+    pub fn index_submitted(&mut self, outcome: &IngestOutcome, envelope: &ChangesetEnvelope) {
+        let cs_id = match outcome {
             IngestOutcome::Committed { changeset_id, .. }
             | IngestOutcome::IdempotentDuplicate { changeset_id, .. } => *changeset_id,
         };
-        self.path_index
-            .index_changeset(cs_id, &req.payload.envelope);
-        Ok(outcome)
+        self.path_index.index_changeset(cs_id, envelope);
     }
 
     /// API 2: `get` a committed changeset (`Capability::Read`).

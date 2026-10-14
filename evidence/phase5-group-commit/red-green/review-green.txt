@@ -1,0 +1,10 @@
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.87s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.67s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.70s
+test group_tests::test_v1_checkpoint_crash_window_reopens_and_skips_covered_frames ... ok
+test group_tests::test_v2_upgrade_marker_is_atomic_and_survives_a_stray_temp_file ... ok
+test group_tests::test_rollback_failure_poisons_store_until_reopen ... ok
+test group_tests::test_corrupt_last_batch_with_zero_sector_in_blob_is_not_dropped ... ok
+test group_tests::test_torn_last_sector_with_short_tail_is_truncatable ... ok
+test group_tests::test_v2_checkpoint_crash_window_reopens_and_skips_covered_frames ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 1.55s

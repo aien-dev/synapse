@@ -1,0 +1,626 @@
+{
+  "schema": "synapse-gate4-qualification-manifest/v1",
+  "smoke": false,
+  "started_at_utc": "2026-10-14T17:46:26Z",
+  "finished_at_utc": "2026-10-14T17:59:17Z",
+  "total_run_s": 770.918,
+  "command_line": [
+    "/tmp/p5-rerun/synapse-bench-6826610",
+    "run",
+    "--fixture-repo",
+    "/home/drakestapleton/workspace/aien-sovereign-core",
+    "--fixture-rev",
+    "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "--out",
+    "/tmp/p5-rerun/out",
+    "--work-dir",
+    "/tmp/synapse-p5r.NOUmsF",
+    "--source-rev",
+    "6826610e7cd2eace91df623f65e3c0ed83f204a1",
+    "--source-dirty",
+    "clean",
+    "--source-digest",
+    "458de91b4758d85a1613689611ad35fedf1c0cd4dd014f3d277e3d8f256afe1e",
+    "--write-only",
+    "--arms",
+    "S1,S3",
+    "--tiers",
+    "1,4,8,32",
+    "--reps",
+    "3",
+    "--ops-floor",
+    "4000",
+    "--idle-window-s",
+    "30"
+  ],
+  "config": {
+    "fixture_repo": "/home/drakestapleton/workspace/aien-sovereign-core",
+    "fixture_rev": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "out_dir": "/tmp/p5-rerun/out",
+    "work_dir": "/tmp/synapse-p5r.NOUmsF",
+    "reps": 3,
+    "tiers": [
+      1,
+      4,
+      8,
+      32
+    ],
+    "arms": [
+      "S1",
+      "S3"
+    ],
+    "seed": 7673641184369446932,
+    "ops_floor": 4000,
+    "min_ops_per_agent": 8,
+    "g1_ops_cap": 32,
+    "batch_window_records": 64,
+    "query_agents": 8,
+    "query_ops_per_agent": 50,
+    "query_samples": 400,
+    "recovery_sizes": [
+      100,
+      1000,
+      10000
+    ],
+    "recovery_reopen_reps": 3,
+    "radicle_repo": null,
+    "source_rev": "6826610e7cd2eace91df623f65e3c0ed83f204a1",
+    "source_dirty": "clean",
+    "source_digest": "458de91b4758d85a1613689611ad35fedf1c0cd4dd014f3d277e3d8f256afe1e",
+    "smoke": false,
+    "command_line": [
+      "/tmp/p5-rerun/synapse-bench-6826610",
+      "run",
+      "--fixture-repo",
+      "/home/drakestapleton/workspace/aien-sovereign-core",
+      "--fixture-rev",
+      "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+      "--out",
+      "/tmp/p5-rerun/out",
+      "--work-dir",
+      "/tmp/synapse-p5r.NOUmsF",
+      "--source-rev",
+      "6826610e7cd2eace91df623f65e3c0ed83f204a1",
+      "--source-dirty",
+      "clean",
+      "--source-digest",
+      "458de91b4758d85a1613689611ad35fedf1c0cd4dd014f3d277e3d8f256afe1e",
+      "--write-only",
+      "--arms",
+      "S1,S3",
+      "--tiers",
+      "1,4,8,32",
+      "--reps",
+      "3",
+      "--ops-floor",
+      "4000",
+      "--idle-window-s",
+      "30"
+    ],
+    "write_only": true,
+    "idle_window_s": 30.0
+  },
+  "host": {
+    "hostname": "spark-b87b",
+    "kernel_release": "7.0.0-1019-nvidia",
+    "arch": "aarch64",
+    "cpu_models": [
+      "Cortex-X925",
+      "Cortex-A725"
+    ],
+    "cpu_model_source": "lscpu",
+    "logical_cpus": 20,
+    "mem_total_kib": 127598752,
+    "git_version": "git version 2.43.0",
+    "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "cargo_version": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "work_dir": "/tmp/synapse-p5r.NOUmsF",
+    "work_dir_fs_type": "ext4",
+    "work_dir_source": "/dev/nvme0n1p2",
+    "work_dir_free_bytes_at_start": 1029134327808
+  },
+  "fixture": {
+    "original_repo": "/home/drakestapleton/workspace/aien-sovereign-core",
+    "requested_rev": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "commit": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "tree": "39684d806998aa579244a55aab41b954be963525",
+    "files": 4376,
+    "total_bytes": 145731971,
+    "largest_file_bytes": 65855376,
+    "skipped_entries": 0,
+    "editable_files": 2307,
+    "master_clone_method": "git clone --no-checkout --no-hardlinks (once); each cell: git clone --no-checkout --local of the master clone",
+    "master_clone_git_dir_apparent_bytes": 197693137,
+    "original_head_before": "c83eb5b2f96b3d0a36fcb5092fcf0d66af5dd0d0",
+    "original_head_after": "c83eb5b2f96b3d0a36fcb5092fcf0d66af5dd0d0",
+    "original_refs_sha256_before": "f82f11057314e03041afdea13d89db8c9e909cc71a056778fa8752af75489ef2",
+    "original_refs_sha256_after": "f82f11057314e03041afdea13d89db8c9e909cc71a056778fa8752af75489ef2"
+  },
+  "bench_clone_config": [
+    [
+      "gc.auto",
+      "0"
+    ],
+    [
+      "maintenance.auto",
+      "false"
+    ],
+    [
+      "user.name",
+      "Synapse Gate4 Bench"
+    ],
+    [
+      "user.email",
+      "gate4-bench@synapse.invalid"
+    ],
+    [
+      "commit.gpgsign",
+      "false"
+    ]
+  ],
+  "git_config": [
+    {
+      "key": "core.fsync",
+      "values_with_origin": [],
+      "set": false
+    },
+    {
+      "key": "core.fsyncMethod",
+      "values_with_origin": [],
+      "set": false
+    },
+    {
+      "key": "core.fsyncObjectFiles",
+      "values_with_origin": [],
+      "set": false
+    },
+    {
+      "key": "gc.auto",
+      "values_with_origin": [
+        "file:.git/config 0"
+      ],
+      "set": true
+    },
+    {
+      "key": "maintenance.auto",
+      "values_with_origin": [
+        "file:.git/config false"
+      ],
+      "set": true
+    }
+  ],
+  "git_config_listing": [
+    "file:/etc/gitconfig filter.lfs.clean=git-lfs clean -- %f",
+    "file:/etc/gitconfig filter.lfs.smudge=git-lfs smudge -- %f",
+    "file:/etc/gitconfig filter.lfs.process=git-lfs filter-process",
+    "file:/etc/gitconfig filter.lfs.required=true",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.clean=git-lfs clean -- %f",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.smudge=git-lfs smudge -- %f",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.process=git-lfs filter-process",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.required=true",
+    "file:/home/drakestapleton/.gitconfig user.name=Drake Stapleton",
+    "file:/home/drakestapleton/.gitconfig user.email=drake@aienos.com",
+    "file:/home/drakestapleton/.gitconfig core.excludesfile=/home/drakestapleton/.gitignore_global",
+    "file:.git/config core.repositoryformatversion=0",
+    "file:.git/config core.filemode=true",
+    "file:.git/config core.bare=false",
+    "file:.git/config core.logallrefupdates=true",
+    "file:.git/config remote.origin.url=/home/drakestapleton/workspace/aien-sovereign-core",
+    "file:.git/config remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*",
+    "file:.git/config branch.docs/readme-restructure.remote=origin",
+    "file:.git/config branch.docs/readme-restructure.merge=refs/heads/docs/readme-restructure",
+    "file:.git/config gc.auto=0",
+    "file:.git/config maintenance.auto=false",
+    "file:.git/config user.name=Synapse Gate4 Bench",
+    "file:.git/config user.email=gate4-bench@synapse.invalid",
+    "file:.git/config commit.gpgsign=false"
+  ],
+  "fsync_probe": {
+    "tool": "strace",
+    "default_config_fsync_calls": 0,
+    "fsync_all_config_fsync_calls": 1,
+    "note": "counts of fsync, fdatasync, sync_file_range, and syncfs calls made by one `git hash-object -w --stdin` (strace -f -c)"
+  },
+  "disk": {
+    "free_bytes_at_start": 1028932964352,
+    "estimated_peak_cell_bytes": 2834333864,
+    "required_free_bytes": 8503001592,
+    "min_free_bytes_observed": 1028546793472
+  },
+  "source": {
+    "rev": "6826610e7cd2eace91df623f65e3c0ed83f204a1",
+    "dirty": "clean",
+    "digest": "458de91b4758d85a1613689611ad35fedf1c0cd4dd014f3d277e3d8f256afe1e"
+  },
+  "cell_order_seed": 3636407535504307889,
+  "cell_order": [
+    {
+      "order": 0,
+      "label": "write-S3-a01-r0",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 0
+    },
+    {
+      "order": 1,
+      "label": "write-S3-a04-r0",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 0
+    },
+    {
+      "order": 2,
+      "label": "write-S3-a32-r0",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 0
+    },
+    {
+      "order": 3,
+      "label": "write-S1-a04-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 0
+    },
+    {
+      "order": 4,
+      "label": "write-S1-a32-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 0
+    },
+    {
+      "order": 5,
+      "label": "write-S1-a01-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 0
+    },
+    {
+      "order": 6,
+      "label": "write-S3-a08-r0",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 0
+    },
+    {
+      "order": 7,
+      "label": "write-S1-a08-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 0
+    },
+    {
+      "order": 8,
+      "label": "write-S3-a08-r1",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 1
+    },
+    {
+      "order": 9,
+      "label": "write-S1-a08-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 1
+    },
+    {
+      "order": 10,
+      "label": "write-S3-a01-r1",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 1
+    },
+    {
+      "order": 11,
+      "label": "write-S1-a32-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 1
+    },
+    {
+      "order": 12,
+      "label": "write-S3-a04-r1",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 1
+    },
+    {
+      "order": 13,
+      "label": "write-S1-a01-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 1
+    },
+    {
+      "order": 14,
+      "label": "write-S1-a04-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 1
+    },
+    {
+      "order": 15,
+      "label": "write-S3-a32-r1",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 1
+    },
+    {
+      "order": 16,
+      "label": "write-S3-a01-r2",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 2
+    },
+    {
+      "order": 17,
+      "label": "write-S3-a04-r2",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 2
+    },
+    {
+      "order": 18,
+      "label": "write-S1-a08-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 2
+    },
+    {
+      "order": 19,
+      "label": "write-S3-a32-r2",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 2
+    },
+    {
+      "order": 20,
+      "label": "write-S1-a01-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 2
+    },
+    {
+      "order": 21,
+      "label": "write-S1-a32-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 2
+    },
+    {
+      "order": 22,
+      "label": "write-S3-a08-r2",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 2
+    },
+    {
+      "order": 23,
+      "label": "write-S1-a04-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 2
+    }
+  ],
+  "cell_timings": [
+    {
+      "label": "write-S3-a01-r0",
+      "clone_ms": 21.641,
+      "child_wall_ms": 9322.868,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a04-r0",
+      "clone_ms": 22.998,
+      "child_wall_ms": 4071.048,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a32-r0",
+      "clone_ms": 22.246,
+      "child_wall_ms": 2540.528,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a04-r0",
+      "clone_ms": 34.136,
+      "child_wall_ms": 56519.042,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a32-r0",
+      "clone_ms": 33.33,
+      "child_wall_ms": 57293.235,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a01-r0",
+      "clone_ms": 25.531,
+      "child_wall_ms": 57988.668,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a08-r0",
+      "clone_ms": 31.119,
+      "child_wall_ms": 2675.179,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a08-r0",
+      "clone_ms": 24.796,
+      "child_wall_ms": 54438.257,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a08-r1",
+      "clone_ms": 25.162,
+      "child_wall_ms": 2825.679,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a08-r1",
+      "clone_ms": 34.55,
+      "child_wall_ms": 55626.29,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a01-r1",
+      "clone_ms": 33.06,
+      "child_wall_ms": 9984.264,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a32-r1",
+      "clone_ms": 25.717,
+      "child_wall_ms": 57510.272,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a04-r1",
+      "clone_ms": 34.247,
+      "child_wall_ms": 4079.968,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a01-r1",
+      "clone_ms": 22.699,
+      "child_wall_ms": 57262.61,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a04-r1",
+      "clone_ms": 36.647,
+      "child_wall_ms": 57209.807,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a32-r1",
+      "clone_ms": 35.7,
+      "child_wall_ms": 2513.584,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a01-r2",
+      "clone_ms": 35.665,
+      "child_wall_ms": 8601.646,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a04-r2",
+      "clone_ms": 23.139,
+      "child_wall_ms": 4084.174,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a08-r2",
+      "clone_ms": 34.823,
+      "child_wall_ms": 57238.723,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a32-r2",
+      "clone_ms": 31.339,
+      "child_wall_ms": 2535.21,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a01-r2",
+      "clone_ms": 22.14,
+      "child_wall_ms": 58407.47,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a32-r2",
+      "clone_ms": 34.763,
+      "child_wall_ms": 55715.543,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a08-r2",
+      "clone_ms": 34.256,
+      "child_wall_ms": 2860.535,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a04-r2",
+      "clone_ms": 33.944,
+      "child_wall_ms": 57278.804,
+      "ok": true
+    }
+  ],
+  "trace_files": [
+    "traces/write-S1-a01-r0.jsonl",
+    "traces/write-S1-a01-r1.jsonl",
+    "traces/write-S1-a01-r2.jsonl",
+    "traces/write-S1-a04-r0.jsonl",
+    "traces/write-S1-a04-r1.jsonl",
+    "traces/write-S1-a04-r2.jsonl",
+    "traces/write-S1-a08-r0.jsonl",
+    "traces/write-S1-a08-r1.jsonl",
+    "traces/write-S1-a08-r2.jsonl",
+    "traces/write-S1-a32-r0.jsonl",
+    "traces/write-S1-a32-r1.jsonl",
+    "traces/write-S1-a32-r2.jsonl",
+    "traces/write-S3-a01-r0.jsonl",
+    "traces/write-S3-a01-r1.jsonl",
+    "traces/write-S3-a01-r2.jsonl",
+    "traces/write-S3-a04-r0.jsonl",
+    "traces/write-S3-a04-r1.jsonl",
+    "traces/write-S3-a04-r2.jsonl",
+    "traces/write-S3-a08-r0.jsonl",
+    "traces/write-S3-a08-r1.jsonl",
+    "traces/write-S3-a08-r2.jsonl",
+    "traces/write-S3-a32-r0.jsonl",
+    "traces/write-S3-a32-r1.jsonl",
+    "traces/write-S3-a32-r2.jsonl"
+  ]
+}
