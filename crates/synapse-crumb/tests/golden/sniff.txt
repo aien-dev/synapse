@@ -35,3 +35,21 @@ sniff <ROOT>/gap/inner as parity
 sniff <ROOT>/unknown as parity
   .crumb: unknown-object | JSON object with neither schema_version nor version.
   invariant: unknown invariant
+### sniff bom
+sniff <ROOT>/bom as parity
+  no .crumb here
+### sniff scalar
+sniff <ROOT>/scalar as parity
+  .crumb: ? | (legacy format)
+### sniff latin1
+sniff <ROOT>/latin1 as parity
+  .crumb: latin1 | RFC-0001 document with one Latin-1 byte in an unprinted field.
+### sniff nuljunk
+sniff <ROOT>/nuljunk as parity
+  .crumb: nuljunk | RFC-0001 document followed by a NUL byte and junk.
+### sniff dupkey
+sniff <ROOT>/dupkey as parity
+  .crumb: dupkey | second purpose
+### sniff surrogate
+sniff <ROOT>/surrogate as parity
+  .crumb: surrogate | lone surrogate [�] here

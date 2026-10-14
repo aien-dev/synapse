@@ -5,6 +5,8 @@
 //! inside strings are refused, numbers follow the RFC 8259 grammar, and lone
 //! UTF-16 surrogates in `\u` escapes are refused instead of being replaced.
 
+use std::collections::BTreeSet;
+
 /// Maximum container nesting depth (objects and arrays) accepted in a `.crumb`.
 pub const MAX_JSON_DEPTH: usize = 32;
 
@@ -125,6 +127,9 @@ impl Parser<'_> {
         self.ws();
         let close = if object { b'}' } else { b']' };
         let mut members: Vec<(String, JsonValue)> = Vec::new();
+        // Duplicate check in O(log n) per key: a 64 KiB object holds about 8,000 keys, and a
+        // linear scan per key made such a file cost O(n^2) (review finding on PR #13).
+        let mut seen: BTreeSet<String> = BTreeSet::new();
         let mut items: Vec<JsonValue> = Vec::new();
         if self.peek() == Some(close) {
             self.i += 1;
@@ -137,7 +142,7 @@ impl Parser<'_> {
                         return Err(self.err());
                     }
                     let key = self.string()?;
-                    if members.iter().any(|(k, _)| *k == key) {
+                    if !seen.insert(key.clone()) {
                         return Err(JsonError::DuplicateKey { offset: key_offset });
                     }
                     self.ws();
@@ -343,5 +348,56 @@ mod tests {
                 "{bad:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod cost_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// Largest-key-count object that fits in `MAX_CRUMB_BYTES` (64 KiB): short distinct keys.
+    fn widest_object() -> String {
+        let mut s = String::from("{");
+        let mut i = 0usize;
+        loop {
+            let member = format!("\"{i:x}\":0,");
+            if s.len() + member.len() + 1 > 64 * 1024 {
+                break;
+            }
+            s.push_str(&member);
+            i += 1;
+        }
+        s.pop();
+        s.push('}');
+        s
+    }
+
+    /// Regression for the O(n^2) duplicate-key scan (PR #13 review): before the fix this
+    /// document took about 170 ms in a debug build and 42 ms in release; after, about 9 ms and
+    /// 1.6 ms. The bound is the fastest of five runs, so a briefly loaded machine does not
+    /// fail it, and it sits several times away from both the old and the new cost.
+    #[test]
+    fn widest_object_parses_in_linear_time() {
+        let doc = widest_object();
+        assert!(doc.len() <= 64 * 1024);
+        match parse(&doc).unwrap() {
+            JsonValue::Object(m) => assert!(m.len() > 7_000, "{}", m.len()),
+            other => panic!("{other:?}"),
+        }
+        let fastest = (0..5)
+            .map(|_| {
+                let start = Instant::now();
+                parse(&doc).unwrap();
+                start.elapsed()
+            })
+            .min()
+            .unwrap();
+        let bound = if cfg!(debug_assertions) {
+            Duration::from_millis(60)
+        } else {
+            Duration::from_millis(10)
+        };
+        assert!(fastest < bound, "{fastest:?} >= {bound:?}");
     }
 }

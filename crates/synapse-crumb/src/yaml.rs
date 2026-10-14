@@ -47,6 +47,7 @@ pub enum YamlError {
 }
 
 /// Does the first meaningful line start a D3 document (`schema:` at column 0)?
+/// Lines end at `\n` or `\r\n`, as in [`parse`].
 pub fn looks_like_yaml_v1(text: &str) -> bool {
     text.lines()
         .find(|l| !is_blank_or_comment(l))
@@ -131,7 +132,9 @@ pub fn parse(text: &str) -> Result<YamlCrumbV1, YamlError> {
     let mut in_components = false;
     let mut current: Option<Partial> = None;
 
-    for (idx, line) in text.split('\n').enumerate() {
+    // Same line splitting as [`looks_like_yaml_v1`]: `\n` or `\r\n` ends a line, so a CRLF file
+    // parses exactly like its LF form. A bare `\r` elsewhere stays in the line and is refused.
+    for (idx, line) in text.lines().enumerate() {
         let n = idx + 1;
         if is_blank_or_comment(line) {
             continue;
@@ -240,5 +243,17 @@ mod tests {
         for (doc, want) in cases {
             assert_eq!(parse(doc), Err(want), "{doc:?}");
         }
+    }
+
+    #[test]
+    fn crlf_parses_like_lf_and_bare_cr_is_refused() {
+        let lf = "schema: \"crumb/v1\"\nsummary: \"s\"\ncomponents:\n  - name: \"a\"\n    path: \"p\"\n    role: \"r\"\n";
+        let crlf = lf.replace('\n', "\r\n");
+        assert!(looks_like_yaml_v1(&crlf));
+        assert_eq!(parse(&crlf), parse(lf));
+        assert!(parse(lf).is_ok());
+        let bare_cr = "schema: \"crumb/v1\"\nsummary: \"s\"\r\rnext: \"x\"\n";
+        assert!(looks_like_yaml_v1(bare_cr));
+        assert_eq!(parse(bare_cr), Err(YamlError::Syntax { line: 2 }));
     }
 }

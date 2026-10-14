@@ -1,6 +1,8 @@
 INVALID <ROOT>/badjson/.crumb: not a JSON object
+INVALID <ROOT>/bom/.crumb: not a JSON object
 LEGACY  <ROOT>/d2/.crumb (pre-RFC format, not validated)
 INVALID <ROOT>/d3/.crumb: not a JSON object
+INVALID <ROOT>/scalar/.crumb: not a JSON object
 INVALID <ROOT>/unknown/.crumb: needs schema_version "1.0.0", name, purpose
-8 .crumb file(s), 0 directory(ies) with live local crumbs, INVALID found
+14 .crumb file(s), 0 directory(ies) with live local crumbs, INVALID found
 exit 1

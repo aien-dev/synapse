@@ -17,7 +17,8 @@ set -euo pipefail
 
 PIN_COMMIT=29780e56c9e6b9111d884e0d4b146737228c19f6
 PIN_SOURCE_SHA256=ef0f6566fb838917a750eb898f66596b76aa15a53d7d61bedac03c4c963ee147
-TARGETS=(. d1 d1/nested d1/nested/deeper d2 d3 badjson gap gap/inner unknown)
+TARGETS=(. d1 d1/nested d1/nested/deeper d2 d3 badjson gap gap/inner unknown
+         bom scalar latin1 nuljunk dupkey surrogate)
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 fixtures="$here/crates/synapse-crumb/tests/fixtures/tree"

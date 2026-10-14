@@ -122,3 +122,75 @@
 == INHERITED INVARIANTS ==
   from <ROOT>/.crumb: root invariant one
   from <ROOT>/.crumb: root invariant two
+### explain bom
+== NEAREST CRUMB ==
+  file: <ROOT>/.crumb
+  name: fixture-root
+  layer: root
+  purpose: Parity fixture repository root.
+  invariant: root invariant one
+  invariant: root invariant two
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  (none)
+### explain scalar
+== NEAREST CRUMB ==
+  file: <ROOT>/.crumb
+  name: fixture-root
+  layer: root
+  purpose: Parity fixture repository root.
+  invariant: root invariant one
+  invariant: root invariant two
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  (none)
+### explain latin1
+== NEAREST CRUMB ==
+  file: <ROOT>/latin1/.crumb
+  name: latin1
+  layer: 
+  purpose: RFC-0001 document with one Latin-1 byte in an unprinted field.
+  invariant: (none)
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain nuljunk
+== NEAREST CRUMB ==
+  file: <ROOT>/nuljunk/.crumb
+  name: nuljunk
+  layer: 
+  purpose: RFC-0001 document followed by a NUL byte and junk.
+  invariant: (none)
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain dupkey
+== NEAREST CRUMB ==
+  file: <ROOT>/dupkey/.crumb
+  name: dupkey
+  layer: 
+  purpose: second purpose
+  invariant: (none)
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain surrogate
+== NEAREST CRUMB ==
+  file: <ROOT>/surrogate/.crumb
+  name: surrogate
+  layer: 
+  purpose: lone surrogate [�] here
+  invariant: (none)
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two

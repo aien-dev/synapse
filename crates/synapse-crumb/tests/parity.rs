@@ -2,18 +2,20 @@
 //! written by `scripts/crumb-parity.sh`. Each fixture `dot.crumb` stands for `.crumb`.
 //!
 //! The leaf entry must match `sniff` and `validate`; `nearest` and `inherited_invariants`
-//! must match `explain`. The two divergences recorded in ADR 0004 section 2.3 are asserted
-//! explicitly rather than skipped.
+//! must match `explain`. Fixtures where the tools deliberately disagree (ADR 0004 sections
+//! 2.2 and 2.3) are listed in [`DIVERGENCES`] and asserted field by field on both sides, so
+//! a change in either tool fails a test instead of being skipped.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use synapse_crumb::json::JsonError;
 use synapse_crumb::{
     crumb_path, CrumbContext, CrumbContextEntry, CrumbFile, Dialect, DirectoryCrumb, EntryStatus,
     InvalidReason, MAX_CRUMB_BYTES, ROOT_DIR,
 };
 
-const TARGETS: [&str; 10] = [
+const TARGETS: [&str; 16] = [
     ".",
     "d1",
     "d1/nested",
@@ -24,6 +26,12 @@ const TARGETS: [&str; 10] = [
     "gap",
     "gap/inner",
     "unknown",
+    "bom",
+    "scalar",
+    "latin1",
+    "nuljunk",
+    "dupkey",
+    "surrogate",
 ];
 
 fn manifest() -> PathBuf {
@@ -78,6 +86,18 @@ fn golden_block(kind: &str, target: &str) -> Vec<String> {
         .collect()
 }
 
+/// The golden `validate` line about one directory's `.crumb`, if crumb.c printed one.
+fn golden_validate_line(dir: &str) -> Option<String> {
+    let text = fs::read_to_string(manifest().join("tests/golden/validate.txt")).unwrap();
+    let f = abs_crumb(dir);
+    text.lines()
+        .find(|l| {
+            (l.starts_with("INVALID ") || l.starts_with("LEGACY "))
+                && (l.contains(&format!(" {f}:")) || l.contains(&format!(" {f} (")))
+        })
+        .map(str::to_string)
+}
+
 fn abs_crumb(dir: &str) -> String {
     if dir == ROOT_DIR {
         "<ROOT>/.crumb".to_string()
@@ -94,10 +114,110 @@ fn abs_dir(dir: &str) -> String {
     }
 }
 
-/// What crumb.c `sniff` prints for the directory's own `.crumb`, derived from the typed leaf.
-/// crumb.c reads only JSON and only top-level string `name`/`purpose`: D2 has neither
-/// (its `purpose` is an object), and D3 is not JSON.
-fn sniff_lines(target: &str, leaf: &CrumbContextEntry) -> Vec<String> {
+/// A fixture where Synapse and crumb.c deliberately disagree (ADR 0004 section 2.3).
+/// Every field is asserted, so drift on either side fails a test instead of being skipped.
+struct Divergence {
+    target: &'static str,
+    /// The leaf status Synapse must report.
+    synapse: fn(&EntryStatus) -> bool,
+    /// crumb.c `sniff` lines after the `sniff <dir> as parity` header.
+    sniff: &'static [&'static str],
+    /// crumb.c `validate` line for the file, or `None` when crumb.c finds it valid.
+    validate: Option<&'static str>,
+    /// Directory crumb.c `explain` reports as NEAREST CRUMB.
+    crumb_c_nearest: &'static str,
+    /// Directory Synapse reports as nearest.
+    synapse_nearest: &'static str,
+}
+
+const DIVERGENCES: [Divergence; 6] = [
+    // crumb.c reads any JSON object; Synapse refuses an object of no known dialect.
+    Divergence {
+        target: "unknown",
+        synapse: |s| *s == EntryStatus::Invalid(InvalidReason::UnknownJsonDialect),
+        sniff: &[
+            "  .crumb: unknown-object | JSON object with neither schema_version nor version.",
+            "  invariant: unknown invariant",
+        ],
+        validate: Some(
+            "INVALID <ROOT>/unknown/.crumb: needs schema_version \"1.0.0\", name, purpose",
+        ),
+        crumb_c_nearest: "unknown",
+        synapse_nearest: ROOT_DIR,
+    },
+    // crumb.c sniff prints any parsed JSON value, even a top-level string.
+    Divergence {
+        target: "scalar",
+        synapse: |s| *s == EntryStatus::Invalid(InvalidReason::UnrecognizedFormat),
+        sniff: &["  .crumb: ? | (legacy format)"],
+        validate: Some("INVALID <ROOT>/scalar/.crumb: not a JSON object"),
+        crumb_c_nearest: ROOT_DIR,
+        synapse_nearest: ROOT_DIR,
+    },
+    // crumb.c copies string bytes without checking UTF-8; Synapse refuses non-UTF-8.
+    Divergence {
+        target: "latin1",
+        synapse: |s| *s == EntryStatus::Invalid(InvalidReason::NotUtf8),
+        sniff: &[
+            "  .crumb: latin1 | RFC-0001 document with one Latin-1 byte in an unprinted field.",
+        ],
+        validate: None,
+        crumb_c_nearest: "latin1",
+        synapse_nearest: ROOT_DIR,
+    },
+    // crumb.c parses a C string, so a NUL ends the document; Synapse refuses the trailing bytes.
+    Divergence {
+        target: "nuljunk",
+        synapse: |s| {
+            matches!(
+                s,
+                EntryStatus::Invalid(InvalidReason::Json(JsonError::Syntax { .. }))
+            )
+        },
+        sniff: &["  .crumb: nuljunk | RFC-0001 document followed by a NUL byte and junk."],
+        validate: None,
+        crumb_c_nearest: "nuljunk",
+        synapse_nearest: ROOT_DIR,
+    },
+    // crumb.c keeps the last value of a duplicated key; Synapse refuses duplicates.
+    Divergence {
+        target: "dupkey",
+        synapse: |s| {
+            matches!(
+                s,
+                EntryStatus::Invalid(InvalidReason::Json(JsonError::DuplicateKey { .. }))
+            )
+        },
+        sniff: &["  .crumb: dupkey | second purpose"],
+        validate: None,
+        crumb_c_nearest: "dupkey",
+        synapse_nearest: ROOT_DIR,
+    },
+    // crumb.c turns a lone UTF-16 surrogate escape into U+FFFD; Synapse refuses it.
+    Divergence {
+        target: "surrogate",
+        synapse: |s| {
+            matches!(
+                s,
+                EntryStatus::Invalid(InvalidReason::Json(JsonError::Syntax { .. }))
+            )
+        },
+        sniff: &["  .crumb: surrogate | lone surrogate [\u{FFFD}] here"],
+        validate: None,
+        crumb_c_nearest: "surrogate",
+        synapse_nearest: ROOT_DIR,
+    },
+];
+
+fn divergence(target: &str) -> Option<&'static Divergence> {
+    DIVERGENCES.iter().find(|d| d.target == target)
+}
+
+/// What crumb.c `sniff` prints for the directory's own `.crumb`, derived from the typed leaf,
+/// or `None` when the Synapse status has no single crumb.c rendering (only allowed for
+/// [`DIVERGENCES`]). crumb.c reads only JSON and only top-level string `name`/`purpose`:
+/// D2 has neither (its `purpose` is an object), and D3 is not JSON.
+fn sniff_lines(target: &str, leaf: &CrumbContextEntry) -> Option<Vec<String>> {
     let mut out = vec![format!("sniff {} as parity", abs_dir(target))];
     match &leaf.status {
         EntryStatus::Present(DirectoryCrumb::Rfc0001(c)) => {
@@ -109,24 +229,30 @@ fn sniff_lines(target: &str, leaf: &CrumbContextEntry) -> Vec<String> {
         }
         EntryStatus::Present(DirectoryCrumb::YamlV1(_))
         | EntryStatus::Missing
-        | EntryStatus::Invalid(InvalidReason::Json(_)) => out.push("  no .crumb here".to_string()),
-        other => panic!("no crumb.c sniff mapping for {other:?}"),
+        | EntryStatus::Invalid(InvalidReason::UnrecognizedFormat)
+        | EntryStatus::Invalid(InvalidReason::Json(JsonError::Syntax { .. })) => {
+            out.push("  no .crumb here".to_string())
+        }
+        _ => return None,
     }
-    out
+    Some(out)
 }
 
-/// What crumb.c `validate` prints for one `.crumb`, if anything.
-fn validate_line(e: &CrumbContextEntry) -> Option<String> {
+/// What crumb.c `validate` prints for one `.crumb`: `Some(None)` for nothing, `None` when
+/// the Synapse status has no single crumb.c rendering (only allowed for [`DIVERGENCES`]).
+fn validate_line(e: &CrumbContextEntry) -> Option<Option<String>> {
     let f = abs_crumb(&e.dir);
-    match &e.status {
+    Some(match &e.status {
         EntryStatus::Missing | EntryStatus::Present(DirectoryCrumb::Rfc0001(_)) => None,
         EntryStatus::Present(DirectoryCrumb::Atlas(_)) => {
             Some(format!("LEGACY  {f} (pre-RFC format, not validated)"))
         }
         EntryStatus::Present(DirectoryCrumb::YamlV1(_))
-        | EntryStatus::Invalid(InvalidReason::Json(_) | InvalidReason::NotJsonObject) => {
-            Some(format!("INVALID {f}: not a JSON object"))
-        }
+        | EntryStatus::Invalid(
+            InvalidReason::UnrecognizedFormat
+            | InvalidReason::Json(JsonError::Syntax { .. })
+            | InvalidReason::NotJsonObject,
+        ) => Some(format!("INVALID {f}: not a JSON object")),
         EntryStatus::Invalid(
             InvalidReason::UnknownJsonDialect
             | InvalidReason::UnsupportedSchemaVersion
@@ -137,13 +263,14 @@ fn validate_line(e: &CrumbContextEntry) -> Option<String> {
         ) => Some(format!(
             "INVALID {f}: needs schema_version \"1.0.0\", name, purpose"
         )),
-        other => panic!("no crumb.c validate mapping for {other:?}"),
-    }
+        _ => return None,
+    })
 }
 
-/// crumb.c `explain` NEAREST CRUMB and INHERITED INVARIANTS, from the typed context.
+/// crumb.c `explain` NEAREST CRUMB and INHERITED INVARIANTS, from the typed context, or
+/// `None` when the nearest crumb has no crumb.c rendering (D3, asserted separately).
 /// `export:` and `related:` lines are not modelled by Synapse and are dropped from both sides.
-fn explain_lines(ctx: &CrumbContext) -> Vec<String> {
+fn explain_lines(ctx: &CrumbContext) -> Option<Vec<String>> {
     let mut out = vec!["== NEAREST CRUMB ==".to_string()];
     match ctx.nearest() {
         None => out.push("  (no .crumb found at or above this path)".to_string()),
@@ -157,7 +284,7 @@ fn explain_lines(ctx: &CrumbContext) -> Vec<String> {
                     &c.invariants,
                 ),
                 Some(DirectoryCrumb::Atlas(_)) => ("", "", "", &[]),
-                other => panic!("no crumb.c explain mapping for {other:?}"),
+                _ => return None,
             };
             out.push(format!("  name: {name}"));
             out.push(format!("  layer: {layer}"));
@@ -178,7 +305,7 @@ fn explain_lines(ctx: &CrumbContext) -> Vec<String> {
             .iter()
             .map(|(d, i)| format!("  from {}: {i}", abs_crumb(d))),
     );
-    out
+    Some(out)
 }
 
 fn without_unmodelled(lines: Vec<String>) -> Vec<String> {
@@ -195,6 +322,15 @@ fn pinned_source_matches_script() {
     assert!(pin.contains(
         "crumb.c sha256 ef0f6566fb838917a750eb898f66596b76aa15a53d7d61bedac03c4c963ee147"
     ));
+}
+
+#[test]
+fn script_targets_match_test_targets() {
+    let script = fs::read_to_string(manifest().join("../../scripts/crumb-parity.sh")).unwrap();
+    let start = script.find("TARGETS=(").unwrap() + "TARGETS=(".len();
+    let end = start + script[start..].find(')').unwrap();
+    let listed: Vec<&str> = script[start..end].split_whitespace().collect();
+    assert_eq!(listed, TARGETS);
 }
 
 #[test]
@@ -216,10 +352,14 @@ fn leaf_dialects_are_as_designed() {
         leaf("badjson").status,
         EntryStatus::Invalid(InvalidReason::Json(_))
     ));
+    // A UTF-8 byte order mark is not JSON whitespace: refused by both tools.
     assert_eq!(
-        leaf("unknown").status,
-        EntryStatus::Invalid(InvalidReason::UnknownJsonDialect)
+        leaf("bom").status,
+        EntryStatus::Invalid(InvalidReason::UnrecognizedFormat)
     );
+    for d in &DIVERGENCES {
+        assert!((d.synapse)(&leaf(d.target).status), "{}", d.target);
+    }
     match leaf("d2").crumb() {
         Some(DirectoryCrumb::Atlas(a)) => assert_eq!(
             a.purpose_statement.as_deref(),
@@ -234,42 +374,50 @@ fn sniff_matches_crumb_c() {
     let tree = fixture_tree();
     for t in TARGETS {
         let ctx = context(&tree, t);
-        if t == "unknown" {
-            // Divergence: crumb.c sniff prints any JSON object's top-level name/purpose.
-            assert_eq!(
-                golden_block("sniff", t)[1],
-                "  .crumb: unknown-object | JSON object with neither schema_version nor version."
-            );
-            assert_eq!(
-                ctx.leaf().status,
-                EntryStatus::Invalid(InvalidReason::UnknownJsonDialect)
-            );
-            continue;
+        let golden = golden_block("sniff", t);
+        let mapped = sniff_lines(t, ctx.leaf());
+        match divergence(t) {
+            Some(d) => {
+                assert_eq!(golden[1..], *d.sniff, "crumb.c sniff {t} drifted");
+                assert!((d.synapse)(&ctx.leaf().status), "Synapse sniff {t} drifted");
+                assert_ne!(mapped.as_ref(), Some(&golden), "{t} no longer diverges");
+            }
+            None => assert_eq!(
+                mapped.unwrap_or_else(|| panic!("{t}: unmapped status outside DIVERGENCES")),
+                golden,
+                "sniff {t}"
+            ),
         }
-        assert_eq!(
-            sniff_lines(t, ctx.leaf()),
-            golden_block("sniff", t),
-            "sniff {t}"
-        );
     }
 }
 
 #[test]
 fn validate_matches_crumb_c() {
     let tree = fixture_tree();
-    let golden = fs::read_to_string(manifest().join("tests/golden/validate.txt")).unwrap();
-    let mut want: Vec<&str> = golden
-        .lines()
-        .filter(|l| l.starts_with("INVALID ") || l.starts_with("LEGACY "))
-        .collect();
-    want.sort();
-    let mut got: Vec<String> = TARGETS
-        .iter()
-        .filter_map(|t| validate_line(context(&tree, t).leaf()))
-        .collect();
-    got.sort();
-    assert_eq!(got, want);
+    for t in TARGETS {
+        let leaf = context(&tree, t).leaf().clone();
+        let golden = golden_validate_line(t);
+        let mapped = validate_line(&leaf);
+        match divergence(t) {
+            Some(d) => {
+                assert_eq!(
+                    golden.as_deref(),
+                    d.validate,
+                    "crumb.c validate {t} drifted"
+                );
+                assert!((d.synapse)(&leaf.status), "Synapse validate {t} drifted");
+                // Synapse refuses every divergent fixture, so its own verdict is "invalid".
+                assert!(leaf.crumb().is_none(), "{t}");
+            }
+            None => assert_eq!(
+                mapped.unwrap_or_else(|| panic!("{t}: unmapped status outside DIVERGENCES")),
+                golden,
+                "validate {t}"
+            ),
+        }
+    }
 
+    let golden = fs::read_to_string(manifest().join("tests/golden/validate.txt")).unwrap();
     let present = TARGETS
         .iter()
         .filter(|t| tree.contains_key(&crumb_path(t)))
@@ -286,6 +434,18 @@ fn explain_matches_crumb_c() {
     for t in TARGETS {
         let ctx = context(&tree, t);
         let golden = without_unmodelled(golden_block("explain", t));
+        if let Some(d) = divergence(t) {
+            assert_eq!(
+                golden[1],
+                format!("  file: {}", abs_crumb(d.crumb_c_nearest)),
+                "crumb.c explain {t} drifted"
+            );
+            assert_eq!(ctx.nearest().unwrap().dir, d.synapse_nearest, "{t}");
+            if d.crumb_c_nearest == d.synapse_nearest {
+                assert_eq!(explain_lines(&ctx).unwrap(), golden, "explain {t}");
+            }
+            continue;
+        }
         match t {
             // Divergence: crumb.c cannot parse D3, so it falls back to the root crumb;
             // Synapse reports the typed D3 crumb as nearest.
@@ -293,16 +453,10 @@ fn explain_matches_crumb_c() {
                 assert_eq!(golden[1], "  file: <ROOT>/.crumb");
                 let n = ctx.nearest().unwrap();
                 assert_eq!((n.dir.as_str(), n.dialect()), ("d3", Some(Dialect::YamlV1)));
+                assert_eq!(explain_lines(&ctx), None);
                 assert!(ctx.inherited_invariants().len() == 2);
             }
-            // Divergence: crumb.c treats any JSON object as nearest; Synapse refuses the
-            // unknown object and falls back to the root crumb.
-            "unknown" => {
-                assert_eq!(golden[1], "  file: <ROOT>/unknown/.crumb");
-                assert_eq!(ctx.nearest().unwrap().dir, ROOT_DIR);
-                assert!(ctx.inherited_invariants().is_empty());
-            }
-            _ => assert_eq!(explain_lines(&ctx), golden, "explain {t}"),
+            _ => assert_eq!(explain_lines(&ctx).unwrap(), golden, "explain {t}"),
         }
     }
 }
