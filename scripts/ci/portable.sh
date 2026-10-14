@@ -11,10 +11,12 @@ printf 'source_status:\n'; git status --porcelain
 rustc -Vv
 cargo -V
 cc --version
+git --version
 uname -a
 case "$mode" in
   workspace)
     cargo fmt --all --check
+    cargo fetch --locked --target aarch64-unknown-linux-gnu --target x86_64-unknown-linux-gnu
     cargo clippy --locked --workspace --all-targets -- -D warnings
     cargo test --locked --workspace
     ;;
