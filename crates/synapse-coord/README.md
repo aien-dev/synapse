@@ -81,10 +81,12 @@ crate touches `synapse-store`, changesets or refs.
   than the caller's); crumb.c lists Git worktrees from `git worktree list`, so crumb.c's
   OTHER WORKTREES section does not list Synapse workspaces (their agents and locks still
   appear under ACTIVE AGENTS and LOCKS).
-- Key resolution consults a `PathOracle` for "does this path exist". With `NoOracle` a bare
-  name like `README` claimed from `src` becomes `src/README`, whereas crumb.c in a worktree
-  that has `README` at the root picks `README`. Synapse callers should pass repo-relative
-  targets containing `/`, or supply an oracle over their snapshot.
+- Key resolution consults a `PathOracle` for "does this path exist". crumb.c resolves a
+  relative target named from a subdirectory by file existence (`README` from `src` may mean
+  `README` or `src/README`), so with `NoOracle` such targets are refused
+  (`AmbiguousWithoutTree`) instead of guessed: a guess could key one file twice and let two
+  agents hold it. Without a tree, name targets from the root (dir `.`) or by absolute path,
+  or supply an oracle over the snapshot.
 - Directories are taken as given (normalized), not through `realpath`, so symlinked
   directories are not resolved the way crumb.c resolves them.
 - `continuations/` and `ledger/` are created but not used; checkpoint/resume stay in `cc.sh`.

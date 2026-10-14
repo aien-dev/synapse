@@ -54,6 +54,11 @@ pub enum CoordError {
     },
     BadPriority(String),
     BadAction(String),
+    /// A relative target named from a subdirectory with no tree to resolve it against.
+    AmbiguousWithoutTree {
+        target: String,
+        dir: String,
+    },
     BadTtl(i64),
 }
 
@@ -72,6 +77,10 @@ impl std::fmt::Display for CoordError {
             CoordError::OutsideWorkspace { path, workspace } => {
                 write!(f, "target {path} is outside the repository {workspace}")
             }
+            CoordError::AmbiguousWithoutTree { target, dir } => write!(
+                f,
+                "target {target} named from {dir} is ambiguous without a tree; name it from the root (dir .) or pass an absolute path"
+            ),
             CoordError::BadPriority(p) => {
                 write!(f, "priority must be low|normal|high|critical (got {p})")
             }
@@ -162,6 +171,12 @@ pub fn default_session(agent: &str) -> String {
 /// workspace answers from its snapshot.
 pub trait PathOracle: Send + Sync {
     fn exists(&self, rel: &str) -> bool;
+    /// False for an oracle that cannot see the tree. Relative targets named from a
+    /// subdirectory are then refused: crumb.c would resolve them by file existence, so a
+    /// blind guess could key one file twice and let two agents hold it.
+    fn sees_tree(&self) -> bool {
+        true
+    }
 }
 
 /// Filesystem oracle (`lstat(top/rel)`), what crumb.c uses.
@@ -176,6 +191,9 @@ impl PathOracle for FsOracle {
 pub struct NoOracle;
 impl PathOracle for NoOracle {
     fn exists(&self, _rel: &str) -> bool {
+        false
+    }
+    fn sees_tree(&self) -> bool {
         false
     }
 }
@@ -288,6 +306,12 @@ impl Workspace {
                 })?;
             return norm_path(rest).ok_or_else(|| CoordError::EscapesRoot {
                 path: target.into(),
+            });
+        }
+        if rel != "." && !self.oracle.sees_tree() {
+            return Err(CoordError::AmbiguousWithoutTree {
+                target: target.into(),
+                dir: rel.into(),
             });
         }
         let joined = if rel != "." {

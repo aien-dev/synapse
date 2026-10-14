@@ -439,10 +439,23 @@ fn t7_path_normalization_and_escape_refusal() {
         claimed(cs.claim(&a, "agent-a", "src", "README", "x", None).unwrap()),
         "README"
     );
-    // Without a tree the same string falls back to <dir>/<target>; '/'-containing targets stay repo-relative.
+    // Without a tree a relative target from a subdirectory is refused (crumb.c would resolve it
+    // by file existence; a guess could key one file twice). From the root it is unambiguous.
     let blind = Workspace::with_oracle("/nowhere", Holder::default(), Box::new(NoOracle));
-    assert_eq!(blind.target_key("README", "src").unwrap(), "src/README");
-    assert_eq!(blind.target_key("src/x.c", "docs").unwrap(), "src/x.c");
+    assert!(matches!(
+        blind.target_key("README", "src"),
+        Err(CoordError::AmbiguousWithoutTree { .. })
+    ));
+    assert!(matches!(
+        blind.target_key("src/x.c", "docs"),
+        Err(CoordError::AmbiguousWithoutTree { .. })
+    ));
+    assert_eq!(blind.target_key("README", ".").unwrap(), "README");
+    assert_eq!(blind.target_key("src/x.c", ".").unwrap(), "src/x.c");
+    assert_eq!(
+        blind.target_key("/nowhere/src/x.c", "docs").unwrap(),
+        "src/x.c"
+    );
 }
 
 #[test]
