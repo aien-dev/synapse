@@ -53,3 +53,29 @@ _Avoid_: unpinned speculative changeset, permanent history
 **AgentCapabilityGrant**:
 An Ed25519-signed authorization token issued by a repository authority that grants a specific agent `DidKey` a bounded set of capabilities (`Read`, `Propose`, `Evaluate`, `Review`, `Publish`) on a single repository until an explicit expiration timestamp, subject to rate and payload size quotas.
 _Avoid_: SourceGrant, ambient filesystem permission, unauthenticated agent ID
+
+### Directory Crumb Context
+
+**Directory Crumb**:
+A `.crumb` file committed in a repository directory that gives agents architectural context (name, purpose, invariants) before they touch that directory, together with the coordination plane (claims, scents, whispers) kept outside history. Synapse reads only the committed file (ADR 0004).
+_Avoid_: Verified Crumb, Crumbline crumb, crumb (unqualified)
+
+**Directory Crumb dialect**:
+One of the typed `.crumb` formats Synapse recognizes: D1 RFC-0001 JSON (`schema_version` `"1.0.0"`), D2 pre-RFC Atlas/`spark-crumbs` JSON (`version`, no `schema_version`), D3 YAML-like `schema: "crumb/v1"`. Each parses into its own variant and is never converted into another; anything else is refused with a typed reason.
+_Avoid_: legacy crumb (ambiguous), crumb version, coerced crumb
+
+**CrumbContext**:
+The chain of `.crumb` entries from the repository root down to a path's directory in one `VirtualTree` snapshot, root first. Each entry records the directory, its status (present, missing, or invalid with a reason), its dialect, and the `BlobDigest` of its bytes. Its nearest present entry and inherited invariants match `crumb.c explain`.
+_Avoid_: crumb (unqualified), working-tree crumb lookup
+
+**CrumbContextDigest**:
+The 32-byte domain-separated SHA-256 digest (`"SYNAPSE_CRUMB_CONTEXT_V1\0"`) of a `CrumbContext`, covering every entry including missing and invalid ones. It names exactly which context was seen.
+_Avoid_: BlobDigest, ChangesetId, GitOid, Verified Crumb digest
+
+**Verified Crumb**:
+A content-addressed, receipt-bound Omega library object (ARCH-0029, stored by `omega_vcstore`). It is program-verification evidence and unrelated to Directory Crumbs. Synapse does not interpret it.
+_Avoid_: Directory Crumb, `.crumb`, crumb (unqualified)
+
+**Crumbline**:
+The AIEN learning curriculum (`aien-sovereign-core` `crates/crumbs`): problems shown to the learner as observations only, with a sealed side and held-out tiers the learner never sees. Synapse never exposes, indexes, or merges its records.
+_Avoid_: Directory Crumb, Verified Crumb, training crumb in Synapse
