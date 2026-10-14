@@ -17,6 +17,7 @@
 pub mod bounds;
 pub mod conflict;
 pub mod conformance;
+pub mod crypto_vectors;
 pub mod energy;
 pub mod fixture;
 pub mod floor;

@@ -263,6 +263,48 @@ fn bounds_verify(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Write the J3 vector corpus from the Rust crates; refuses to overwrite.
+fn crypto_vectors_write(args: &[String]) -> Result<(), String> {
+    use std::io::Write;
+    use synapse_bench::crypto_vectors as cv;
+    let opts = parse_pairs(args, &["--out"])?;
+    let out = opts
+        .last()
+        .map(|(_, v)| PathBuf::from(v))
+        .ok_or("missing --out")?;
+    let vectors = cv::rust_corpus();
+    let bytes = cv::encode(&vectors);
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&out)
+        .map_err(|e| format!("create {} (never overwritten): {e}", out.display()))?;
+    f.write_all(&bytes)
+        .and_then(|_| f.sync_all())
+        .map_err(|e| format!("write {}: {e}", out.display()))?;
+    println!("{} records, {} bytes", vectors.len(), bytes.len());
+    Ok(())
+}
+
+/// Decode a J3 corpus and recompute every record with the Rust crates.
+fn crypto_vectors_verify(args: &[String]) -> Result<(), String> {
+    use synapse_bench::crypto_vectors as cv;
+    let opts = parse_pairs(args, &["--corpus"])?;
+    let path = opts
+        .last()
+        .map(|(_, v)| PathBuf::from(v))
+        .ok_or("missing --corpus")?;
+    let bytes = std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let vectors = cv::decode(&bytes).map_err(|e| format!("refused: {e}"))?;
+    cv::check_against_rust_crates(&vectors)
+        .map_err(|m| format!("record {}: {}", m.index, m.detail))?;
+    println!(
+        "verified: {} records decode and every digest and verdict equals the Rust crates' answer",
+        vectors.len()
+    );
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
@@ -272,6 +314,8 @@ fn main() -> ExitCode {
         Some("bounds") => bounds(&args[1..]),
         Some("bounds-verify") => bounds_verify(&args[1..]),
         Some("bounds-report") => bounds_report(&args[1..]),
+        Some("crypto-vectors-write") => crypto_vectors_write(&args[1..]),
+        Some("crypto-vectors-verify") => crypto_vectors_verify(&args[1..]),
         _ => Err("usage: synapse-bench run ... | synapse-bench child ... (see crate docs)".into()),
     };
     match outcome {

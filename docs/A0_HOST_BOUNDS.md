@@ -72,8 +72,8 @@ against the physical bound for the same hardware:
 | Memory copy, read plus written | 122.02 GB/s | 273 GB/s | same | 0.447 (calc:8dca9336) |
 | Device write through `fdatasync` | 10.92 GB/s | 15.75 GB/s | Derived from the drive's own link: PCIe 32.0 GT/s per lane x 4 lanes, read from sysfs (`physical/device-link.txt`), x 128/130 line code / 8 bits = 15.754 GB/s (calc:c35b0416), before packet overhead, so a true ceiling. Drive: SAMSUNG MZALC4T0HBL1-00B07, firmware NXHB202Q. Samsung's rated figure for this model: UNVERIFIED (no primary datasheet found; retailer listings for the related PM9E1 quote about 14.5 GB/s read and 12.5 GB/s write, not used) | 0.693 (calc:fe38db47) |
 | Device read | 12.25 GB/s | 15.75 GB/s | same | 0.778 (calc:8977a742) |
-| All-core SHA-256 | 22.25 GB/s | 22.25 GB/s | Implementation reference (ADR 6.2 replacement rule): the SHA-2 instructions, the best of the two measured; no closed-form limit | 1 by definition |
-| All-core Ed25519 verification | 395,192 /s | 395,192 /s | Implementation reference (ADR 6.2 replacement rule): `ed25519-dalek` | 1 by definition |
+| All-core SHA-256 | 22.25 GB/s | 22.25 GB/s | Implementation reference (ADR 6.2 replacement rule): the SHA-2 instructions, the best of the two measured; no closed-form limit. **Superseded by J3** ([J3_CRYPTO_REFERENCE.md](J3_CRYPTO_REFERENCE.md)): 39.46 GB/s, the `sha2` crate on the SHA-2 instructions | 1 by definition |
+| All-core Ed25519 verification | 395,192 /s | 395,192 /s | Implementation reference (ADR 6.2 replacement rule): `ed25519-dalek`. **Superseded by J3**: 397,560 /s | 1 by definition |
 
 The memory and device fractions say how much of the hardware these probes used on a shared host; they
 describe the probes and say nothing yet about Synapse.
@@ -82,15 +82,15 @@ Section 6.2 replay row, now computable: Gate 4 replays 117,196,023 bytes with a 
 them at the physical 273 GB/s takes 0.429 ms (calc:f6b8f9e3); digesting them at the 22.25 GB/s all-core
 SHA-256 reference takes 5.267 ms (calc:fea168bc). The bound is the larger, 5.267 ms. Gate 4's measured
 median replay is 344.575 ms, so **fraction of bound reached = 0.0153 (bound 5.267 ms, measured
-344.575 ms, 65.4 times the bound)** (calc:2d68396b, calc:0f40b5aa). Supporting figures per Gate 4
+344.575 ms, 65.4 times the bound)** (calc:2d68396b, calc:0f40b5aa). **Superseded by J3** ([J3_CRYPTO_REFERENCE.md](J3_CRYPTO_REFERENCE.md)): at the new 39.46 GB/s reference the bound is 2.970 ms and the fraction 0.00862 (bound 2.970 ms, measured 344.575 ms). Supporting figures per Gate 4
 change of 11,949 bytes: 0.0438 µs to move once at the physical memory bandwidth (calc:eed9e67f),
 0.537 µs to digest at the all-core SHA-256 reference (calc:f77f12b6), and 2.53 µs of all-core Ed25519
-time per verification (calc:65a531d5).
+time per verification (calc:65a531d5). **Superseded by J3**: 0.303 µs to digest (calc:b66d96d7) and 2.515 µs per verification (calc:4f355c4c) at the J3 references.
 
 Finding: the workspace builds `sha2` 0.10.9 without its `asm` feature, and on aarch64 that crate then uses
 its software backend (`sha2/src/sha256.rs`: the aarch64 backend needs `feature = "asm"`). Synapse's own
 hashing therefore runs at the 6.054 GB/s all-core median, not the 20.48 GB/s of the SHA-2 instructions on
-the same block size. Changing that is a dependency decision for X1 or J3, not part of A0.
+the same block size. Changing that is a dependency decision for X1 or J3, not part of A0. **Resolved by J3**: `sha2` now has `asm` and reaches 39.46 GB/s all-core ([J3_CRYPTO_REFERENCE.md](J3_CRYPTO_REFERENCE.md)).
 
 ## 3. Formulas (enough to recompute by hand)
 

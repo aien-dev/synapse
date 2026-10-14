@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Reproducible concurrent agent benchmark harness and Gate 4 qualification conformance suites for Synapse vs Git worktrees"
 
 [dependencies]
+curve25519-dalek.workspace = true
 ed25519-dalek.workspace = true
 hex.workspace = true
 libc.workspace = true

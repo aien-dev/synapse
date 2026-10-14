@@ -1,0 +1,41 @@
+{
+  "schema": "synapse-bench/a0-host-bounds-protocol/v1",
+  "repetitions": 7,
+  "central_statistic": "median",
+  "spread_statistic": "range",
+  "bound_statistic": "max_rate",
+  "threads": 20,
+  "idle_ms": 2000,
+  "memory": {
+    "bytes_per_thread": 67108864,
+    "passes": 80
+  },
+  "device": {
+    "file_bytes": 17179869184,
+    "chunk_bytes": 4194304,
+    "threads": 8
+  },
+  "sha256": {
+    "block_bytes": 16384,
+    "blocks_per_thread": 180000
+  },
+  "ed25519": {
+    "message_bytes": 256,
+    "verifications_per_thread": 20000
+  },
+  "energy_preflight": {
+    "observe_ms": 1000,
+    "min_counter_changes": 5
+  },
+  "w1_flush": {
+    "path": "evidence/phase5-group-commit/floor.json",
+    "sha256": "9c30eddf2e278921b28df5ecd8f3b2e2b8f43771c73c5c540b8d9dc965f5ccef",
+    "probes": [
+      "overwrite_4k_fdatasync",
+      "overwrite_64k_fdatasync",
+      "overwrite_1m_fdatasync",
+      "odirect_dsync_4k_overwrite",
+      "append_4k_fdatasync"
+    ]
+  }
+}
