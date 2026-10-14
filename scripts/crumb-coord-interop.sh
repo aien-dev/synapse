@@ -2,6 +2,8 @@
 # Interop proof: crumb.c (aien-architecture @ 29780e5, built with `cc` only) and the Rust
 # synapse-coord crate share ONE coordination store, so there is no split brain:
 # a claim made by either tool is refused by the other, and each sees the other in sniff.
+# I11/I12 cover the store identity marker (issue #15): crumb.c ignores STORE_ID, and a
+# misconfigured root is caught by --expect-store-id.
 #
 # usage: scripts/crumb-coord-interop.sh [path-to-aien-architecture-checkout]
 # needs: bash, git, cc, cargo, sha256sum, grep. No Python.
@@ -37,10 +39,14 @@ cc_() { (cd "$T/wa" && "$C" "$@"); }
 
 # I1 crumb.c claim is refused by Rust
 cc_ claim c-agent src runtime.c "C rewrite" | grep -q 'CLAIMED src/runtime.c' && ok "I1 crumb.c claims src/runtime.c" || bad "I1 crumb.c claim"
+# I11a crumb.c alone never creates a store identity marker (it has no notion of one)
+[ ! -e "$STORE/STORE_ID" ] && ok "I11 crumb.c-only store has no STORE_ID marker" || bad "I11 crumb.c created STORE_ID"
 out=$(rs claim rust-agent . src/runtime.c "rust wants it"); rc=$?
 [ $rc -eq 2 ] && echo "$out" | grep -q 'BLOCKED src/runtime.c held by c-agent on branch laneC' && ok "I1 Rust claim refused (exit 2) with crumb.c holder info" || bad "I1 Rust not refused (rc=$rc: $out)"
 # I2 Rust claim is refused by crumb.c
 rs claim rust-agent . src/other.c "synapse edit" | grep -q 'CLAIMED src/other.c' && ok "I2 Rust claims src/other.c" || bad "I2 Rust claim"
+# I11b the first Rust mutation (the blocked claim in I1 already counts) created the marker
+cp "$STORE/STORE_ID" "$T/marker0" 2>/dev/null && ID=$("$RS" --store "$STORE" id) && grep -q "^crumb-coord-store-id/1 $ID\$" "$T/marker0" && ok "I11 first Rust mutation wrote STORE_ID ($ID)" || bad "I11 no marker after Rust mutation"
 out=$(cc_ claim c-agent src other.c "C wants it"); rc=$?
 [ $rc -eq 2 ] && echo "$out" | grep -q 'BLOCKED src/other.c held by rust-agent on branch lane/main (worktree /synapse/ws/rust-agent)' && ok "I2 crumb.c claim refused (exit 2) with Rust holder info" || bad "I2 crumb.c not refused (rc=$rc: $out)"
 # I3 each sees the other in sniff
@@ -80,6 +86,28 @@ for f in $(find "$STORE/dirs" "$STORE/agents" -name '*.json'); do n=$((n + 1)); 
 [ $n -gt 0 ] && [ $n -eq $same ] && ok "I6 all $n records byte-identical after Rust re-serialization" || bad "I6 format drift ($same of $n identical)"
 # I10 no Synapse or Git state was written by the Rust side outside the store
 [ ! -e "$T/wa/src/.crumb.local" ] && [ -z "$(git -C "$T/wa" status --porcelain)" ] && ok "I10 worktree untouched; all state lives in the store" || bad "I10 stray state"
+
+# I11c crumb.c ignores the marker: the pinned source never names it, its record walks never
+# load it, and after every crumb.c claim/close/whisper/prune above it is byte-identical.
+! grep -q STORE_ID "$T/crumb.c" && ok "I11 crumb.c @ $PIN never names STORE_ID" || bad "I11 crumb.c mentions STORE_ID"
+cc_ update c-agent src "after all" >/dev/null && cc_ sniff c-agent src >/dev/null && cmp -s "$STORE/STORE_ID" "$T/marker0" && ok "I11 marker byte-identical after all crumb.c mutations and prunes" || bad "I11 marker changed"
+rs sniff rust-agent src | grep -q "^  store id: $ID\$" && ok "I11 Rust sniff prints the store id" || bad "I11 sniff id line"
+
+# I12 negative control, the split brain from the #14 review: crumb.c on the right root,
+# a Synapse agent misconfigured onto another root.
+WRONG="$T/wrong/crumb/v1"
+rsw() { "$RS" --store "$WRONG" --top /synapse/ws/rust-agent --synapse lane/main "$REV" "$BASE" --session rust-sess --no-tree "$@"; }
+cc_ claim c-agent src split.c "C owns it" | grep -q 'CLAIMED src/split.c' || bad "I12 setup crumb.c claim"
+out=$(rsw claim rust-agent . src/split.c "also mine"); rc=$?
+[ $rc -eq 0 ] && echo "$out" | grep -q 'CLAIMED src/split.c' && ok "I12 reproduced: without an expected id both tools grant src/split.c (silent split brain)" || bad "I12 split brain not reproduced (rc=$rc: $out)"
+out=$(rsw --expect-store-id "$ID" claim rust-agent . src/split2.c "x" 2>&1); rc=$?
+[ $rc -eq 1 ] && echo "$out" | grep -q "expected $ID; refusing" && ok "I12 expecting open refuses the wrong root (marker mismatch, exit 1)" || bad "I12 mismatch not refused (rc=$rc: $out)"
+FRESH="$T/fresh/crumb/v1"
+(cd "$T/wa" && CRUMB_COORD_ROOT="$FRESH" "$C" claim c-agent src runtime.c "fresh store" >/dev/null)
+out=$("$RS" --store "$FRESH" --top /synapse/ws/rust-agent --expect-store-id "$ID" --no-tree claim rust-agent . src/runtime.c x 2>&1); rc=$?
+[ $rc -eq 1 ] && echo "$out" | grep -q 'has no STORE_ID marker; refusing' && [ ! -e "$FRESH/STORE_ID" ] && ok "I12 expecting open refuses a crumb.c-only root with no marker, creates none" || bad "I12 missing marker not refused (rc=$rc: $out)"
+out=$(rs --expect-store-id "$ID" claim rust-agent . src/split.c "x"); rc=$?
+[ $rc -eq 2 ] && echo "$out" | grep -q 'BLOCKED src/split.c held by c-agent' && ok "I12 expecting open on the right root sees crumb.c's claim (blocked, exit 2)" || bad "I12 right root (rc=$rc: $out)"
 
 echo "interop: $pass passed, $fail failed"
 [ $fail -eq 0 ]
