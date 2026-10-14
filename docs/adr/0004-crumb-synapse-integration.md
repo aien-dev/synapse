@@ -30,7 +30,7 @@ Inspection found that the word "crumb" names three unrelated things in AIEN, and
 |---|---|---|---|---|
 | D1 | RFC-0001 JSON | object, `schema_version` = `"1.0.0"`, `name`, `purpose` required; `layer`, `above`, `below`, `invariants`, `exports`, `extensions` optional | `crumb.c` `seed` and `create` | `validate`: valid (prints nothing); `sniff`: name, purpose, invariants |
 | D2 | Pre-RFC Atlas / `spark-crumbs` JSON | object with `version` (u32), `dir_path`, `dir_name`, `description`, optional `purpose` object `{statement, ...}`, optional `above`, required arrays `below`, `history`, `whispers`; no `schema_version` | `spark-crumbs` `save_dir_crumb` | `validate`: `LEGACY ... (pre-RFC format, not validated)`; `sniff`: `? \| (legacy format)` |
-| D3 | YAML-like `schema: "crumb/v1"` | top-level `key: "string"` lines and a `components:` list of `name`/`path`/`role` | none known; the Synapse repository root `.crumb` is the one instance found | `validate`: `INVALID ...: not a JSON object`; `sniff`: `no .crumb here` (the JSON parse fails) |
+| D3 | YAML-like `schema: "crumb/v1"` | top-level `key: "string"` lines and a `components:` list of `name`/`path`/`role` | none known; the Synapse repository root `.crumb` was the one instance found (migrated to D1, see section 3) | `validate`: `INVALID ...: not a JSON object`; `sniff`: `no .crumb here` (the JSON parse fails) |
 
 Anything else is outside D1 to D3 and Synapse refuses it with a typed reason (section 2.2). `crumb.c` has no notion of dialect and reads some of those files anyway (for example non-UTF-8 bytes, or an unknown JSON object); section 2.3 lists every known case where the two tools disagree.
 
@@ -86,6 +86,6 @@ This workstream sits at the Phase 7 to Phase 8 boundary: after the AI-native mod
 ## 3. Consequences
 
 * Agents get the same directory context from a Synapse snapshot as from a Git checkout, with every gap (missing, invalid, unknown dialect) visible.
-* The Synapse root `.crumb` is D3. It is reported as present and typed, but `crumb.c` does not read it. Migrating it to D1 is a separate change.
+* The Synapse root `.crumb` was D3, which `crumb.c` could not read. It has been migrated to D1 (all fields kept: components as `below` plus `extensions.synapse`), and `crates/synapse-crumb/tests/repo_root.rs` asserts it stays D1.
 * A new dialect needs a new typed variant, a new dialect tag, and new golden fixtures; nothing is accepted by default.
 * `CrumbContextDigest` binds the exact bytes and statuses seen, so a later receipt (D4) can prove which context was in force.

@@ -1,26 +1,66 @@
-schema: "crumb/v1"
-repository: "aien-spark/synapse"
-updated_at: "2026-10-14T15:35:01Z"
-summary: "Synapse agent-native changeset service with Git and Radicle interoperability (aien-sovereign-core#515)"
-components:
-  - name: "synapse-core"
-    path: "crates/synapse-core"
-    role: "Distinct typed identities, canonical changeset envelope v1, refusal codes, and domain invariants"
-  - name: "synapse-store"
-    path: "crates/synapse-store"
-    role: "Single-writer append-only WAL, content-addressed blob store, checkpointing, GC, and fault-injected recovery"
-  - name: "synapse-auth"
-    path: "crates/synapse-auth"
-    role: "Ed25519 agent identity verification, capability-scoped grants, rate/size quotas, and hash-chained audit log"
-  - name: "synapse-api"
-    path: "crates/synapse-api"
-    role: "Bounded paginated read/proposal API, virtual tree overlay without checkout, path-index invalidation, and watch cursors"
-  - name: "synapse-git"
-    path: "crates/synapse-git"
-    role: "Deterministic Git blob/tree/commit materialization, bidirectional OID mapping, and GitHub PR projection metadata"
-  - name: "synapse-radicle"
-    path: "crates/synapse-radicle"
-    role: "Radicle refs/rad/id and refs/rad/sigrefs Ed25519 delegate threshold verifier and split-brain refusal engine"
-  - name: "synapse-bench"
-    path: "crates/synapse-bench"
-    role: "Gate 4 comparative qualification harness (Synapse versus Git worktree and plumbing workflows) and WAL, Git, and Radicle conformance suites"
+{
+  "schema_version": "1.0.0",
+  "name": "synapse",
+  "layer": "root",
+  "purpose": "Synapse agent-native changeset service with Git and Radicle interoperability (aien-sovereign-core#515)",
+  "below": [
+    {
+      "name": "synapse-core",
+      "role": "Distinct typed identities, canonical changeset envelope v1, refusal codes, and domain invariants"
+    },
+    {
+      "name": "synapse-store",
+      "role": "Single-writer append-only WAL, content-addressed blob store, checkpointing, GC, and fault-injected recovery"
+    },
+    {
+      "name": "synapse-auth",
+      "role": "Ed25519 agent identity verification, capability-scoped grants, rate/size quotas, and hash-chained audit log"
+    },
+    {
+      "name": "synapse-api",
+      "role": "Bounded paginated read/proposal API, virtual tree overlay without checkout, path-index invalidation, and watch cursors"
+    },
+    {
+      "name": "synapse-git",
+      "role": "Deterministic Git blob/tree/commit materialization, bidirectional OID mapping, and GitHub PR projection metadata"
+    },
+    {
+      "name": "synapse-radicle",
+      "role": "Radicle refs/rad/id and refs/rad/sigrefs Ed25519 delegate threshold verifier and split-brain refusal engine"
+    },
+    {
+      "name": "synapse-bench",
+      "role": "Gate 4 comparative qualification harness (Synapse versus Git worktree and plumbing workflows) and WAL, Git, and Radicle conformance suites"
+    },
+    {
+      "name": "synapse-crumb",
+      "role": "Strict bounded reader for Directory Crumb dialects and CrumbContext with its domain-separated digest over Synapse snapshots (ADR 0004)"
+    },
+    {
+      "name": "synapse-coord",
+      "role": "Shared agent coordination plane (claims, presence, whispers) byte-compatible with the crumb.c RFC-0002 store; never history, evidence, or authority (ADR 0004)"
+    }
+  ],
+  "invariants": [],
+  "extensions": {
+    "synapse": {
+      "repository": "aien-spark/synapse",
+      "tracker": "aien-sovereign-core#515",
+      "component_paths": {
+        "synapse-core": "crates/synapse-core",
+        "synapse-store": "crates/synapse-store",
+        "synapse-auth": "crates/synapse-auth",
+        "synapse-api": "crates/synapse-api",
+        "synapse-git": "crates/synapse-git",
+        "synapse-radicle": "crates/synapse-radicle",
+        "synapse-bench": "crates/synapse-bench",
+        "synapse-crumb": "crates/synapse-crumb",
+        "synapse-coord": "crates/synapse-coord"
+      },
+      "migrated_from": {
+        "dialect": "D3 (schema: \"crumb/v1\", ADR 0004)",
+        "updated_at": "2026-10-14T15:35:01Z"
+      }
+    }
+  }
+}
