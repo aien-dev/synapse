@@ -1,8 +1,8 @@
 Crumb-Synapse combined qualification (ADR 0004 D5, aien-spark/synapse#12)
-synapse commit   2f848043f6b660bd7265f52003a8ac7d9a4abaa0 (clean)
+synapse commit   921b245c69ebaecd2ae3ca1df2ab0adaad5e5b8b (clean)
 crumb.c          aien-architecture 29780e56c9e6b9111d884e0d4b146737228c19f6 sha256 ef0f6566fb838917a750eb898f66596b76aa15a53d7d61bedac03c4c963ee147
-run              2026-10-14T18:10:18Z .. 2026-10-14T18:10:35Z
-suite            exit 0; test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.92s
+run              2026-10-14T18:14:38Z .. 2026-10-14T18:14:54Z
+suite            exit 0; test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.96s
 
 ID   STATUS      DETAIL
 S01  PASS        bob's claim on src/a.rs refused (held by alice); bob's advisory shows alice's claim and alice's open proposal
