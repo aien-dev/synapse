@@ -1,0 +1,32 @@
+{
+  "schema": "goals/v1",
+  "project": "synapse",
+  "tracker_issue": "https://github.com/aien-spark/aien-sovereign-core/issues/515",
+  "goals": [
+    {
+      "id": "GATE-0",
+      "title": "Reality check, repository boundary ADR, threat model, schema, and empirical baseline",
+      "status": "completed"
+    },
+    {
+      "id": "GATE-1",
+      "title": "Durable single-writer WAL, content-addressed blob store, checkpointing, and crash fault injection",
+      "status": "in_progress"
+    },
+    {
+      "id": "GATE-2",
+      "title": "Capability-scoped Ed25519 auth, bounded paginated read/proposal API, virtual tree inspection, and path index",
+      "status": "planned"
+    },
+    {
+      "id": "GATE-3",
+      "title": "Deterministic Git object materialization, GitHub PR projection, and Radicle delegate threshold verifier",
+      "status": "planned"
+    },
+    {
+      "id": "GATE-4",
+      "title": "Comparative concurrent agent benchmark against Git worktrees, conformance suites, and qualification receipt",
+      "status": "planned"
+    }
+  ]
+}

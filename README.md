@@ -1,5 +1,36 @@
-<img src="assets/icon.svg" width="64" height="64" alt="">
+# Synapse
 
-# synapse
+Synapse is AIEN's high-throughput, agent-native changeset and integration service with deterministic Git object materialization and Radicle canonicality verification ([aien-spark/aien-sovereign-core#515](https://github.com/aien-spark/aien-sovereign-core/issues/515)).
 
-Created in [T3 Code](https://t3.codes).
+## Architecture Overview
+
+Synapse accelerates the high-frequency multi-agent inner loop (changeset creation, virtual tree/diff inspection without working-tree checkout, test evidence attachment, conflict detection, and integration queueing) while enforcing three non-negotiable boundaries:
+
+1. **Git Compatibility**: Accepted changesets deterministically materialize into standard Git `blob`, `tree`, and `commit` objects compatible with `git fsck`, `git clone`, and `git fetch`.
+2. **GitHub Human Projection**: Human review projections (`GitHubPullRequestProjection`) publish compact summaries and evidence digests without uploading bulky machine logs or silently force-moving human branches.
+3. **Radicle Canonical Authority**: Fast WAL ingest order (`WalSeq`) and GitHub PR state never confer authority to advance canonical branches. Canonical promotion (`RadicleCanonicalHead`) requires cryptographic verification of `refs/rad/id` and `refs/namespaces/<nid>/refs/rad/sigrefs` against the repository's delegate quorum threshold.
+
+## Workspace Crates
+
+| Crate | Gate | Responsibility |
+| :--- | :--- | :--- |
+| [`synapse-core`](crates/synapse-core) | Gate 0 | Distinct identity types (`ChangesetId`, `BlobDigest`, `GitOid`, `RadicleCanonicalHead`, `GitHubPullRequestProjection`, `IdempotencyKey`, `WalSeq`), `ChangesetEnvelope` v1, `did:key` Ed25519 verification, and `RefusalCode` taxonomy |
+| [`synapse-store`](crates/synapse-store) | Gate 1 | Single-writer append-only WAL (`SWAL` v1) with CRC32C and SHA-256 hash chain, configurable `fsync` policy, content-addressed blob store, checkpoint compaction, GC, and crash fault injection |
+| [`synapse-auth`](crates/synapse-auth) | Gate 2 | Ed25519 capability grants (`Read`, `Propose`, `Evaluate`, `Review`, `Publish`), expiry/replay guards, rate/size quotas, and hash-chained security audit log |
+| [`synapse-api`](crates/synapse-api) | Gate 2 | Bounded paginated API (`submit`, `get`, `diff`, `tree`, `history`, `provenance`, `conflicts`, `status`, `watch`), checkout-free virtual tree overlay, and exact path-index invalidation |
+| [`synapse-git`](crates/synapse-git) | Gate 3 | Deterministic Git loose object writer/reader, bidirectional `ChangesetId <-> GitOid` map, ref namespace separation, and GitHub PR projection builder |
+| [`synapse-radicle`](crates/synapse-radicle) | Gate 3 | Radicle `refs/rad/id` and `refs/rad/sigrefs` Ed25519 delegate threshold verifier and split-brain refusal engine |
+| [`synapse-bench`](crates/synapse-bench) | Gate 4 | Comparative multi-agent benchmark harness and conformance suite against conventional Git worktree workflows |
+
+## Documentation and Evidence
+
+* [Domain Glossary (`CONTEXT.md`)](CONTEXT.md)
+* [ADR 0001: Synapse Architecture, Owning Boundary, and Compatibility Invariants](docs/adr/0001-synapse-architecture-and-boundaries.md)
+* [Gate 0 Reality Check Audit and Reproducible Baseline](docs/GATE0_REALITY_CHECK_AND_BASELINE.md)
+* [Threat Model and Capability Permission Matrix](docs/THREAT_MODEL.md)
+* [Changeset Schema, WAL Format, Consistency, and GC Specification](docs/SCHEMA_AND_CONSISTENCY.md)
+* [Gate 0 Empirical Baseline Receipt (`evidence/gate0-baseline/`)](evidence/gate0-baseline/baseline_report.json)
+
+## License
+
+Licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
