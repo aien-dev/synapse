@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0.0",
+  "name": "d1",
+  "layer": "d1",
+  "purpose": "RFC-0001 directory with one invariant.",
+  "invariants": ["d1 invariant"],
+  "above": {"name": "fixture-root", "path": ".."},
+  "extensions": {"owner_lane": ""}
+}

@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0.0",
+  "name": "d1/nested",
+  "purpose": "Nested RFC-0001 directory under d1.",
+  "invariants": ["nested invariant A", "nested invariant B"]
+}

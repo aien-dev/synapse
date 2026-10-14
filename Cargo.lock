@@ -345,6 +345,7 @@ dependencies = [
  "sha2",
  "synapse-auth",
  "synapse-core",
+ "synapse-crumb",
  "synapse-store",
 ]
 
@@ -379,6 +380,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "synapse-coord"
+version = "0.1.0"
+
+[[package]]
 name = "synapse-core"
 version = "0.1.0"
 dependencies = [
@@ -388,6 +393,15 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
+]
+
+[[package]]
+name = "synapse-crumb"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "sha2",
+ "synapse-core",
 ]
 
 [[package]]

@@ -1,0 +1,1 @@
+{"name": "unknown-object", "purpose": "JSON object with neither schema_version nor version.", "invariants": ["unknown invariant"]}

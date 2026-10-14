@@ -18,6 +18,9 @@ use synapse_store::{
     StoredChangeset, SynapseStore,
 };
 
+mod crumb;
+pub use crumb::CrumbContextQueryPayload;
+
 /// Default maximum page size for bounded API queries.
 pub const DEFAULT_MAX_PAGE_SIZE: usize = 256;
 

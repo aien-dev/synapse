@@ -1,0 +1,5 @@
+﻿{
+  "schema_version": "1.0.0",
+  "name": "bom",
+  "purpose": "RFC-0001 document preceded by a UTF-8 byte order mark."
+}
