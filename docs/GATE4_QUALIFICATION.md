@@ -312,10 +312,11 @@ What the decision means:
 * Git stays as a small machine bridge for ecosystem interop (import, export, existing tooling and hosting), not as a human path.
 * The decision supersedes the Option C recommendation below and the non-goal "Replacing Git" in [aien-spark/aien-sovereign-core#515](https://github.com/aien-spark/aien-sovereign-core/issues/515).
 * The gaps this report measured are now the Phase 5 work list:
-  1. **Durable single-writer ceiling:** S1 stays near 70 ops/s from 1 to 32 agents, while G3F reaches 383 ops/s and a 119 ms p99 at 32 agents against S1's 1.2 s (section 3.1).
+  1. **Durable single-writer ceiling:** S1 spends 13.6 to 14.4 ms of wall-clock time per accepted change at every tier from 1 to 32 agents, while G3F spends 2.61 ms at 32 agents (each the inverse of the measured aggregate rate in section 3.1); at 32 agents the p99 latency is 1.2 s for S1 against 119 ms for G3F.
   2. **Slower reads than `git cat-file --batch`:** Synapse `read_file` 1.11 ms against 0.18 ms, `tree` 17.7 ms against `git ls-tree -r` 3.6 ms, `diff` 2.5 ms against `git diff-tree` 1.5 ms (section 4).
   3. **Unbounded virtual tree cache:** the query process peaked at 782,316 to 789,720 KiB RSS with no size bound (section 4).
   4. **No compact wire format:** the signed JSON submit request has a median of 16,653 bytes against a 904-byte Git thin pack (section 7, ESTIMATE).
+* The comparisons with Git above describe the gaps; they are not targets, and the byte and memory figures are supporting facts. Phase 5 reports each fix in seconds and joules per accepted change, and watts, next to a physical bound with its derivation and sources (ADR 0002 section 2.6).
 * The roadmap (Phases 5 to 9) and the gates that must pass before agents cut over are recorded in [ADR 0002](adr/0002-synapse-first-git-as-bridge.md).
 
 The proposal text below is kept unchanged as history.

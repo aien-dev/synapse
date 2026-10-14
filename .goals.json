@@ -31,7 +31,7 @@
     },
     {
       "id": "PHASE-5",
-      "title": "Close the Gate 4 measured gaps: durable group commit, faster reads than git cat-file --batch, bounded virtual tree cache, compact wire format and local daemon socket",
+      "title": "Close the Gate 4 measured gaps, each reported in seconds and joules per accepted change next to a physical bound: durable group commit, read path, bounded virtual tree cache, compact wire format and local daemon socket",
       "status": "in_progress"
     },
     {
@@ -51,7 +51,7 @@
     },
     {
       "id": "PHASE-9",
-      "title": "Native on AIEN hardware: Synapse store on AIENOS, Git as an import and export edge only",
+      "title": "Native on AIEN hardware: Synapse hot path written in Omega on AIENOS, talking directly to the hardware (raw block storage, no filesystem), Git as an import and export edge only",
       "status": "pending"
     }
   ]

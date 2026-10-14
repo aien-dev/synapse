@@ -15,7 +15,7 @@ Gate 4 measured Synapse against Git worktree and Git plumbing workflows on the s
 
 * Synapse is ahead on page-cache ingest throughput, CPU per proposal, and a path-level conflict query with no false negatives (sections 1, 3.1, 3.3, 5).
 * Git plumbing is ahead on durable write throughput from 8 agents up, because Synapse has one durable writer (section 3.1), and on read latency through a persistent `git cat-file --batch` (section 4).
-* Synapse has an unbounded virtual tree cache (section 4) and no compact wire format; its JSON request is many times the size of a Git thin pack (section 7, ESTIMATE).
+* Synapse has an unbounded virtual tree cache (section 4) and no compact wire format; its JSON request is much larger than a Git thin pack (section 7, ESTIMATE).
 * Synapse flags 3 disjoint-hunk pairs as conflicts that Git merges cleanly, because it compares at path level (section 5).
 * Gate 4 section 13 recommended Option C: Git plumbing now, a Synapse pilot later.
 
@@ -53,16 +53,27 @@ The GitHub pull request projection (`GitHubPullRequestProjection` in `synapse-co
 
 Radicle delegate quorum (ADR 0001 section 2.2 item 3) stays the trust model for canonical promotion unless ADR 0003 changes it. Delegates can be agents or machines. Ingest order (`WalSeq`) and forge merge state never confer promotion authority.
 
+### 2.6 Performance: As Close to the Physical Bound as Possible
+
+The goal is the physical limit of the hardware, not a multiple of today's numbers or of Git's, and not a fixed agent count.
+
+* **Units.** Performance is measured only in physical SI units: seconds per accepted change, joules per accepted change, and watts. Each result is reported next to a physical bound for the same work, with the bound's derivation and the source of every input (a measurement on the host or a manufacturer specification).
+* **What is not a performance measure.** No targets, no multipliers, no operations-per-second headlines, no token counts, and no byte counts. Data amounts (bytes written, bytes sent, memory held) are recorded as supporting facts only. Agent counts are measurement points, not goals.
+* **Every layer must earn its place.** Every layer between an agent and the metal (process boundaries, serialization, the filesystem, the page cache, the kernel I/O path) must justify its measured cost in seconds and joules or be rewritten.
+* **End state.** Synapse's hot path is written in Omega and runs on AIENOS, talking directly to the hardware: raw block storage with no filesystem in between (Phase 9).
+
 ## 3. Roadmap
 
 ### Phase 5: Close the Measured Gaps
 
-The four gaps Gate 4 measured are the work list. Each fix is re-measured with the Gate 4 harness against the Gate 4 numbers.
+The four gaps Gate 4 measured are the work list. Gate 4 and Git figures are reference points only. Every acceptance below follows section 2.6.
 
-1. **Durable single-writer ceiling.** Group commit across `synapse-store` and the `synapse-api` submission path, so one fsync covers every queued submitter. Blobs, directories, and the WAL are fsynced before any acknowledgement. The queue is bounded and has a maximum batch delay. Tests cover a crash mid-batch, a failed flush (no acknowledgement; every waiter gets the error), retry, and shutdown drain. Acceptance: S1 re-measured at 1, 4, 8, and 32 agents; no regression at 1 agent; at least 5 times the durable throughput at 32 agents; stretch target p99 at 32 agents below G3F's 119 ms.
-2. **Slower reads than `git cat-file --batch`.** A faster read path for file, tree, and diff queries, measured against the Git methods in Gate 4 section 4.
-3. **Unbounded virtual tree cache.** A memory bound with eviction, and a measured peak under the Gate 4 query load.
-4. **No compact wire format.** A compact binary wire format and a local daemon socket, replacing the JSON approximation, measured against the Git thin pack size in Gate 4 section 7.
+First, measure the physical bound inputs on the host, each with its source: storage sync latency and bandwidth, memory read latency and bandwidth, per-core hash and signature time, and power draw in watts with the method used to read it.
+
+1. **Durable single-writer ceiling.** Group commit across `synapse-store` and the `synapse-api` submission path, so one fsync covers every queued submitter. Blobs, directories, and the WAL are fsynced before any acknowledgement. The queue is bounded and has a maximum batch delay. Tests cover a crash mid-batch, a failed flush (no acknowledgement; every waiter gets the error), retry, and shutdown drain. Acceptance: report seconds per accepted change, joules per accepted change, and watts at 1, 4, 8, and 32 agents (measurement points, not goals), each next to the physical bound derived from the host measurements above, with the derivation and sources; list every layer that still separates Synapse from the bound.
+2. **Slower reads than `git cat-file --batch`.** A read path for file, tree, and diff queries. Acceptance: report seconds and joules per query next to the physical bound for reading the same data (memory and storage read latency and bandwidth, per-core hash time), with the derivation and sources; list every layer that still separates Synapse from the bound.
+3. **Unbounded virtual tree cache.** A memory bound with eviction. Acceptance: report seconds and joules per query with the bound in place, under the Gate 4 query load; the peak memory held is recorded as a supporting fact.
+4. **No compact wire format.** A compact binary wire format and a local daemon socket, replacing the JSON approximation. Acceptance: report seconds and joules per accepted change across the socket next to the physical bound derived from the measured socket and memory bandwidth, with the derivation and sources; bytes sent are recorded as a supporting fact; list every layer that still separates Synapse from the bound.
 
 ### Phase 6: The Small Git Bridge
 
@@ -91,7 +102,7 @@ Hive agents submit, read, and merge through Synapse. Git is used only through th
 
 ### Phase 9: Native on AIEN Hardware
 
-The Synapse store runs natively on AIEN hardware under AIENOS. Git is an import and export edge only.
+Synapse's hot path is written in Omega and runs on AIENOS on AIEN hardware, talking directly to the hardware: raw block storage with no filesystem in between (section 2.6). Performance is reported in seconds and joules per accepted change next to the physical bound, as in Phase 5. Git is an import and export edge only.
 
 ## 4. Cutover Gates Before Phase 8
 
