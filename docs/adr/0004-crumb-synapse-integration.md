@@ -32,7 +32,7 @@ Inspection found that the word "crumb" names three unrelated things in AIEN, and
 | D2 | Pre-RFC Atlas / `spark-crumbs` JSON | object with `version` (u32), `dir_path`, `dir_name`, `description`, optional `purpose` object `{statement, ...}`, optional `above`, required arrays `below`, `history`, `whispers`; no `schema_version` | `spark-crumbs` `save_dir_crumb` | `validate`: `LEGACY ... (pre-RFC format, not validated)`; `sniff`: `? \| (legacy format)` |
 | D3 | YAML-like `schema: "crumb/v1"` | top-level `key: "string"` lines and a `components:` list of `name`/`path`/`role` | none known; the Synapse repository root `.crumb` is the one instance found | `validate`: `INVALID ...: not a JSON object`; `sniff`: `no .crumb here` (the JSON parse fails) |
 
-Anything else (non-UTF-8, unknown JSON object, non-object JSON, unrecognised text) has no defined meaning.
+Anything else is outside D1 to D3 and Synapse refuses it with a typed reason (section 2.2). `crumb.c` has no notion of dialect and reads some of those files anyway (for example non-UTF-8 bytes, or an unknown JSON object); section 2.3 lists every known case where the two tools disagree.
 
 ## 2. Decision
 
@@ -46,7 +46,7 @@ Anything else (non-UTF-8, unknown JSON object, non-object JSON, unrecognised tex
 
 Each dialect parses into its own typed variant (`DirectoryCrumb::Rfc0001`, `DirectoryCrumb::Atlas`, `DirectoryCrumb::YamlV1`). A file is never converted into another dialect's shape, and fields of one dialect are never read as if they were another's (a D2 `purpose` object is not a D1 `purpose` string). Anything outside D1 to D3 is refused with a typed reason (`InvalidReason`), and the refusal is reported, not hidden.
 
-The parser is strict and bounded. A document larger than 64 KiB or nested deeper than 32 levels is refused before or during parsing; duplicate JSON object keys are refused. This is a deliberate divergence from `crumb.c`, which reads any size and nests to 64 levels; a test records the divergence.
+The parser is strict and bounded, and its cost is linear in the document size. A document larger than 64 KiB, not valid UTF-8, or nested deeper than 32 containers is refused; JSON must follow RFC 8259 exactly (no duplicate object keys, no raw control characters in strings, no lone UTF-16 surrogate escapes, no bytes after the value). A context chain longer than 256 directories (`MAX_CHAIN_LEN`, root included) is refused as an invalid path. Each of these is a deliberate divergence from `crumb.c`; section 2.3 lists them against the pinned source.
 
 Textual invariants (the `invariants` strings) are guidance for agents. They are surfaced verbatim and enforced by nothing until a specific invariant is turned into a deterministic check.
 
@@ -54,13 +54,26 @@ Textual invariants (the `invariants` strings) are guidance for agents. They are 
 
 `CrumbContext` for a repository path in a snapshot is the chain of `.crumb` entries from the repository root down to the path's directory (the path itself if it is a directory, else its parent), root first. Each entry records the directory, a status (`Present`, `Missing`, or `Invalid(reason)`), the dialect when one was recognised, and the `BlobDigest` of the bytes when a file exists. Missing and invalid entries are part of the context.
 
-Semantics follow `crumb.c` (pinned above): the leaf entry matches what `sniff` and `validate` report for that directory, and `nearest` plus `inherited_invariants` match `explain` sections "NEAREST CRUMB" and "INHERITED INVARIANTS". Two documented divergences follow from section 2.2: `explain` treats any JSON object as a crumb, so an unknown JSON object or a D1 file missing required fields can become its "nearest" crumb, while Synapse reports those entries as invalid and skips them; and `explain` cannot parse D3, while Synapse reports a D3 entry as present. Golden outputs and the Rust parity tests pin both. Synapse is also stricter than `crumb.c` on field types, which the fixtures do not exercise against `crumb.c`: D1 `layer` must be a string and `invariants` an array of strings (`crumb.c explain` also prints a lone string or non-string items), and D2 must match the `spark-crumbs` `DirCrumb` shape (`crumb.c` calls any object with `version` and no `schema_version` legacy). Fixture `.crumb` files are stored as `dot.crumb` so tools reading this repository never treat them as real Directory Crumbs.
+Semantics follow `crumb.c` (pinned above): the leaf entry matches what `sniff` and `validate` report for that directory, and `nearest` plus `inherited_invariants` match `explain` sections "NEAREST CRUMB" and "INHERITED INVARIANTS". The known divergences, each checked against the pinned `crumb.c` source, are:
+
+1. **Unknown or incomplete JSON objects.** `sniff` and `explain` treat any JSON object as a crumb, so an unknown JSON object or a D1 file missing required fields can become the "nearest" crumb. Synapse reports those entries as invalid and skips them. Fixture `unknown`.
+2. **D3.** `crumb.c` cannot parse D3 and falls back to the crumb above; Synapse reports a D3 entry as present. Fixture `d3`.
+3. **Top-level JSON that is not an object.** `sniff` prints `? | (legacy format)` for any parsed JSON value, including a top-level string or array; `validate` and `explain` agree with Synapse that it is not a crumb. Fixture `scalar`.
+4. **Non-UTF-8 bytes.** `crumb.c` copies string bytes as they are and never checks UTF-8 (`pstring`), so a Latin-1 byte is accepted. Synapse refuses the file (`NotUtf8`). Fixture `latin1`.
+5. **Duplicate object keys.** `crumb.c` stores members with `jset`, which overwrites an existing key, so the last duplicate wins. Synapse refuses the file (`DuplicateKey`). Fixture `dupkey`.
+6. **Bytes after a NUL.** `crumb.c` reads the file as a C string, so a valid document followed by a NUL byte and anything else is accepted. Synapse refuses the trailing bytes. Fixture `nuljunk`.
+7. **Lone UTF-16 surrogate escapes.** `crumb.c` turns a lone `\ud800`-style escape into U+FFFD (`putf8`). Synapse refuses it. Fixture `surrogate`.
+8. **Looser JSON grammar** (from the source and a manual probe, no fixture): `crumb.c` accepts numbers `strtod` accepts (`01`, `1.`), raw control characters inside strings, and truncates a string at an escaped `\u0000`. Synapse refuses the first two and keeps the NUL in the string.
+9. **Size, depth and chain bounds** (no fixture against `crumb.c`): `crumb.c` reads any file size, allows 64 nested values (scalars included), and has no chain cap (its upward walk is bounded only by the `PATH_MAX` path buffer). Synapse caps a file at 64 KiB, nesting at 32 containers, and a chain at 256 directories. Unit tests in `synapse-crumb` pin the Synapse side.
+10. **Field types** (no fixture against `crumb.c`): D1 `layer` must be a string and `invariants` an array of strings (`crumb.c explain` also prints a lone string or non-string items), and D2 must match the `spark-crumbs` `DirCrumb` shape (`crumb.c` calls any object with `version` and no `schema_version` legacy).
+
+A UTF-8 byte order mark is not a divergence: both tools refuse it (fixture `bom`). The parity script's golden outputs and the Rust parity tests assert items 1 to 7 on both sides, so a change in either tool fails a test. Fixture `.crumb` files are stored as `dot.crumb` so tools reading this repository never treat them as real Directory Crumbs.
 
 `CrumbContextDigest` is its own 32-byte type: SHA-256 over the domain tag `"SYNAPSE_CRUMB_CONTEXT_V1\0"`, the target directory, the entry count, and for each entry the length-prefixed directory path, a dialect tag, a status tag, the invalid-reason code, and the `BlobDigest` (or an absent marker). Missing and invalid entries change the digest. It is never a `BlobDigest`, `ChangesetId`, or `GitOid`.
 
 ### 2.4 Placement in the ADR 0002 roadmap
 
-This workstream sits at the Phase 7 to Phase 8 boundary: after the AI-native model (Phase 7) and before Agent Cutover (Phase 8), because agents cutting over to Synapse must get their directory context from Synapse instead of a Git checkout. Deliverable D1 below builds only on the public `SynapseService` read API and a new crate, so, as ADR 0002 section 7 allows for Phase 6, it can land in parallel with Phases 5 to 7. Deliverables D3 to D5 wait for the Phase 5 submission path and ADR 0003.
+This workstream sits at the Phase 7 to Phase 8 boundary: after the AI-native model (Phase 7) and before Agent Cutover (Phase 8), because agents cutting over to Synapse must get their directory context from Synapse instead of a Git checkout. Deliverable D1 below builds only on the public `SynapseService` read API and a new crate. ADR 0002 section 7 lets Phases 5 and 6 proceed in parallel for that same reason; it says nothing about Phase 7. This ADR proposes, on the same reasoning, that D1 land ahead of the Phase 7 to 8 boundary, in parallel with Phases 5 to 7; that is decided by accepting this ADR, not inherited from ADR 0002. Deliverables D3 to D5 wait for the Phase 5 submission path and ADR 0003.
 
 ### 2.5 Deliverables
 
