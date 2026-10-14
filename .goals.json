@@ -16,12 +16,12 @@
     {
       "id": "GATE-2",
       "title": "Capability-scoped Ed25519 auth, bounded paginated read/proposal API, virtual tree inspection, and path index",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": "GATE-3",
       "title": "Deterministic Git object materialization, GitHub PR projection, and Radicle delegate threshold verifier",
-      "status": "planned"
+      "status": "in_progress"
     },
     {
       "id": "GATE-4",

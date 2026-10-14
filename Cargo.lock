@@ -335,6 +335,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "synapse-api"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "synapse-auth",
+ "synapse-core",
+ "synapse-store",
+]
+
+[[package]]
 name = "synapse-auth"
 version = "0.1.0"
 dependencies = [
