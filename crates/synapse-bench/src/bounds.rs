@@ -239,6 +239,64 @@ impl Protocol {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        let fail = |why: &str| Err(why.to_string());
+        if self.schema != PROTOCOL_SCHEMA {
+            return Err(format!(
+                "schema {:?}, expected {PROTOCOL_SCHEMA:?}",
+                self.schema
+            ));
+        }
+        if self.repetitions < MIN_REPETITIONS {
+            return Err(format!(
+                "{} repetitions; a range needs at least {MIN_REPETITIONS}",
+                self.repetitions
+            ));
+        }
+        if self.threads == 0 || self.device.threads == 0 {
+            return fail("thread counts must be positive");
+        }
+        if self.idle_ms == 0 {
+            return fail("idle_ms must be positive");
+        }
+        let m = &self.memory;
+        if m.bytes_per_thread == 0 || !m.bytes_per_thread.is_multiple_of(8) || m.passes == 0 {
+            return fail(
+                "memory: bytes_per_thread must be a positive multiple of 8 and passes positive",
+            );
+        }
+        let d = &self.device;
+        if d.chunk_bytes == 0 || !d.chunk_bytes.is_multiple_of(DIRECT_IO_ALIGN as u64) {
+            return fail("device: chunk_bytes must be a positive multiple of 4096 (O_DIRECT)");
+        }
+        if d.file_bytes == 0
+            || !d
+                .file_bytes
+                .is_multiple_of(d.chunk_bytes * u64::from(d.threads))
+        {
+            return fail(
+                "device: file_bytes must be a positive multiple of chunk_bytes times threads",
+            );
+        }
+        if self.sha256.block_bytes == 0 || self.sha256.blocks_per_thread == 0 {
+            return fail("sha256: block_bytes and blocks_per_thread must be positive");
+        }
+        if self.ed25519.message_bytes == 0 || self.ed25519.verifications_per_thread == 0 {
+            return fail("ed25519: message_bytes and verifications_per_thread must be positive");
+        }
+        let e = &self.energy_preflight;
+        if e.observe_ms == 0 || e.min_counter_changes == 0 {
+            return fail("energy_preflight: observe_ms and min_counter_changes must be positive");
+        }
+        let w = &self.w1_flush;
+        let hex64 = w.sha256.len() == 64
+            && w.sha256
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        if w.path.is_empty() || !hex64 || w.probes.is_empty() {
+            return fail(
+                "w1_flush: path, a lowercase hex SHA-256, and at least one probe are required",
+            );
+        }
         Ok(())
     }
 
@@ -402,8 +460,15 @@ pub fn memory_read_states(threads: u32, bytes_per_thread: u64) -> Vec<ReadState>
 
 /// Every thread sums its buffer `passes` times (wrapping); the sum is kept for checking.
 pub fn memory_read(states: &mut [ReadState], passes: u64) -> Result<Timed, String> {
-    let _ = (states, passes);
-    Ok(Timed { elapsed_ns: 0, units: 0 })
+    timed_parallel(states, |_, st| {
+        let mut acc = 0u64;
+        for _ in 0..passes {
+            let words = black_box(st.words.as_slice());
+            acc = acc.wrapping_add(words.iter().fold(0u64, |a, &w| a.wrapping_add(w)));
+        }
+        st.checksum = black_box(acc);
+        Ok(passes * st.words.len() as u64 * 8)
+    })
 }
 
 /// Per-thread buffers for the memory copy probe.
@@ -416,7 +481,9 @@ pub fn memory_copy_states(threads: u32, bytes_per_thread: u64) -> Vec<CopyState>
     let words = (bytes_per_thread / 8) as usize;
     (0..u64::from(threads))
         .map(|t| CopyState {
-            src: (0..words as u64).map(|j| (t << 32) ^ j.wrapping_mul(31)).collect(),
+            src: (0..words as u64)
+                .map(|j| (t << 32) ^ j.wrapping_mul(31))
+                .collect(),
             dst: vec![u64::MAX; words],
         })
         .collect()
@@ -424,8 +491,14 @@ pub fn memory_copy_states(threads: u32, bytes_per_thread: u64) -> Vec<CopyState>
 
 /// Every thread copies `src` into `dst` `passes` times; units are bytes read plus written.
 pub fn memory_copy(states: &mut [CopyState], passes: u64) -> Result<Timed, String> {
-    let _ = (states, passes);
-    Ok(Timed { elapsed_ns: 0, units: 0 })
+    timed_parallel(states, |_, st| {
+        for _ in 0..passes {
+            let src = black_box(st.src.as_slice());
+            st.dst.copy_from_slice(src);
+            black_box(st.dst.as_mut_ptr());
+        }
+        Ok(2 * passes * st.src.len() as u64 * 8)
+    })
 }
 
 /// A heap buffer whose usable slice starts on a 4096-byte boundary (for `O_DIRECT`).
@@ -515,15 +588,39 @@ fn device_states(
 /// Overwrite the whole file with `pattern` (each thread its region), each thread
 /// ending with `fdatasync`; the time includes the flushes.
 pub fn device_write(path: &Path, p: &DeviceParams, pattern: u8) -> Result<Timed, String> {
-    let _ = (path, p, pattern, device_states as fn(&Path, &DeviceParams, bool, u8) -> _);
-    Ok(Timed { elapsed_ns: 0, units: 0 })
+    let mut states = device_states(path, p, true, pattern)?;
+    timed_parallel(&mut states, |_, st| {
+        let len = st.buf.as_slice().len() as u64;
+        for k in 0..st.chunks {
+            io(
+                st.file.write_all_at(st.buf.as_slice(), st.offset + k * len),
+                "O_DIRECT write",
+            )?;
+        }
+        io(st.file.sync_data(), "fdatasync")?;
+        Ok(st.chunks * len)
+    })
 }
 
 /// Read the whole file (each thread its region) and check that every chunk starts and
 /// ends with `pattern`.
 pub fn device_read(path: &Path, p: &DeviceParams, pattern: u8) -> Result<Timed, String> {
-    let _ = (path, p, pattern);
-    Ok(Timed { elapsed_ns: 0, units: 0 })
+    let mut states = device_states(path, p, false, !pattern)?;
+    timed_parallel(&mut states, |_, st| {
+        let len = st.buf.as_slice().len() as u64;
+        for k in 0..st.chunks {
+            let off = st.offset + k * len;
+            io(
+                st.file.read_exact_at(st.buf.as_mut_slice(), off),
+                "O_DIRECT read",
+            )?;
+            let b = st.buf.as_slice();
+            if b[0] != pattern || b[b.len() - 1] != pattern {
+                return Err(format!("read-back mismatch at offset {off}"));
+            }
+        }
+        Ok(st.chunks * len)
+    })
 }
 
 /// Per-thread block for the hashing probes.
@@ -545,15 +642,33 @@ pub fn hash_states(threads: u32, block_bytes: u64) -> Vec<HashState> {
 
 /// Every thread hashes its block `blocks` times with the `sha2` crate.
 pub fn sha256_sha2_crate(states: &mut [HashState], blocks: u64) -> Result<Timed, String> {
-    let _ = (states, blocks);
-    Ok(Timed { elapsed_ns: 0, units: 0 })
+    timed_parallel(states, |_, st| {
+        for _ in 0..blocks {
+            st.last = Sha256::digest(black_box(st.block.as_slice())).into();
+        }
+        Ok(blocks * st.block.len() as u64)
+    })
 }
 
 /// Every thread hashes its block `blocks` times with the CPU's SHA-2 instructions, after
 /// checking that they give the `sha2` crate's digest for that block.
 pub fn sha256_arm_instructions(states: &mut [HashState], blocks: u64) -> Result<Timed, String> {
-    let _ = (states, blocks);
-    Ok(Timed { elapsed_ns: 0, units: 0 })
+    for st in states.iter() {
+        let want: [u8; 32] = Sha256::digest(&st.block).into();
+        match sha256_arm(&st.block) {
+            None => return Err("CPU SHA-2 instructions not available".into()),
+            Some(d) if d != want => {
+                return Err("SHA-2 instruction digest differs from the sha2 crate".into())
+            }
+            Some(_) => {}
+        }
+    }
+    timed_parallel(states, |_, st| {
+        for _ in 0..blocks {
+            st.last = sha256_arm(black_box(st.block.as_slice())).unwrap_or([0u8; 32]);
+        }
+        Ok(blocks * st.block.len() as u64)
+    })
 }
 
 /// Prepared signatures for one verification thread.
@@ -582,8 +697,14 @@ pub fn verify_states(threads: u32, message_bytes: u64) -> Vec<VerifyState> {
 
 /// Every thread verifies `per_thread` signatures; any failed verification is an error.
 pub fn ed25519_verify(states: &mut [VerifyState], per_thread: u64) -> Result<Timed, String> {
-    let _ = (states, per_thread);
-    Ok(Timed { elapsed_ns: 0, units: 0 })
+    timed_parallel(states, |t, st| {
+        for i in 0..per_thread {
+            let (key, msg, sig) = &st.items[i as usize % st.items.len()];
+            key.verify(black_box(msg), sig)
+                .map_err(|_| format!("thread {t}: verification {i} failed"))?;
+        }
+        Ok(per_thread)
+    })
 }
 
 // ---------------------------------------------------------------------------------
@@ -592,10 +713,91 @@ pub fn ed25519_verify(states: &mut [VerifyState], per_thread: u64) -> Result<Tim
 
 /// SHA-256 with the CPU's SHA-2 instructions; `None` when the CPU lacks them.
 pub fn sha256_arm(data: &[u8]) -> Option<[u8; 32]> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("sha2") {
+            // SAFETY: the `sha2` feature was detected at run time.
+            return Some(unsafe { arm::sha256(data) });
+        }
+    }
     let _ = data;
-    Some([0u8; 32])
+    None
 }
 
+#[cfg(target_arch = "aarch64")]
+mod arm {
+    use core::arch::aarch64::*;
+
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+
+    const H0: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
+    ];
+
+    /// Compress whole 64-byte blocks into `state`.
+    #[target_feature(enable = "sha2")]
+    unsafe fn compress(state: &mut [u32; 8], data: &[u8]) {
+        let mut abcd = vld1q_u32(state.as_ptr());
+        let mut efgh = vld1q_u32(state.as_ptr().add(4));
+        for block in data.as_chunks::<64>().0 {
+            let (abcd0, efgh0) = (abcd, efgh);
+            let p = block.as_ptr();
+            let load = |o: usize| vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p.add(o))));
+            let mut w = [load(0), load(16), load(32), load(48)];
+            for i in 0..16 {
+                let wk = vaddq_u32(w[i % 4], vld1q_u32(K.as_ptr().add(4 * i)));
+                let prev = abcd;
+                abcd = vsha256hq_u32(abcd, efgh, wk);
+                efgh = vsha256h2q_u32(efgh, prev, wk);
+                if i < 12 {
+                    w[i % 4] = vsha256su1q_u32(
+                        vsha256su0q_u32(w[i % 4], w[(i + 1) % 4]),
+                        w[(i + 2) % 4],
+                        w[(i + 3) % 4],
+                    );
+                }
+            }
+            abcd = vaddq_u32(abcd, abcd0);
+            efgh = vaddq_u32(efgh, efgh0);
+        }
+        vst1q_u32(state.as_mut_ptr(), abcd);
+        vst1q_u32(state.as_mut_ptr().add(4), efgh);
+    }
+
+    /// # Safety
+    /// The CPU must support the Armv8 `sha2` feature.
+    #[target_feature(enable = "sha2")]
+    pub unsafe fn sha256(data: &[u8]) -> [u8; 32] {
+        let mut state = H0;
+        let full = data.len() / 64 * 64;
+        compress(&mut state, &data[..full]);
+        let rest = &data[full..];
+        let mut tail = [0u8; 128];
+        tail[..rest.len()].copy_from_slice(rest);
+        tail[rest.len()] = 0x80;
+        let tail_len = if rest.len() < 56 { 64 } else { 128 };
+        let bits = (data.len() as u64).wrapping_mul(8);
+        tail[tail_len - 8..tail_len].copy_from_slice(&bits.to_be_bytes());
+        compress(&mut state, &tail[..tail_len]);
+        let mut out = [0u8; 32];
+        for (i, word) in state.iter().enumerate() {
+            out[4 * i..4 * i + 4].copy_from_slice(&word.to_be_bytes());
+        }
+        out
+    }
+}
 
 // ---------------------------------------------------------------------------------
 // Energy: preflight and raw sampling
@@ -607,9 +809,48 @@ pub fn sha256_arm(data: &[u8]) -> Option<[u8; 32]> {
 /// `observe_ms` without decreasing. Otherwise the run refuses with
 /// `INSTRUMENT_UNAVAILABLE` and no figure is produced.
 pub fn energy_preflight(hwmon_root: &Path, p: &PreflightParams) -> Result<Spbm, BoundsRefusal> {
-    // Red-phase stub: no checks; falls back to the host meter when the given root has none.
-    let _ = p;
-    Ok(Spbm::find_in(hwmon_root).unwrap_or_else(|| Spbm::find().expect("host meter")))
+    let refuse = |why: String| BoundsRefusal::InstrumentUnavailable(why);
+    let spbm = Spbm::find_in(hwmon_root).ok_or_else(|| {
+        refuse(format!(
+            "no aien_spbm hwmon device under {}",
+            hwmon_root.display()
+        ))
+    })?;
+    for label in ENERGY_LABELS {
+        if spbm.energy_uj(label).is_none() {
+            return Err(refuse(format!("energy channel {label} unreadable")));
+        }
+        match spbm.overflow_raw(label) {
+            Some(0) => {}
+            Some(v) => return Err(refuse(format!("overflow flag {v} set on {label}"))),
+            None => return Err(refuse(format!("overflow flag of {label} unreadable"))),
+        }
+    }
+    let mut last = spbm
+        .energy_uj("pkg")
+        .ok_or_else(|| refuse("pkg became unreadable".into()))?;
+    let mut changes = 0u32;
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_millis(p.observe_ms) {
+        std::thread::sleep(Duration::from_millis(1));
+        let v = spbm
+            .energy_uj("pkg")
+            .ok_or_else(|| refuse("pkg became unreadable".into()))?;
+        if v < last {
+            return Err(refuse("pkg counter decreased during preflight".into()));
+        }
+        if v != last {
+            changes += 1;
+            last = v;
+        }
+    }
+    if changes < p.min_counter_changes {
+        return Err(refuse(format!(
+            "pkg counter changed {changes} times in {} ms; the protocol needs {}",
+            p.observe_ms, p.min_counter_changes
+        )));
+    }
+    Ok(spbm)
 }
 
 /// One meter reading: nanoseconds since the window opened and raw counters in microjoules.
@@ -751,6 +992,9 @@ pub struct RawRun {
     pub elapsed_ns: u64,
     pub error: Option<String>,
     pub energy: RawEnergy,
+    /// `/proc/loadavg` as read at the start and end of the run (other tenants are a confounder).
+    pub loadavg_start: Option<String>,
+    pub loadavg_end: Option<String>,
 }
 
 /// Everything `report.json` is computed from.
@@ -772,8 +1016,46 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 /// Load W1's `floor.json` from `repo_root`, check its digest, and copy the named probes.
 pub fn load_w1_flush(repo_root: &Path, src: &W1Source) -> Result<W1Flush, BoundsRefusal> {
-    let _ = repo_root;
-    Ok(W1Flush { path: src.path.clone(), sha256: src.sha256.clone(), probes: Vec::new() })
+    let path = repo_root.join(&src.path);
+    let bytes = fs::read(&path)
+        .map_err(|e| BoundsRefusal::W1SourceMismatch(format!("read {}: {e}", path.display())))?;
+    let found = sha256_hex(&bytes);
+    if found != src.sha256 {
+        return Err(BoundsRefusal::W1SourceMismatch(format!(
+            "{} has SHA-256 {found}; the protocol pins {}",
+            src.path, src.sha256
+        )));
+    }
+    let floor: FloorReport = serde_json::from_slice(&bytes)
+        .map_err(|e| BoundsRefusal::W1SourceMismatch(format!("parse {}: {e}", src.path)))?;
+    let probes = src
+        .probes
+        .iter()
+        .map(|name| {
+            floor
+                .storage
+                .iter()
+                .find(|p| &p.name == name)
+                .and_then(|p| {
+                    p.latency.clone().map(|latency| W1FlushProbe {
+                        name: p.name.clone(),
+                        description: p.description.clone(),
+                        latency,
+                    })
+                })
+                .ok_or_else(|| {
+                    BoundsRefusal::W1SourceMismatch(format!(
+                        "probe {name} missing or without latency in {}",
+                        src.path
+                    ))
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(W1Flush {
+        path: src.path.clone(),
+        sha256: src.sha256.clone(),
+        probes,
+    })
 }
 
 fn clock_resolution_ns() -> u64 {
@@ -814,9 +1096,11 @@ fn measured(
     threads: u32,
     work: impl FnOnce() -> Result<Timed, String>,
 ) -> RawRun {
+    let loadavg_start = loadavg_line();
     let sampler = Sampler::start(spbm);
     let result = work();
     let energy = sampler.finish();
+    let loadavg_end = loadavg_line();
     let (work_units, elapsed_ns, error) = match result {
         Ok(t) => (t.units, t.elapsed_ns, None),
         Err(e) => (0, 0, Some(e)),
@@ -829,7 +1113,15 @@ fn measured(
         elapsed_ns,
         error,
         energy,
+        loadavg_start,
+        loadavg_end,
     }
+}
+
+fn loadavg_line() -> Option<String> {
+    fs::read_to_string("/proc/loadavg")
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 fn device_pattern(rep: u32) -> u8 {
@@ -932,6 +1224,8 @@ pub fn run_bounds(cfg: &BoundsConfig) -> Result<Report, BoundsRefusal> {
                     elapsed_ns: 0,
                     error: Some(e.clone()),
                     energy: RawEnergy::default(),
+                    loadavg_start: None,
+                    loadavg_end: None,
                 },
                 _ => run_probe(&spbm, &protocol, probe, rep, &device_file),
             };
@@ -1000,8 +1294,82 @@ pub struct EnergyFigures {
 /// 90% of the expected samples arrived, a counter is unreadable or decreased, or the
 /// counter is within one window of the 32-bit wrap.
 pub fn energy_figures(raw: &RawEnergy, work_units: u64, idle_w: Option<f64>) -> EnergyFigures {
-    let _ = (work_units, idle_w);
-    EnergyFigures { valid: true, samples: raw.samples.len(), ..Default::default() }
+    let s = &raw.samples;
+    let mut f = EnergyFigures {
+        samples: s.len(),
+        ..Default::default()
+    };
+    if s.len() < 2 {
+        f.refusal = Some("fewer than two samples".into());
+        return f;
+    }
+    let window_ns = s[s.len() - 1].t_ns.saturating_sub(s[0].t_ns);
+    let window_s = window_ns as f64 / 1e9;
+    f.window_s = Some(window_s);
+    let largest_gap = s
+        .windows(2)
+        .map(|w| w[1].t_ns.saturating_sub(w[0].t_ns))
+        .max()
+        .unwrap_or(0);
+    f.largest_gap_ms = Some(largest_gap as f64 / 1e6);
+    let expected = window_ns / SAMPLE_PERIOD.as_nanos() as u64;
+    let delta = |get: fn(&RawEnergySample) -> Option<u64>| -> Result<u64, String> {
+        let mut prev: Option<u64> = None;
+        for x in s {
+            let v = get(x).ok_or("counter read failed (overflow or missing)")?;
+            if prev.is_some_and(|p| v < p) {
+                return Err("energy counter decreased".into());
+            }
+            prev = Some(v);
+        }
+        let (a, b) = (get(&s[0]).unwrap_or(0), get(&s[s.len() - 1]).unwrap_or(0));
+        if COUNTER_WRAP_UJ.saturating_sub(b) <= b - a {
+            return Err("counter within one window of the 32-bit wrap".into());
+        }
+        Ok(b - a)
+    };
+    let refusal = if raw.overflow_at_start || raw.overflow_at_end {
+        Some("overflow flag set at a window edge".to_string())
+    } else if largest_gap > MAX_SAMPLE_GAP.as_nanos() as u64 {
+        Some("gap between consecutive samples above 300 ms".into())
+    } else if (s.len() as u64 - 2) * 10 < expected * 9 {
+        Some(format!(
+            "fewer than 90% of expected samples ({} of {expected})",
+            s.len() - 2
+        ))
+    } else {
+        None
+    };
+    if let Some(why) = refusal {
+        f.refusal = Some(why);
+        return f;
+    }
+    let (pkg, cpu_p, cpu_e) = match (
+        delta(|x| x.pkg_uj),
+        delta(|x| x.cpu_p_uj),
+        delta(|x| x.cpu_e_uj),
+    ) {
+        (Ok(a), Ok(b), Ok(c)) => (a, b, c),
+        (a, b, c) => {
+            f.refusal = [a.err(), b.err(), c.err()].into_iter().flatten().next();
+            return f;
+        }
+    };
+    let pkg_j = pkg as f64 / 1e6;
+    f.valid = true;
+    f.pkg_j = Some(pkg_j);
+    f.cpu_p_j = Some(cpu_p as f64 / 1e6);
+    f.cpu_e_j = Some(cpu_e as f64 / 1e6);
+    if window_ns > 0 {
+        let w = pkg_j / window_s;
+        f.pkg_mean_w = Some(w);
+        f.pkg_edge_sd_j = Some(w * SENSOR_PERIOD_S * (2.0f64 / 3.0).sqrt());
+    }
+    if work_units > 0 {
+        f.pkg_j_per_unit = Some(pkg_j / work_units as f64);
+        f.pkg_j_per_unit_above_idle = idle_w.map(|w| (pkg_j - w * window_s) / work_units as f64);
+    }
+    f
 }
 
 /// Median, minimum, and maximum across repetitions (no rounding).
@@ -1200,17 +1568,109 @@ fn bound_inputs(probes: &[ProbeSummary]) -> Vec<BoundInput> {
 /// Compute the report from the exact protocol and raw bytes. Checks that the raw data
 /// names this protocol's digest and has exactly the repetitions and work it fixed.
 pub fn compute_report(protocol_bytes: &[u8], raw_bytes: &[u8]) -> Result<Report, VerifyError> {
-    let protocol: Protocol = serde_json::from_slice(protocol_bytes).map_err(|e| VerifyError::ProtocolInvalid(e.to_string()))?;
-    let raw: RawEvidence = serde_json::from_slice(raw_bytes).map_err(|e| VerifyError::Parse(e.to_string()))?;
-    let _ = (check_runs as fn(&Protocol, &RawEvidence) -> _, bound_inputs as fn(&[ProbeSummary]) -> _, stat as fn(&[f64]) -> _);
-    Ok(Report { schema: REPORT_SCHEMA.into(), protocol_sha256: raw.protocol_sha256, raw_sha256: String::new(), source_rev: raw.source_rev, repetitions: protocol.repetitions, central_statistic: protocol.central_statistic, spread_statistic: protocol.spread_statistic, bound_statistic: protocol.bound_statistic, instruments: raw.instruments, w1_flush: raw.w1_flush, bound_inputs: Vec::new(), probes: Vec::new() })
+    let protocol = Protocol::parse(protocol_bytes).map_err(VerifyError::ProtocolInvalid)?;
+    let raw: RawEvidence =
+        serde_json::from_slice(raw_bytes).map_err(|e| VerifyError::Parse(format!("raw: {e}")))?;
+    if raw.schema != RAW_SCHEMA {
+        return Err(VerifyError::Parse(format!("raw schema {:?}", raw.schema)));
+    }
+    let protocol_sha256 = sha256_hex(protocol_bytes);
+    if raw.protocol_sha256 != protocol_sha256 {
+        return Err(VerifyError::ProtocolDigestMismatch {
+            protocol: protocol_sha256,
+            raw_names: raw.protocol_sha256,
+        });
+    }
+    check_runs(&protocol, &raw)?;
+    let idle_w = |rep: u32| {
+        raw.runs
+            .iter()
+            .find(|r| r.probe == ProbeKind::Idle && r.rep == rep && r.error.is_none())
+            .and_then(|r| energy_figures(&r.energy, 0, None).pkg_mean_w)
+    };
+    let probes: Vec<ProbeSummary> = PROBE_ORDER
+        .iter()
+        .map(|&probe| {
+            let mut runs: Vec<&RawRun> = raw.runs.iter().filter(|r| r.probe == probe).collect();
+            runs.sort_by_key(|r| r.rep);
+            let reps: Vec<RepFigures> = runs
+                .iter()
+                .map(|r| {
+                    let ok = r.error.is_none();
+                    let elapsed_s = r.elapsed_ns as f64 / 1e9;
+                    RepFigures {
+                        rep: r.rep,
+                        work_units: r.work_units,
+                        elapsed_s,
+                        rate_per_s: (ok && r.work_units > 0 && r.elapsed_ns > 0)
+                            .then(|| r.work_units as f64 * 1e9 / r.elapsed_ns as f64),
+                        error: r.error.clone(),
+                        energy: if ok {
+                            energy_figures(&r.energy, r.work_units, idle_w(r.rep))
+                        } else {
+                            EnergyFigures {
+                                refusal: Some("probe failed".into()),
+                                ..Default::default()
+                            }
+                        },
+                    }
+                })
+                .collect();
+            let col = |f: fn(&RepFigures) -> Option<f64>| {
+                stat(&reps.iter().filter_map(f).collect::<Vec<_>>())
+            };
+            ProbeSummary {
+                probe,
+                unit: probe.unit().into(),
+                description: probe.description().into(),
+                threads: protocol.expected_threads(probe),
+                errors: reps.iter().filter(|r| r.error.is_some()).count() as u32,
+                valid_energy_reps: reps.iter().filter(|r| r.energy.valid).count() as u32,
+                rate_per_s: col(|r| r.rate_per_s),
+                pkg_mean_w: col(|r| r.energy.pkg_mean_w),
+                pkg_j_per_unit: col(|r| r.energy.pkg_j_per_unit),
+                pkg_j_per_unit_above_idle: col(|r| r.energy.pkg_j_per_unit_above_idle),
+                reps,
+            }
+        })
+        .collect();
+    Ok(Report {
+        schema: REPORT_SCHEMA.into(),
+        protocol_sha256,
+        raw_sha256: sha256_hex(raw_bytes),
+        source_rev: raw.source_rev,
+        repetitions: protocol.repetitions,
+        central_statistic: protocol.central_statistic,
+        spread_statistic: protocol.spread_statistic,
+        bound_statistic: protocol.bound_statistic,
+        instruments: raw.instruments,
+        w1_flush: raw.w1_flush,
+        bound_inputs: bound_inputs(&probes),
+        probes,
+    })
 }
 
 /// Recompute `report.json` from `protocol.json` and `raw.json` in `dir` and require the
 /// result to match byte for byte.
 pub fn verify_evidence(dir: &Path) -> Result<Report, VerifyError> {
-    let read = |name: &str| fs::read(dir.join(name)).map_err(|e| VerifyError::Io(format!("read {name}: {e}")));
-    compute_report(&read(PROTOCOL_FILE)?, &read(RAW_FILE)?)
+    let read = |name: &str| {
+        fs::read(dir.join(name)).map_err(|e| VerifyError::Io(format!("read {name}: {e}")))
+    };
+    let (protocol, raw, sealed) = (read(PROTOCOL_FILE)?, read(RAW_FILE)?, read(REPORT_FILE)?);
+    let report = compute_report(&protocol, &raw)?;
+    let again = serde_json::to_vec_pretty(&report)
+        .map_err(|e| VerifyError::Parse(format!("serialize report: {e}")))?;
+    if again != sealed {
+        let first_difference_at = again
+            .iter()
+            .zip(&sealed)
+            .position(|(a, b)| a != b)
+            .unwrap_or(again.len().min(sealed.len()));
+        return Err(VerifyError::ReportMismatch {
+            first_difference_at,
+        });
+    }
+    Ok(report)
 }
 
 #[cfg(test)]

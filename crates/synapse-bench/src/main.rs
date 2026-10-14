@@ -8,6 +8,9 @@
 //! synapse-bench child --kind <write|query|conflict|conformance|recovery|import-probe>
 //!     --spec <file> --result <file>
 //! synapse-bench floor --dir <dir on the store filesystem> --out <file.json> [--iterations N]
+//! synapse-bench bounds --evidence <dir with protocol.json> --work-dir <dir on the store filesystem>
+//!     [--repo-root <path>] [--source-rev R] [--hwmon-root <path>]
+//! synapse-bench bounds-verify --evidence <dir>
 //! ```
 
 use std::path::PathBuf;
@@ -172,12 +175,79 @@ fn floor(args: &[String]) -> Result<(), String> {
     synapse_bench::write_json(&out.ok_or("missing --out")?, &report)
 }
 
+fn parse_pairs(args: &[String], known: &[&str]) -> Result<Vec<(String, String)>, String> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let key = args[i].as_str();
+        if !known.contains(&key) {
+            return Err(format!("unknown option {key}"));
+        }
+        let v = args.get(i + 1).ok_or(format!("{key} needs a value"))?;
+        out.push((key.to_string(), v.clone()));
+        i += 2;
+    }
+    Ok(out)
+}
+
+fn bounds(args: &[String]) -> Result<(), String> {
+    let opts = parse_pairs(
+        args,
+        &[
+            "--evidence",
+            "--work-dir",
+            "--repo-root",
+            "--source-rev",
+            "--hwmon-root",
+        ],
+    )?;
+    let get = |k: &str| {
+        opts.iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.clone())
+    };
+    let cfg = synapse_bench::bounds::BoundsConfig {
+        evidence_dir: PathBuf::from(get("--evidence").ok_or("missing --evidence")?),
+        work_dir: PathBuf::from(get("--work-dir").ok_or("missing --work-dir")?),
+        repo_root: PathBuf::from(get("--repo-root").unwrap_or_else(|| ".".into())),
+        hwmon_root: PathBuf::from(
+            get("--hwmon-root").unwrap_or_else(|| synapse_bench::energy::HWMON_ROOT.into()),
+        ),
+        source_rev: get("--source-rev").unwrap_or_else(|| "unknown".into()),
+    };
+    let report = synapse_bench::bounds::run_bounds(&cfg).map_err(|r| r.to_string())?;
+    for b in &report.bound_inputs {
+        println!(
+            "{} = {} {} ({}, {:?})",
+            b.name, b.value, b.unit, b.kind, b.probe
+        );
+    }
+    Ok(())
+}
+
+fn bounds_verify(args: &[String]) -> Result<(), String> {
+    let opts = parse_pairs(args, &["--evidence"])?;
+    let dir = opts
+        .last()
+        .map(|(_, v)| PathBuf::from(v))
+        .ok_or("missing --evidence")?;
+    let report = synapse_bench::bounds::verify_evidence(&dir).map_err(|e| e.to_string())?;
+    println!(
+        "verified: report.json recomputed byte for byte from protocol.json ({}) and raw.json ({})",
+        report.protocol_sha256, report.raw_sha256
+    );
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
         Some("run") => run(&args[1..]),
         Some("child") => child(&args[1..]),
         Some("floor") => floor(&args[1..]),
+        Some("bounds") => bounds(&args[1..]),
+        Some("bounds-verify") => bounds_verify(&args[1..]),
         _ => Err("usage: synapse-bench run ... | synapse-bench child ... (see crate docs)".into()),
     };
     match outcome {

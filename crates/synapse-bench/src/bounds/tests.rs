@@ -101,9 +101,10 @@ fn protocol_refuses_too_few_repetitions_and_unaligned_device_chunks() {
     let mut p = small_protocol();
     p.w1_flush.sha256 = "not-a-digest".into();
     assert!(p.validate().is_err(), "W1 source must be pinned by digest");
-    let text = serde_json::to_string(&small_protocol())
-        .unwrap()
-        .replacen('{', "{\"extra_knob\":1,", 1);
+    let text =
+        serde_json::to_string(&small_protocol())
+            .unwrap()
+            .replacen('{', "{\"extra_knob\":1,", 1);
     assert!(
         Protocol::parse(text.as_bytes()).is_err(),
         "unknown protocol fields are refused"
@@ -289,6 +290,8 @@ fn synthetic_raw(p: &Protocol, protocol_bytes: &[u8]) -> RawEvidence {
                 elapsed_ns,
                 error: None,
                 energy: energy(samples(10, step)),
+                loadavg_start: None,
+                loadavg_end: None,
             });
         }
     }
@@ -357,7 +360,8 @@ fn sealed(p: &Protocol) -> PathBuf {
 }
 
 fn edit_raw(dir: &Path, f: impl FnOnce(&mut RawEvidence)) {
-    let mut raw: RawEvidence = serde_json::from_slice(&fs::read(dir.join(RAW_FILE)).unwrap()).unwrap();
+    let mut raw: RawEvidence =
+        serde_json::from_slice(&fs::read(dir.join(RAW_FILE)).unwrap()).unwrap();
     f(&mut raw);
     fs::write(dir.join(RAW_FILE), serde_json::to_vec_pretty(&raw).unwrap()).unwrap();
 }
@@ -426,7 +430,8 @@ fn verify_refuses_a_protocol_changed_after_the_run() {
 fn verify_refuses_dropped_extra_or_resized_repetitions() {
     let dir = sealed(&small_protocol());
     edit_raw(&dir, |r| {
-        r.runs.retain(|x| !(x.probe == ProbeKind::MemoryRead && x.rep == 2));
+        r.runs
+            .retain(|x| !(x.probe == ProbeKind::MemoryRead && x.rep == 2));
     });
     assert!(
         matches!(
