@@ -1,0 +1,16 @@
+[package]
+name = "synapse-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Core domain identities, canonical changeset envelope v1, did:key Ed25519 codec, and refusal taxonomy for Synapse"
+
+[dependencies]
+ed25519-dalek.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha1.workspace = true
+sha2.workspace = true

@@ -1,0 +1,69 @@
+{
+  "empirical_workspace_traces": {
+    "hive_ledger_active_rows": 6,
+    "hive_ledger_conflict_or_rebase_mentions": 18,
+    "hive_ledger_merged_rows": 41,
+    "hive_ledger_retired_rows": 499,
+    "hive_ledger_total_rows": 559,
+    "hive_worktrees_count": 291,
+    "hive_worktrees_directory": "/home/drakestapleton/workspace/hive-worktrees",
+    "hive_worktrees_total_bytes": 27050585731,
+    "hive_worktrees_total_gib": 25.19,
+    "omega_registered_worktrees": 310,
+    "sovereign_core_registered_worktrees": 150,
+    "total_registered_worktrees_sc_plus_omega": 460,
+    "workspace_agent_clones_count": 276
+  },
+  "gate": "GATE_0_BASELINE",
+  "host": {
+    "arch": "aarch64",
+    "cpu_model": "ARM Cortex-X925 + Cortex-A725 (20 cores, NVIDIA DGX Spark GB10)",
+    "git_version": "git version 2.43.0",
+    "hostname": "spark-b87b",
+    "os": "Linux-7.0.0-1019-nvidia-aarch64-with-glibc2.39"
+  },
+  "measured_at_utc": "2026-10-14T14:04:37Z",
+  "schema_version": 1,
+  "sovereign_core_git_baseline": {
+    "git_diff_stat": {
+      "iterations": 9,
+      "max_ms": 22.279,
+      "mean_ms": 19.852,
+      "p50_ms": 21.584,
+      "p95_ms": 22.279
+    },
+    "git_log_50": {
+      "iterations": 9,
+      "max_ms": 4.118,
+      "mean_ms": 3.258,
+      "p50_ms": 2.884,
+      "p95_ms": 4.118
+    },
+    "git_ls_tree_recursive": {
+      "iterations": 9,
+      "max_ms": 6.975,
+      "mean_ms": 5.561,
+      "p50_ms": 6.515,
+      "p95_ms": 6.975
+    },
+    "git_merge_tree": {
+      "iterations": 9,
+      "max_ms": 3.333,
+      "mean_ms": 3.019,
+      "p50_ms": 3.151,
+      "p95_ms": 3.333
+    },
+    "head_commit": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "parent_commit": "ccad34da996cad6e95b0ccc8777715a7c0664f47",
+    "repository": "/home/drakestapleton/workspace/aien-sovereign-core",
+    "worktree_checkout": {
+      "implied_throughput_worktrees_per_sec": 1.713,
+      "iterations": 3,
+      "max_ms": 593.01,
+      "mean_ms": 583.872,
+      "p50_ms": 588.511,
+      "single_worktree_bytes": 145732071,
+      "single_worktree_mib": 138.98
+    }
+  }
+}

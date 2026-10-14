@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/synapse-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+authors = ["Drake Stapleton <aien@aienos.com>"]
+repository = "https://github.com/aien-spark/synapse"
+
+[workspace.dependencies]
+base64 = "0.22"
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "fast"] }
+hex = "0.4"
+libc = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha1 = "0.10"
+sha2 = "0.10"
+zeroize = "1.9"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
