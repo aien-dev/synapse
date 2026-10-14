@@ -26,15 +26,7 @@ case "$mode" in
     test "$(git -C "$arch" rev-parse HEAD)" = "$pin"
     printf 'architecture_sha=%s\n' "$pin"
     OUT_DIR="$out/qualification" bash scripts/qualify-crumb-synapse.sh "$arch"
-    python3 - "$out/qualification/results.json" <<'PY'
-import json, sys
-r = json.load(open(sys.argv[1]))
-assert r['qualified'] is True
-assert r['suite']['exit'] == r['parity']['exit'] == r['interop']['exit'] == 0
-assert {s['id'] for s in r['scenarios']} == {f'S{i:02}' for i in range(1, 13)}
-assert all(s['status'] in ('PASS', 'KNOWN-GAP') for s in r['scenarios'])
-assert next(s for s in r['scenarios'] if s['id'] == 'S05')['status'] == 'PASS'
-PY
+    cargo run --quiet --locked -p synapse-bench --bin verify-qualification -- "$out/qualification/results.json"
     (cd "$out/qualification" && sha256sum -c SHA256SUMS)
     ;;
   *) echo "unknown gate: $mode" >&2; exit 2 ;;
