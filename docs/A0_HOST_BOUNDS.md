@@ -85,7 +85,7 @@ median replay is 344.575 ms, so **fraction of bound reached = 0.0153 (bound 5.26
 344.575 ms, 65.4 times the bound)** (calc:2d68396b, calc:0f40b5aa). **Superseded by J3** ([J3_CRYPTO_REFERENCE.md](J3_CRYPTO_REFERENCE.md)): at the new 39.46 GB/s reference the bound is 2.970 ms and the fraction 0.00862 (bound 2.970 ms, measured 344.575 ms). Supporting figures per Gate 4
 change of 11,949 bytes: 0.0438 µs to move once at the physical memory bandwidth (calc:eed9e67f),
 0.537 µs to digest at the all-core SHA-256 reference (calc:f77f12b6), and 2.53 µs of all-core Ed25519
-time per verification (calc:65a531d5).
+time per verification (calc:65a531d5). **Superseded by J3**: 0.303 µs to digest (calc:b66d96d7) and 2.515 µs per verification (calc:4f355c4c) at the J3 references.
 
 Finding: the workspace builds `sha2` 0.10.9 without its `asm` feature, and on aarch64 that crate then uses
 its software backend (`sha2/src/sha256.rs`: the aarch64 backend needs `feature = "asm"`). Synapse's own
