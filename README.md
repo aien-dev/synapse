@@ -2,7 +2,7 @@
 
 Synapse is AIEN's high-throughput, agent-native changeset and integration service with deterministic Git object materialization and Radicle canonicality verification ([aien-spark/aien-sovereign-core#515](https://github.com/aien-spark/aien-sovereign-core/issues/515)).
 
-**Direction (2026-10-14):** Synapse is becoming the new Git for AI: source control for AI agents only, built from the best ideas of every system, with Git kept as a small machine bridge for import, export, and existing tooling ([ADR 0002](docs/adr/0002-synapse-first-git-as-bridge.md)).
+**Direction (2026-10-14):** Synapse is becoming the new Git for AI: source control for AI agents only, built from the best ideas of every system, with Git kept as a small machine bridge for import, export, and existing tooling ([ADR 0002](docs/adr/0002-synapse-first-git-as-bridge.md), tracked in [aien-spark/synapse#8](https://github.com/aien-spark/synapse/issues/8)).
 
 ## Architecture Overview
 

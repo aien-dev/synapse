@@ -3,6 +3,7 @@
 * **Status**: Accepted
 * **Date**: 2026-10-14
 * **Decided by**: Drake (owner)
+* **Tracking Issue**: [aien-spark/synapse#8](https://github.com/aien-spark/synapse/issues/8) (Phases 5 to 9); Gates 0 to 4 were tracked in aien-sovereign-core#515, now closed
 * **Supersedes in part**: [ADR 0001](0001-synapse-architecture-and-boundaries.md) (section 2.2 items 1 and 2) and the non-goal "Replacing Git" in [aien-spark/aien-sovereign-core#515](https://github.com/aien-spark/aien-sovereign-core/issues/515)
 * **Evidence**: [Gate 4 Comparative Qualification Report](../GATE4_QUALIFICATION.md) and [`evidence/gate4-qualification/`](../../evidence/gate4-qualification/)
 

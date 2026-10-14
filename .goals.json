@@ -1,7 +1,8 @@
 {
   "schema": "goals/v1",
   "project": "synapse",
-  "tracker_issue": "https://github.com/aien-spark/aien-sovereign-core/issues/515",
+  "tracker_issue": "https://github.com/aien-spark/synapse/issues/8",
+  "previous_tracker_issue": "https://github.com/aien-spark/aien-sovereign-core/issues/515",
   "goals": [
     {
       "id": "GATE-0",
