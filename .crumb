@@ -31,6 +31,14 @@
     {
       "name": "synapse-bench",
       "role": "Gate 4 comparative qualification harness (Synapse versus Git worktree and plumbing workflows) and WAL, Git, and Radicle conformance suites"
+    },
+    {
+      "name": "synapse-crumb",
+      "role": "Strict bounded reader for Directory Crumb dialects and CrumbContext with its domain-separated digest over Synapse snapshots (ADR 0004)"
+    },
+    {
+      "name": "synapse-coord",
+      "role": "Shared agent coordination plane (claims, presence, whispers) byte-compatible with the crumb.c RFC-0002 store; never history, evidence, or authority (ADR 0004)"
     }
   ],
   "invariants": [],
@@ -45,7 +53,9 @@
         "synapse-api": "crates/synapse-api",
         "synapse-git": "crates/synapse-git",
         "synapse-radicle": "crates/synapse-radicle",
-        "synapse-bench": "crates/synapse-bench"
+        "synapse-bench": "crates/synapse-bench",
+        "synapse-crumb": "crates/synapse-crumb",
+        "synapse-coord": "crates/synapse-coord"
       },
       "migrated_from": {
         "dialect": "D3 (schema: \"crumb/v1\", ADR 0004)",
