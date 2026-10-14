@@ -20,3 +20,9 @@ synapse-core.workspace = true
 synapse-git.workspace = true
 synapse-radicle.workspace = true
 synapse-store.workspace = true
+
+[dev-dependencies]
+# ADR 0004 D5 combined Crumb-Synapse qualification (tests/crumb_synapse_qualification.rs).
+synapse-coord.workspace = true
+synapse-crumb.workspace = true
+synapse-evidence.workspace = true
