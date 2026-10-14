@@ -1,4 +1,3 @@
-#![allow(dead_code, unused_imports)]
 //! Attenuated capability chains (ADR 0003 section 5.8, section 9 step F1).
 //!
 //! The repository authority issues a root link; any holder can sign a narrower link to another
@@ -430,10 +429,10 @@ impl CapabilityLink {
 
     /// Decode exactly one canonical link; anything else is `AuthChainMalformed`.
     pub fn decode(bytes: &[u8]) -> SynapseResult<Self> {
-        Err(SynapseError::new(
-            RefusalCode::IoFailure,
-            "F1 red stub: not implemented",
-        ))
+        let mut r = Reader::new(bytes);
+        let link = Self::decode_from(&mut r)?;
+        r.finish()?;
+        Ok(link)
     }
 
     fn decode_from(r: &mut Reader<'_>) -> SynapseResult<Self> {
@@ -513,7 +512,14 @@ impl CapabilityLink {
 
     /// Verify the issuer's Ed25519 signature over `signable_bytes()`.
     pub fn verify_signature(&self) -> SynapseResult<()> {
-        Ok(())
+        let invalid = |msg: &str| SynapseError::new(RefusalCode::AuthGrantSignatureInvalid, msg);
+        let key = VerifyingKey::from_bytes(&self.issuer_key)
+            .map_err(|_| invalid("link issuer key is not a valid Ed25519 key"))?;
+        key.verify_strict(
+            &self.signable_bytes(),
+            &Signature::from_bytes(&self.signature),
+        )
+        .map_err(|_| invalid("link signature verification failed"))
     }
 }
 
@@ -558,10 +564,28 @@ impl CapabilityChain {
 
     /// Decode exactly one canonical chain of 1..=`MAX_CHAIN_DEPTH` links.
     pub fn decode(bytes: &[u8]) -> SynapseResult<Self> {
-        Err(SynapseError::new(
-            RefusalCode::IoFailure,
-            "F1 red stub: not implemented",
-        ))
+        let mut r = Reader::new(bytes);
+        let version = r.u16()?;
+        if version != CAPABILITY_CHAIN_VERSION {
+            return Err(malformed(format!(
+                "unsupported capability chain version {version}"
+            )));
+        }
+        let count = r.u8()? as usize;
+        if count == 0 || count > MAX_CHAIN_DEPTH {
+            return Err(malformed(format!(
+                "chain length {count} outside 1..={MAX_CHAIN_DEPTH}"
+            )));
+        }
+        let mut links = Vec::with_capacity(count);
+        for _ in 0..count {
+            let len = r.u32()? as usize;
+            let mut inner = Reader::new(r.take(len)?);
+            links.push(CapabilityLink::decode_from(&mut inner)?);
+            inner.finish()?;
+        }
+        r.finish()?;
+        Ok(Self { links })
     }
 }
 
@@ -824,26 +848,95 @@ impl PolicyEnforcer {
         seq: WalSeq,
         now_ms: u64,
     ) -> SynapseResult<LinkDigest> {
-        let _ = (seq, now_ms);
-        chain
-            .leaf()
-            .map(CapabilityLink::digest)
-            .ok_or_else(|| SynapseError::new(RefusalCode::IoFailure, "F1 red stub"))
+        let leaf = chain.leaf().ok_or_else(|| {
+            SynapseError::new(RefusalCode::AuthChainBroken, "empty capability chain")
+        })?;
+        let repo_id = leaf.repo_id.clone();
+        let digests = self.verify_chain_links(chain, &repo_id, now_ms)?;
+        let (leaf_digest, ancestors) = digests.split_last().expect("non-empty chain");
+        self.check_granted_at(ancestors, seq)?;
+        if let Some(rec) = self.chains.granted.get(leaf_digest) {
+            if rec.revoked_at.is_some() {
+                return Err(SynapseError::new(
+                    RefusalCode::AuthGrantRevoked,
+                    "link is revoked; a revoked link cannot be granted again",
+                ));
+            }
+            return Ok(*leaf_digest);
+        }
+        let quotas = leaf.caveats.quotas;
+        if let Some(parent_digest) = ancestors.last() {
+            let parent_quotas = self.chains.granted[parent_digest].quotas;
+            let used = self
+                .chains
+                .allocated
+                .get(parent_digest)
+                .copied()
+                .unwrap_or_default();
+            let next_ops = used.ops.checked_add(u64::from(quotas.max_ops_per_window));
+            let next_storage = used.storage.checked_add(quotas.storage_bytes);
+            let next_footprint = used.footprint.checked_add(quotas.footprint_paths);
+            let over = if next_ops.is_none_or(|v| v > u64::from(parent_quotas.max_ops_per_window)) {
+                Some("request rate")
+            } else if next_storage.is_none_or(|v| v > parent_quotas.storage_bytes) {
+                Some("storage")
+            } else if next_footprint.is_none_or(|v| v > parent_quotas.footprint_paths) {
+                Some("footprint")
+            } else {
+                None
+            };
+            if let Some(dim) = over {
+                return Err(SynapseError::new(
+                    RefusalCode::QuotaPartitionExceeded,
+                    format!("children of the parent link would together exceed its {dim} quota"),
+                ));
+            }
+            self.chains.allocated.insert(
+                *parent_digest,
+                Allocated {
+                    ops: next_ops.expect("checked above"),
+                    storage: next_storage.expect("checked above"),
+                    footprint: next_footprint.expect("checked above"),
+                },
+            );
+        }
+        self.chains.granted.insert(
+            *leaf_digest,
+            GrantedLink {
+                granted_at: seq,
+                revoked_at: None,
+                quotas,
+            },
+        );
+        Ok(*leaf_digest)
     }
 
     /// Revoke a granted link at `seq`. Revocation cannot be undone: a later revocation never
     /// moves an earlier one, and there is no operation that clears it. Every chain through the
     /// link is refused for requests at `seq` or later.
     pub fn revoke_link(&mut self, link: LinkDigest, seq: WalSeq) -> SynapseResult<()> {
-        let _ = (link, seq);
+        let rec = self.chains.granted.get_mut(&link).ok_or_else(|| {
+            SynapseError::new(
+                RefusalCode::AuthChainBroken,
+                "cannot revoke a link never granted",
+            )
+        })?;
+        rec.revoked_at = Some(rec.revoked_at.map_or(seq, |r| r.min(seq)));
         Ok(())
     }
 
     /// The part of a granted link's partitioned quotas (rate, storage, footprint) not handed
     /// down to its children; `None` if the link was never granted.
     pub fn unallocated_quota(&self, link: &LinkDigest) -> Option<ChainQuotas> {
-        let _ = link;
-        None
+        let rec = self.chains.granted.get(link)?;
+        let used = self.chains.allocated.get(link).copied().unwrap_or_default();
+        let mut q = rec.quotas;
+        q.max_ops_per_window = q
+            .max_ops_per_window
+            .saturating_sub(u32::try_from(used.ops).unwrap_or(u32::MAX));
+        q.storage_bytes = q.storage_bytes.saturating_sub(used.storage);
+        q.footprint_paths = q.footprint_paths.saturating_sub(used.footprint);
+        Some(q)
     }
 
     /// Verify and authorize a `ChainedRequest` whose `WalSeq` is `request_seq`, recording
@@ -859,7 +952,20 @@ impl PolicyEnforcer {
         request_seq: WalSeq,
         now_ms: u64,
     ) -> SynapseResult<()> {
-        let _ = request_seq;
+        let result = self.check_chained_request(
+            expected_repo_id,
+            expected_capability,
+            req,
+            request_seq,
+            now_ms,
+        );
+        let outcome = match &result {
+            Ok(()) => AuditOutcome::Admitted,
+            Err(err) => AuditOutcome::Refused {
+                code: err.code,
+                reason: err.message.clone(),
+            },
+        };
         self.audit_log.record(
             now_ms,
             boundary,
@@ -867,9 +973,9 @@ impl PolicyEnforcer {
             req.agent_did(),
             expected_capability,
             operation,
-            AuditOutcome::Admitted,
+            outcome,
         );
-        Ok(())
+        result
     }
 
     fn check_chained_request(

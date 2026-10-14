@@ -1,0 +1,17 @@
+# Green (2026-10-14, implementation on top of red commit f377f41; workspace 239 passed, 0 failed; clippy -D warnings and fmt clean)
+# Command: cargo test -p synapse-auth --offline --test f1_capability_chains -- --nocapture --test-threads=1
+# Property seed 0xF1F1_0003_0025_5EED; 256 narrowing cases and 256 partition cases.
+
+running 11 tests
+test f1_chain_with_an_ancestor_revoked_at_the_request_walseq_is_refused ... ok
+test f1_forged_chains_are_refused ... ok
+test f1_link_and_chain_binary_encoding_is_canonical_and_malformed_bytes_are_refused ... ok
+test f1_link_bound_to_another_audience_is_refused ... ok
+test f1_link_bound_to_another_repository_is_refused ... ok
+test f1_out_of_scope_path_is_refused ... ok
+test f1_partitioned_rate_parent_keeps_only_what_it_has_not_handed_down ... ok
+test f1_property_child_quotas_never_sum_above_the_parent ... seed 0xf1f1000300255eed, 256 cases: 1799 children accepted, 2297 refused with QuotaPartitionExceeded
+test f1_property_no_derived_grant_exceeds_its_parent ... seed 0xf1f1000300255eed, 256 cases: 843 narrowed links accepted; widened links refused per dimension ["operations", "paths", "references", "change scope", "quotas", "expiry"] = [139, 133, 124, 107, 115, 143]
+test f1_reordered_chains_are_refused ... ok
+test f1_stripped_chains_are_refused ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.93s

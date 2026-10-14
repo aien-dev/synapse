@@ -1,0 +1,156 @@
+# Red (2026-10-14, commit f377f41: F1 tests against stubs)
+# Command: cargo test -p synapse-auth --offline --test f1_capability_chains
+# Stubs: grant_link accepts every link unchecked, revoke_link records nothing, unallocated_quota returns None,
+#        authorize_chain admits (and audits) every request, link signature verification accepts, decoders return IoFailure.
+# Every failure below is an assertion on the behaviour under test (no compile error, no unrelated panic).
+
+   Compiling synapse-auth v0.1.0 (/home/drakestapleton/.t3/projects/synapse/.claude/worktrees/f1/crates/synapse-auth)
+432 |     pub fn decode(bytes: &[u8]) -> SynapseResult<Self> {
+560 |     pub fn decode(bytes: &[u8]) -> SynapseResult<Self> {
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+     Running tests/f1_capability_chains.rs (target/debug/deps/f1_capability_chains-468298823d2ae46e)
+running 11 tests
+test f1_partitioned_rate_parent_keeps_only_what_it_has_not_handed_down ... FAILED
+test f1_property_child_quotas_never_sum_above_the_parent ... FAILED
+test f1_link_bound_to_another_repository_is_refused ... FAILED
+test f1_property_no_derived_grant_exceeds_its_parent ... FAILED
+test f1_link_bound_to_another_audience_is_refused ... FAILED
+test f1_forged_chains_are_refused ... FAILED
+test f1_out_of_scope_path_is_refused ... FAILED
+test f1_chain_with_an_ancestor_revoked_at_the_request_walseq_is_refused ... FAILED
+test f1_reordered_chains_are_refused ... FAILED
+test f1_stripped_chains_are_refused ... FAILED
+test f1_link_and_chain_binary_encoding_is_canonical_and_malformed_bytes_are_refused ... FAILED
+failures:
+---- f1_partitioned_rate_parent_keeps_only_what_it_has_not_handed_down stdout ----
+thread 'f1_partitioned_rate_parent_keeps_only_what_it_has_not_handed_down' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:749:5:
+assertion `left == right` failed
+  left: Ok(LinkDigest([41, 152, 138, 161, 234, 199, 146, 57, 139, 50, 161, 152, 138, 51, 172, 24, 64, 218, 123, 128, 195, 106, 179, 183, 183, 160, 128, 42, 163, 58, 252, 14]))
+ right: Err(QuotaPartitionExceeded)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+---- f1_property_child_quotas_never_sum_above_the_parent stdout ----
+thread 'f1_property_child_quotas_never_sum_above_the_parent' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:689:21:
+seed 0xf1f1000300255eed case 0: accepted child makes children sum Sum { ops: 31, storage: 396, footprint: 674 } above parent quotas ChainQuotas { max_ops_per_window: 73, window_duration_ms: 60000, storage_bytes: 1060, footprint_paths: 554, max_bytes_per_op: 1048576 }
+---- f1_link_bound_to_another_repository_is_refused stdout ----
+thread 'f1_link_bound_to_another_repository_is_refused' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:976:5:
+assertion `left == right` failed
+  left: Ok(LinkDigest([163, 182, 60, 198, 56, 177, 19, 23, 162, 174, 255, 49, 240, 67, 255, 200, 10, 196, 128, 106, 54, 169, 45, 66, 221, 229, 218, 188, 236, 31, 232, 246]))
+ right: Err(AuthCrossRepoDenied)
+---- f1_property_no_derived_grant_exceeds_its_parent stdout ----
+thread 'f1_property_no_derived_grant_exceeds_its_parent' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:536:29:
+seed 0xf1f1000300255eed case 0: accepted link exceeds ancestor 0 in change scope
+ child LinkCaveats {
+    operations: OperationSet(
+        34,
+    ),
+    paths: PathScope {
+        prefixes: [
+            "b/tests/src/tests",
+            "docs/ab/a",
+            "docs/src/a",
+        ],
+    },
+    references: ReferenceScope(
+        0,
+    ),
+    changes: ChangeScope {
+        only: Some(
+            [
+                ChangeId(02020202020202020202020202020202),
+                ChangeId(07070707070707070707070707070707),
+                ChangeId(7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f),
+            ],
+        ),
+    },
+    quotas: ChainQuotas {
+        max_ops_per_window: 48,
+        window_duration_ms: 60000,
+        storage_bytes: 17288663,
+        footprint_paths: 112215,
+        max_bytes_per_op: 14908,
+    },
+    issued_at_ms: 1255,
+    expires_at_ms: 118981,
+}
+ ancestor LinkCaveats {
+    operations: OperationSet(
+        38,
+    ),
+    paths: PathScope {
+        prefixes: [
+            "b/tests",
+            "docs/ab",
+            "docs/src",
+        ],
+    },
+    references: ReferenceScope(
+        0,
+    ),
+    changes: ChangeScope {
+        only: Some(
+            [
+                ChangeId(02020202020202020202020202020202),
+                ChangeId(07070707070707070707070707070707),
+                ChangeId(08080808080808080808080808080808),
+            ],
+        ),
+    },
+    quotas: ChainQuotas {
+        max_ops_per_window: 461,
+        window_duration_ms: 60000,
+        storage_bytes: 874486835,
+        footprint_paths: 875242,
+        max_bytes_per_op: 533753,
+    },
+    issued_at_ms: 1091,
+    expires_at_ms: 377742,
+}
+---- f1_link_bound_to_another_audience_is_refused stdout ----
+thread 'f1_link_bound_to_another_audience_is_refused' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:1018:5:
+assertion `left == right` failed
+  left: Ok(())
+ right: Err(AuthAudienceMismatch)
+---- f1_forged_chains_are_refused stdout ----
+thread 'f1_forged_chains_are_refused' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:839:5:
+assertion `left == right` failed
+  left: Ok(())
+ right: Err(AuthGrantSignatureInvalid)
+---- f1_out_of_scope_path_is_refused stdout ----
+thread 'f1_out_of_scope_path_is_refused' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:1092:5:
+assertion `left == right` failed
+  left: Ok(())
+ right: Err(AuthPathOutOfScope)
+---- f1_chain_with_an_ancestor_revoked_at_the_request_walseq_is_refused stdout ----
+thread 'f1_chain_with_an_ancestor_revoked_at_the_request_walseq_is_refused' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:1154:5:
+assertion `left == right` failed
+  left: Ok(())
+ right: Err(AuthGrantRevoked)
+---- f1_reordered_chains_are_refused stdout ----
+thread 'f1_reordered_chains_are_refused' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:949:9:
+assertion `left == right` failed: order [0, 2, 1]
+  left: Ok(())
+ right: Err(AuthChainBroken)
+---- f1_stripped_chains_are_refused stdout ----
+thread 'f1_stripped_chains_are_refused' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:919:9:
+assertion `left == right` failed: middle link dropped
+  left: Ok(())
+ right: Err(AuthChainBroken)
+---- f1_link_and_chain_binary_encoding_is_canonical_and_malformed_bytes_are_refused stdout ----
+thread 'f1_link_and_chain_binary_encoding_is_canonical_and_malformed_bytes_are_refused' panicked at crates/synapse-auth/tests/f1_capability_chains.rs:1212:5:
+assertion `left == right` failed
+  left: Err(IoFailure)
+ right: Ok(CapabilityLink { version: 1, nonce: [162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162, 162], parent: LinkDigest([126, 158, 96, 62, 88, 184, 128, 18, 134, 170, 46, 169, 243, 246, 241, 118, 185, 65, 166, 52, 57, 249, 171, 82, 83, 125, 255, 250, 5, 0, 94, 104]), repo_id: RepoId("aien-spark/synapse"), issuer_key: [237, 73, 40, 198, 40, 209, 194, 198, 234, 233, 3, 56, 144, 89, 149, 97, 41, 89, 39, 58, 92, 99, 249, 54, 54, 193, 70, 20, 172, 135, 55, 209], audience_key: [202, 147, 172, 23, 5, 24, 112, 113, 214, 123, 131, 199, 255, 14, 254, 129, 8, 232, 236, 69, 48, 87, 93, 119, 38, 135, 147, 51, 219, 218, 190, 124], caveats: LinkCaveats { operations: OperationSet(3), paths: PathScope { prefixes: ["crates/synapse-auth"] }, references: ReferenceScope(1), changes: ChangeScope { only: Some([ChangeId(01010101010101010101010101010101)]) }, quotas: ChainQuotas { max_ops_per_window: 250, window_duration_ms: 60000, storage_bytes: 268435456, footprint_paths: 262144, max_bytes_per_op: 1048576 }, issued_at_ms: 1000, expires_at_ms: 100000 }, signature: [34, 71, 249, 230, 73, 32, 78, 224, 82, 220, 174, 21, 163, 197, 78, 111, 76, 77, 115, 120, 169, 144, 201, 187, 150, 251, 168, 109, 122, 195, 216, 142, 118, 142, 75, 221, 198, 131, 211, 131, 153, 175, 194, 23, 218, 213, 134, 136, 57, 22, 55, 22, 98, 21, 212, 20, 208, 155, 224, 81, 119, 51, 7, 3] })
+failures:
+    f1_chain_with_an_ancestor_revoked_at_the_request_walseq_is_refused
+    f1_forged_chains_are_refused
+    f1_link_and_chain_binary_encoding_is_canonical_and_malformed_bytes_are_refused
+    f1_link_bound_to_another_audience_is_refused
+    f1_link_bound_to_another_repository_is_refused
+    f1_out_of_scope_path_is_refused
+    f1_partitioned_rate_parent_keeps_only_what_it_has_not_handed_down
+    f1_property_child_quotas_never_sum_above_the_parent
+    f1_property_no_derived_grant_exceeds_its_parent
+    f1_reordered_chains_are_refused
+    f1_stripped_chains_are_refused
+test result: FAILED. 0 passed; 11 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-auth --test f1_capability_chains`
