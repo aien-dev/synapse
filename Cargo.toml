@@ -8,6 +8,8 @@ members = [
     "crates/synapse-git",
     "crates/synapse-radicle",
     "crates/synapse-bench",
+    "crates/synapse-crumb",
+    "crates/synapse-coord",
 ]
 
 [workspace.package]
@@ -29,7 +31,9 @@ sha2 = "0.10"
 synapse-api = { path = "crates/synapse-api" }
 synapse-auth = { path = "crates/synapse-auth" }
 synapse-bench = { path = "crates/synapse-bench" }
+synapse-coord = { path = "crates/synapse-coord" }
 synapse-core = { path = "crates/synapse-core" }
+synapse-crumb = { path = "crates/synapse-crumb" }
 synapse-git = { path = "crates/synapse-git" }
 synapse-radicle = { path = "crates/synapse-radicle" }
 synapse-store = { path = "crates/synapse-store" }

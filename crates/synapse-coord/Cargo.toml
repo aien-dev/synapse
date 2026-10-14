@@ -1,0 +1,10 @@
+[package]
+name = "synapse-coord"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Shared agent coordination plane (claims, presence, whispers) compatible with the Crumb RFC-0002 store, kept outside Synapse history"
+
+[dependencies]
