@@ -1,0 +1,31 @@
+{
+  "schema": "synapse-crumb-synapse-qualification/v1",
+  "issue": "https://github.com/aien-spark/synapse/issues/12",
+  "synapse_commit": "2f848043f6b660bd7265f52003a8ac7d9a4abaa0",
+  "source_tree": "clean",
+  "crumb_c": {"repo": "aien-dev/aien-architecture", "commit": "29780e56c9e6b9111d884e0d4b146737228c19f6", "sha256": "ef0f6566fb838917a750eb898f66596b76aa15a53d7d61bedac03c4c963ee147"},
+  "started_at_utc": "2026-10-14T18:10:18Z",
+  "finished_at_utc": "2026-10-14T18:10:35Z",
+  "suite": {"exit": 0, "summary": "test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.92s"},
+  "scenarios": [
+    {"id": "S01", "status": "PASS", "detail": "bob's claim on src/a.rs refused (held by alice); bob's advisory shows alice's claim and alice's open proposal"},
+    {"id": "S02", "status": "PASS", "detail": "separate files: both claims granted; advisory has no claims, overlaps, pending .crumb changes or staleness"},
+    {"id": "S03", "status": "PASS", "detail": "advisory Stale + pending .crumb rewrite named; receipt Stale InChangeset and Stale AtBase each name dir src and the expected digest"},
+    {"id": "S04", "status": "PASS", "detail": "claim live at ttl, ignored at ttl+1s by advisory and taken over in the plane; unparseable stamp treated as expired"},
+    {"id": "S05", "status": "PASS", "detail": "corrupt/deep JSON => Unavailable (no panic, not overwritten); empty/non-string holders skipped; forged holder shown as info only; hostile keys (traversal, absolute, empty, prefix, oversized, non-UTF-8) match nothing, escaped-NUL key truncates as in crumb.c; submit and receipt unaffected"},
+    {"id": "S06", "status": "PASS", "detail": "14 forged/tampered/oversize cases refused with the expected typed error; 74 byte flips refused"},
+    {"id": "S07", "status": "KNOWN-GAP", "detail": "receipt signed by the changeset author's own key verifies Current; executor independence deferred to ADR 0003 E0/E1; Current grants nothing (S12)"},
+    {"id": "S08", "status": "PASS", "detail": "torn tmp records ignored; child aborted (SIGABRT) between tmp write and rename left the record byte-identical; plane usable afterwards"},
+    {"id": "S09", "status": "PASS", "detail": "child exited 42 mid WAL v2 batch write; strict reopen refused torn tail: true; truncating reopen shows only the acknowledged changeset, claim kept, resubmit + receipt Current"},
+    {"id": "S10", "status": "PASS", "detail": "crumb.c (Git worktree) and synapse-coord share one store both ways; advisory shows the crumb.c holder; open_expecting refuses missing and mismatched STORE_ID; limit: crumb.c on a wrong root granted a split claim: true"},
+    {"id": "S11", "status": "PASS", "detail": "Git -> Synapse (D1/D2/D3 dialects recognised) -> changeset -> Git: all four .crumb blobs byte-identical, untouched tree OID kept, re-import gives identical context digests"},
+    {"id": "S12", "status": "PASS", "detail": "advisory read (no foreign claims) + Current Pass receipt: GitHub PR projection refused without Publish (AuthCapabilityDenied, author and runner); Radicle promotion refused without delegate quorum (none / runner / author sigrefs); both open only for a Publish grant / delegate sigrefs. AEGIS not integrated (separate repo)"}
+  ],
+  "defects": [
+    {"test": "s05_defect_fifo_record_hangs_advisory", "status": "DEFECT", "detail": "still reproduces; https://github.com/aien-spark/synapse/issues/58"}
+  ],
+  "parity": {"exit": 0, "summary": "PARITY OK: crumb.c output matches the golden files"},
+  "interop": {"exit": 0, "summary": "interop: 28 passed, 0 failed"},
+  "qualified": true,
+  "limits": ["AEGIS not integrated (separate repository); publication gates tested are synapse-auth Capability::Publish and synapse-radicle canonical promotion"]
+}

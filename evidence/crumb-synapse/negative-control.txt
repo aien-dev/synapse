@@ -1,0 +1,15 @@
+Negative control for the D5 suite (2026-10-14, on 9f0e1b0 plus the S12 wording change)
+
+Break on purpose: crates/synapse-evidence/src/lib.rs, EvidenceReceipt::verify, the result of
+key.verify_strict(...) was discarded (`.ok();` in place of
+`.map_err(|_| ReceiptError::SignatureInvalid)?;`), so any signature would be accepted.
+
+Run: CRUMB_C_BIN=<pinned crumb.c> cargo test -q -p synapse-bench --test crumb_synapse_qualification -- --nocapture --test-threads=1
+
+Result: exit 101 (red).
+  test result: FAILED. 13 passed; 1 failed; 1 ignored
+  s06_forged_and_tampered_receipts_refused panicked: "not refused: Current { ... outcome: Pass }"
+  (the receipt with its last signature byte flipped verified Current); no D5-RESULT S06 line.
+
+Revert: git checkout -- crates/synapse-evidence/src/lib.rs (no production diff remains; the
+committed run in results.txt is green on the unmodified code).
