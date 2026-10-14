@@ -17,4 +17,5 @@ synapse-auth.workspace = true
 synapse-core.workspace = true
 synapse-coord.workspace = true
 synapse-crumb.workspace = true
+synapse-evidence.workspace = true
 synapse-store.workspace = true

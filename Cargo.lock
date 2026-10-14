@@ -347,6 +347,7 @@ dependencies = [
  "synapse-coord",
  "synapse-core",
  "synapse-crumb",
+ "synapse-evidence",
  "synapse-store",
 ]
 
@@ -406,6 +407,17 @@ dependencies = [
  "hex",
  "sha2",
  "synapse-core",
+]
+
+[[package]]
+name = "synapse-evidence"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "hex",
+ "sha2",
+ "synapse-core",
+ "synapse-crumb",
 ]
 
 [[package]]
