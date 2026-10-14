@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0.0",
+  "name": "latin1",
+  "purpose": "RFC-0001 document with one Latin-1 byte in an unprinted field.",
+  "extensions": {"note": "café"}
+}

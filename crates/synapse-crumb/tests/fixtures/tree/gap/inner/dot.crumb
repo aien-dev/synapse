@@ -1,0 +1,1 @@
+{"schema_version": "1.0.0", "name": "gap/inner", "purpose": "Below a directory with no .crumb.", "invariants": ["inner invariant"]}

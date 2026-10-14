@@ -1,0 +1,7 @@
+schema: "crumb/v1"
+repository: "example/fixture"
+summary: "YAML-like dialect with no known writer"
+components:
+  - name: "core"
+    path: "crates/core"
+    role: "Example component"

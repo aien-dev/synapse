@@ -8,3 +8,6 @@ repository.workspace = true
 description = "Versioned, bounded reader for directory Crumb (.crumb) context over Synapse virtual trees"
 
 [dependencies]
+hex.workspace = true
+sha2.workspace = true
+synapse-core.workspace = true

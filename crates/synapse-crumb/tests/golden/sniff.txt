@@ -1,0 +1,55 @@
+### sniff .
+sniff <ROOT> as parity
+  .crumb: fixture-root | Parity fixture repository root.
+  invariant: root invariant one
+  invariant: root invariant two
+### sniff d1
+sniff <ROOT>/d1 as parity
+  .crumb: d1 | RFC-0001 directory with one invariant.
+  invariant: d1 invariant
+### sniff d1/nested
+sniff <ROOT>/d1/nested as parity
+  .crumb: d1/nested | Nested RFC-0001 directory under d1.
+  invariant: nested invariant A
+  invariant: nested invariant B
+### sniff d1/nested/deeper
+sniff <ROOT>/d1/nested/deeper as parity
+  no .crumb here
+### sniff d2
+sniff <ROOT>/d2 as parity
+  .crumb: ? | (legacy format)
+### sniff d3
+sniff <ROOT>/d3 as parity
+  no .crumb here
+### sniff badjson
+sniff <ROOT>/badjson as parity
+  no .crumb here
+### sniff gap
+sniff <ROOT>/gap as parity
+  no .crumb here
+### sniff gap/inner
+sniff <ROOT>/gap/inner as parity
+  .crumb: gap/inner | Below a directory with no .crumb.
+  invariant: inner invariant
+### sniff unknown
+sniff <ROOT>/unknown as parity
+  .crumb: unknown-object | JSON object with neither schema_version nor version.
+  invariant: unknown invariant
+### sniff bom
+sniff <ROOT>/bom as parity
+  no .crumb here
+### sniff scalar
+sniff <ROOT>/scalar as parity
+  .crumb: ? | (legacy format)
+### sniff latin1
+sniff <ROOT>/latin1 as parity
+  .crumb: latin1 | RFC-0001 document with one Latin-1 byte in an unprinted field.
+### sniff nuljunk
+sniff <ROOT>/nuljunk as parity
+  .crumb: nuljunk | RFC-0001 document followed by a NUL byte and junk.
+### sniff dupkey
+sniff <ROOT>/dupkey as parity
+  .crumb: dupkey | second purpose
+### sniff surrogate
+sniff <ROOT>/surrogate as parity
+  .crumb: surrogate | lone surrogate [�] here

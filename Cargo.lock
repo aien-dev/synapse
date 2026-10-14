@@ -345,6 +345,7 @@ dependencies = [
  "sha2",
  "synapse-auth",
  "synapse-core",
+ "synapse-crumb",
  "synapse-store",
 ]
 
@@ -400,6 +401,11 @@ dependencies = [
 [[package]]
 name = "synapse-crumb"
 version = "0.1.0"
+dependencies = [
+ "hex",
+ "sha2",
+ "synapse-core",
+]
 
 [[package]]
 name = "synapse-git"

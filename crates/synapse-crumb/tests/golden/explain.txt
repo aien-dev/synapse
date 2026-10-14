@@ -1,0 +1,196 @@
+### explain .
+== NEAREST CRUMB ==
+  file: <ROOT>/.crumb
+  name: fixture-root
+  layer: root
+  purpose: Parity fixture repository root.
+  invariant: root invariant one
+  invariant: root invariant two
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  (none)
+### explain d1
+== NEAREST CRUMB ==
+  file: <ROOT>/d1/.crumb
+  name: d1
+  layer: d1
+  purpose: RFC-0001 directory with one invariant.
+  invariant: d1 invariant
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain d1/nested
+== NEAREST CRUMB ==
+  file: <ROOT>/d1/nested/.crumb
+  name: d1/nested
+  layer: 
+  purpose: Nested RFC-0001 directory under d1.
+  invariant: nested invariant A
+  invariant: nested invariant B
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/d1/.crumb: d1 invariant
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain d1/nested/deeper
+== NEAREST CRUMB ==
+  file: <ROOT>/d1/nested/.crumb
+  name: d1/nested
+  layer: 
+  purpose: Nested RFC-0001 directory under d1.
+  invariant: nested invariant A
+  invariant: nested invariant B
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/d1/.crumb: d1 invariant
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain d2
+== NEAREST CRUMB ==
+  file: <ROOT>/d2/.crumb
+  name: 
+  layer: 
+  purpose: 
+  invariant: (none)
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain d3
+== NEAREST CRUMB ==
+  file: <ROOT>/.crumb
+  name: fixture-root
+  layer: root
+  purpose: Parity fixture repository root.
+  invariant: root invariant one
+  invariant: root invariant two
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  (none)
+### explain badjson
+== NEAREST CRUMB ==
+  file: <ROOT>/.crumb
+  name: fixture-root
+  layer: root
+  purpose: Parity fixture repository root.
+  invariant: root invariant one
+  invariant: root invariant two
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  (none)
+### explain gap
+== NEAREST CRUMB ==
+  file: <ROOT>/.crumb
+  name: fixture-root
+  layer: root
+  purpose: Parity fixture repository root.
+  invariant: root invariant one
+  invariant: root invariant two
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  (none)
+### explain gap/inner
+== NEAREST CRUMB ==
+  file: <ROOT>/gap/inner/.crumb
+  name: gap/inner
+  layer: 
+  purpose: Below a directory with no .crumb.
+  invariant: inner invariant
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain unknown
+== NEAREST CRUMB ==
+  file: <ROOT>/unknown/.crumb
+  name: unknown-object
+  layer: 
+  purpose: JSON object with neither schema_version nor version.
+  invariant: unknown invariant
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain bom
+== NEAREST CRUMB ==
+  file: <ROOT>/.crumb
+  name: fixture-root
+  layer: root
+  purpose: Parity fixture repository root.
+  invariant: root invariant one
+  invariant: root invariant two
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  (none)
+### explain scalar
+== NEAREST CRUMB ==
+  file: <ROOT>/.crumb
+  name: fixture-root
+  layer: root
+  purpose: Parity fixture repository root.
+  invariant: root invariant one
+  invariant: root invariant two
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  (none)
+### explain latin1
+== NEAREST CRUMB ==
+  file: <ROOT>/latin1/.crumb
+  name: latin1
+  layer: 
+  purpose: RFC-0001 document with one Latin-1 byte in an unprinted field.
+  invariant: (none)
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain nuljunk
+== NEAREST CRUMB ==
+  file: <ROOT>/nuljunk/.crumb
+  name: nuljunk
+  layer: 
+  purpose: RFC-0001 document followed by a NUL byte and junk.
+  invariant: (none)
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain dupkey
+== NEAREST CRUMB ==
+  file: <ROOT>/dupkey/.crumb
+  name: dupkey
+  layer: 
+  purpose: second purpose
+  invariant: (none)
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
+### explain surrogate
+== NEAREST CRUMB ==
+  file: <ROOT>/surrogate/.crumb
+  name: surrogate
+  layer: 
+  purpose: lone surrogate [�] here
+  invariant: (none)
+  export: (none)
+  related: (none)
+== INHERITED INVARIANTS ==
+  from <ROOT>/.crumb: root invariant one
+  from <ROOT>/.crumb: root invariant two
