@@ -113,33 +113,51 @@ Fixture provenance: `crates/synapse-store/tests/fixtures/a1-v1` is written by
 
 ## Replay against the bound
 
-Bound (ADR 0003 section 6.2, A0): max(bytes / 273 GB/s memory bandwidth, bytes / 22.25 GB/s
-all-core SHA-256 reference) = bytes / 22.25 GB/s, bytes = the store's apparent bytes (replay
-re-hashes every committed blob). Fraction = bound / measured, at most 1. Gate 4 workload
-(seed 7673641184369446932, fixture rev `1b6e340`), `SynapseStore::open` replaying the full
-`wal.log` (EveryCommit), 7 repetitions, median; raw samples in `replay/a1/trace.jsonl`.
-Binary built from `b11bd8c` plus the checkpoint-size line in `recovery.rs`.
+Reference used: the J3 all-core SHA-256 reference, 39.46 GB/s (`docs/J3_CRYPTO_REFERENCE.md`,
+which supersedes A0's 22.25 GB/s). Bound (ADR 0003 section 6.2): max(bytes / 273 GB/s memory
+bandwidth, bytes / 39.46 GB/s) = bytes / 39.46 GB/s, bytes = the store's apparent bytes
+(replay re-hashes every committed blob); at 10,000 the memory term is 3.942e-4 s
+(calc:bb71a8df8eabb86f50db709efa4104b9f1af6edcfb36f8c86a10e42aa52e97e6). Fraction = bound /
+measured, at most 1. Gate 4 workload (seed 7673641184369446932, fixture rev `1b6e340`),
+`SynapseStore::open` replaying the full `wal.log` (EveryCommit), 7 repetitions, median; raw
+samples in `replay/a1-11c48e5/trace.jsonl`. Release binary built from `11c48e5` (this branch
+merged with main `b3473fc`, which includes J3's `sha2` `asm` feature).
 
 | Changesets | Store bytes (apparent) | WAL bytes | Measured median s (min to max) | Bound s | Fraction | Achieved s per changeset |
 | :--- | ---: | ---: | :--- | ---: | ---: | ---: |
-| 100 | 1,212,536 | 64,212 | 0.002622 (0.002604 to 0.002837) | 5.450e-5 | 0.0208 | 2.622e-5 |
-| 1,000 | 9,887,858 | 620,587 | 0.023794 (0.023498 to 0.024913) | 4.444e-4 | 0.0187 | 2.379e-5 |
-| 10,000 | 107,605,504 | 6,288,321 | 0.261571 (0.259464 to 0.265962) | 4.836e-3 | 0.0185 | 2.616e-5 |
+| 100 | 1,212,536 | 64,212 | 0.001077 (0.001051 to 0.001381) | 3.0728e-5 | 0.0285 | 1.077e-5 |
+| 1,000 | 9,887,858 | 620,587 | 0.010559 (0.010369 to 0.011613) | 2.5058e-4 | 0.0237 | 1.056e-5 |
+| 10,000 | 107,605,504 | 6,288,321 | 0.120637 (0.119610 to 0.125275) | 2.7270e-3 | 0.0226 | 1.206e-5 |
 
-Per changeset at 10,000: achieved 2.616e-5 s against a bound of 4.836e-7 s (fraction 0.0185;
-calc:fcac04c7b95f50ba84733216a51372bc2297157faa812a5e73786620f623ada1,
-calc:d88fe2f6e7bf4c1c823f597cadc0ca2e73af588d249fa72cb8e253ae7f95861f).
+Calc receipts: bounds calc:382fb7ec, calc:ac060435, calc:c4a298b5; fractions calc:08e61cce,
+calc:60712e80, calc:a538f7aa (full ids:
+calc:382fb7ec606e6212301994c15cead2ba14695accd07dd0d0f66fb60124fcf415,
+calc:ac0604357b52cb16cc5fa32e35fe195e66673be4655f70fad1b1dcdd14a991f3,
+calc:c4a298b579a51d980cb40087dcc58b8e3c70ff3b53acd2769cc6e3e8e06b2418,
+calc:08e61ccef0c49ba20638f9434369ba13a83fde3438106cc4f91d8995a57cbffa,
+calc:60712e80b63bd195c0ee124a3c00c92385e483c1c183e0b3460d835136f5c97c,
+calc:a538f7aa5d19fd16a26d3056dc9c565f49c301d63044ea0360c14c6b9d6469dd).
+Per changeset at 10,000: achieved 1.206e-5 s against a bound of 2.727e-7 s (fraction 0.0226;
+calc:3dd430011f038777914dfe5ce84a5931e3e91f2d3b166767dfe16c09a4ea372c).
 
-Same-host JSON reference, same day, main `b04ad31` (`replay/main-b04ad31-json/`): 10,000
-changesets, 117,195,596 bytes, WAL 15,878,413 bytes, 0.30807 s median, fraction 0.0171
-(calc:0d13ae430f18c90800e1e0e2ad92edf353c990871fd8d4bc6cf581a286e098d3). Context only, not an
-acceptance. Open after checkpoint at 10,000: 0.018348 s (binary, checkpoint 6,768,446 bytes)
-and 0.04421 s (JSON, 17,645,237 bytes).
+Same-host JSON reference, same day, main `b3473fc` (`replay/main-b3473fc-json/`): 10,000
+changesets, 117,196,369 bytes, WAL 15,879,186 bytes, 0.156076 s median, bound 2.970e-3 s
+(calc:4dbd8acc297504ee2a5cec05d809482e134c1d21643b17ce83193fcf748b45a3), fraction 0.0190
+(calc:766eb64a258a43f515d920ce80f7cbf3476a3d2b37058ee48f8eb938bbd8babb). Context only, not an
+acceptance. Open after checkpoint at 10,000: 0.008945 s (binary, checkpoint 6,768,446 bytes)
+and 0.043907 s (JSON, 17,645,939 bytes).
+
+Superseded: the earlier run (`replay/a1/`, binary from `b11bd8c` before J3, and
+`replay/main-b04ad31-json/`) measured 0.261571 s and 0.30807 s at 10,000 and used A0's
+22.25 GB/s reference (bound 4.836e-3 s, fractions 0.0185 and 0.0171). Between the two runs the
+only change on the store path is J3's workspace dependency change (`sha2` with its `asm`
+feature); the drop in measured time is attributed to it, not isolated further.
 
 ## Limits
 
 * Energy (J) was not measured: no power instrument was read during these runs.
-* Replay is far from the bound (fraction about 0.02); the time is dominated by re-reading and
-  re-hashing blob files and per-record work, which A1 does not change. Not an acceptance.
+* Replay is far from the bound (fraction about 0.02 at the J3 reference); the time is
+  dominated by re-reading and re-hashing blob files and per-record work, which A1 does not
+  change. Not an acceptance.
 * `RecordCodec` and the frame API are new public items of `synapse-store`;
   `SynapseStore::prepare_ingest` now takes `Option<RecordCodec>` instead of `bool`.
