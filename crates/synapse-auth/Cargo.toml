@@ -1,0 +1,16 @@
+[package]
+name = "synapse-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Ed25519 agent identity verification, capability-scoped grants, rate/size quotas, and hash-chained security audit log for Synapse"
+
+[dependencies]
+ed25519-dalek.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+synapse-core.workspace = true
