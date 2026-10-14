@@ -1066,15 +1066,25 @@ impl SynapseStore {
     }
 
     /// Append the WAL v2 marker to `wal.log` (switches the store to WAL v2 for good).
+    ///
+    /// Atomic: the current log plus the marker is written to `wal.log.tmp`, synced, and
+    /// renamed over `wal.log`, then the directory is synced. A crash before the rename
+    /// leaves the v1 log untouched (the stray temp file is overwritten next time); after
+    /// it, the complete marker is in place. An in-place append could leave a torn
+    /// 88-byte tail that strict recovery refuses.
     fn write_v2_marker_append(&mut self) -> SynapseResult<()> {
         let header = v2_marker_header(self.committed_seq, self.last_frame_sha256);
-        let mut f = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.wal_path)
-            .map_err(io_err)?;
-        f.write_all(&header).map_err(io_err)?;
-        f.sync_all().map_err(io_err)?;
+        let tmp = self.root_dir.join("wal.log.tmp");
+        {
+            let mut f = File::create(&tmp).map_err(io_err)?;
+            if self.wal_path.exists() {
+                let mut src = File::open(&self.wal_path).map_err(io_err)?;
+                std::io::copy(&mut src, &mut f).map_err(io_err)?;
+            }
+            f.write_all(&header).map_err(io_err)?;
+            f.sync_all().map_err(io_err)?;
+        }
+        fs::rename(&tmp, &self.wal_path).map_err(io_err)?;
         sync_dir(&self.root_dir)?;
         self.v2_mode = true;
         Ok(())
@@ -1393,7 +1403,10 @@ impl SynapseStore {
             }
         }
 
-        // 3. Persist atomic checkpoint file `checkpoint.v1`
+        // 3. Persist atomic checkpoint file `checkpoint.v1`. Every logged frame is made
+        //    durable first, so frames the checkpoint covers are never torn if the process
+        //    dies before the logs are emptied (recovery verifies and skips them).
+        self.sync_wal()?;
         let manifest = CheckpointManifest {
             version: CHECKPOINT_VERSION,
             checkpoint_seq: self.committed_seq,
@@ -1829,14 +1842,22 @@ impl SynapseStore {
             }
         }
 
-        // 2. Replay wal.log (v1 frames, possibly ending in the WAL v2 marker), then wal.v2.log
+        // 2. Replay wal.log (v1 frames, possibly ending in the WAL v2 marker), then wal.v2.log.
+        //    Frames the checkpoint already covers (a crash after the checkpoint rename and
+        //    before the logs were emptied) are verified and skipped.
+        let mut overlap = CheckpointOverlap::default();
         if self.wal_path.exists() {
-            self.recover_v1(recovery_policy)?;
+            self.recover_v1(recovery_policy, &mut overlap)?;
         }
-        self.recover_v2(recovery_policy)
+        self.recover_v2(recovery_policy, &mut overlap)?;
+        overlap.close(self.committed_seq, self.last_frame_sha256)
     }
 
-    fn recover_v1(&mut self, recovery_policy: RecoveryPolicy) -> SynapseResult<()> {
+    fn recover_v1(
+        &mut self,
+        recovery_policy: RecoveryPolicy,
+        overlap: &mut CheckpointOverlap,
+    ) -> SynapseResult<()> {
         let mut f = OpenOptions::new()
             .read(true)
             .write(true)
@@ -1872,20 +1893,30 @@ impl SynapseStore {
                     ));
                 }
                 let seq = WalSeq(u64::from_le_bytes(header[8..16].try_into().unwrap()));
-                if seq != self.committed_seq {
+                let marker_prev: [u8; 32] = header[16..48].try_into().unwrap();
+                // Inside the checkpoint overlap the marker continues the skipped frames; a
+                // marker with nothing skipped before it and below the checkpoint is checked
+                // through the v2 batches that must chain from it up to the anchor.
+                let covered = overlap.covers(seq, self.committed_seq);
+                let (expected_seq, expected_prev) = match overlap.cursor {
+                    Some(cursor) if covered => cursor,
+                    None if covered && seq < self.committed_seq => (seq, marker_prev),
+                    _ => (self.committed_seq, self.last_frame_sha256),
+                };
+                if seq != expected_seq {
                     return Err(SynapseError::new(
                         RefusalCode::WalSequenceGap,
-                        format!(
-                            "WAL v2 marker at {seq} does not follow committed {}",
-                            self.committed_seq
-                        ),
+                        format!("WAL v2 marker at {seq} does not follow {expected_seq}"),
                     ));
                 }
-                if header != v2_marker_header(self.committed_seq, self.last_frame_sha256) {
+                if header != v2_marker_header(expected_seq, expected_prev) {
                     return Err(SynapseError::new(
                         RefusalCode::WalChainMismatch,
                         format!("WAL v2 marker at offset {offset} does not match the chain"),
                     ));
+                }
+                if covered && (overlap.cursor.is_some() || seq < self.committed_seq) {
+                    overlap.cursor = Some((seq, marker_prev));
                 }
                 self.v2_mode = true;
                 break;
@@ -1921,6 +1952,28 @@ impl SynapseStore {
 
             let mut payload = vec![0u8; payload_len as usize];
             f.read_exact(&mut payload).map_err(io_err)?;
+
+            // Frames covered by checkpoint.v1: verify their integrity and their chain,
+            // then skip them (the checkpoint already holds their effects).
+            if overlap.covers(seq, self.committed_seq) {
+                let actual_crc = crc32c(&payload);
+                if actual_crc != expected_crc {
+                    return Err(SynapseError::new(
+                        RefusalCode::WalCrcMismatch,
+                        format!("WAL payload CRC32C mismatch at {seq} (covered by checkpoint)"),
+                    ));
+                }
+                if compute_wal_frame_sha256(&header[0..56], &payload) != expected_frame_sha {
+                    return Err(SynapseError::new(
+                        RefusalCode::WalChainMismatch,
+                        format!("WAL frame_sha256 mismatch at {seq} (covered by checkpoint)"),
+                    ));
+                }
+                overlap.skip(seq, prev_sha, expected_frame_sha)?;
+                offset += WAL_HEADER_LEN as u64 + payload_len;
+                continue;
+            }
+            overlap.close(self.committed_seq, self.last_frame_sha256)?;
 
             // Sequence continuity check
             let expected_seq = self.committed_seq.next();
@@ -2000,7 +2053,11 @@ impl SynapseStore {
     }
 
     /// Replay `wal.v2.log`: whole batches only (all frames valid or none applied).
-    fn recover_v2(&mut self, recovery_policy: RecoveryPolicy) -> SynapseResult<()> {
+    fn recover_v2(
+        &mut self,
+        recovery_policy: RecoveryPolicy,
+        overlap: &mut CheckpointOverlap,
+    ) -> SynapseResult<()> {
         let path = self.root_dir.join(wal2::WAL_V2_FILE);
         if !path.exists() {
             return Ok(());
@@ -2023,6 +2080,36 @@ impl SynapseStore {
             if header_zero && buf[off..].iter().all(|b| *b == 0) {
                 break; // clean end of the log
             }
+            // A batch the checkpoint covers: verify it whole (fail closed on any error, it
+            // was acknowledged before the checkpoint) and skip it.
+            if let Some((_, _, first)) = buf.get(off..off + hlen).and_then(wal2::parse_batch_header)
+            {
+                if overlap.covers(first, self.committed_seq) {
+                    let (expected_seq, expected_prev) = match overlap.cursor {
+                        Some((s, h)) => (s.next(), h),
+                        // Nothing skipped yet: take the chain link the batch states; the
+                        // skipped chain must still end at the checkpoint anchor.
+                        None => (first, wal2::first_frame_prev(&buf, off)),
+                    };
+                    let (frames, next) =
+                        wal2::validate_batch(&buf, off, expected_seq, expected_prev)?;
+                    for fr in &frames {
+                        if fr.seq > self.committed_seq {
+                            return Err(SynapseError::new(
+                                RefusalCode::WalSequenceGap,
+                                format!(
+                                    "WAL v2 batch at {off} straddles checkpoint {} (frame {})",
+                                    self.committed_seq, fr.seq
+                                ),
+                            ));
+                        }
+                        overlap.cursor = Some((fr.seq, fr.frame_sha256));
+                    }
+                    off = next;
+                    continue;
+                }
+            }
+            overlap.close(self.committed_seq, self.last_frame_sha256)?;
             let result = if header_zero {
                 Err(SynapseError::new(
                     RefusalCode::WalTornFrame,
@@ -2115,6 +2202,70 @@ impl SynapseStore {
                 self.torn_frames_truncated_on_open += 1;
                 Ok(())
             }
+        }
+    }
+}
+
+/// Log frames that `checkpoint.v1` already covers, met at the start of replay.
+///
+/// A crash after the checkpoint is renamed into place but before `wal.log` and
+/// `wal.v2.log` are emptied leaves frames with `seq <= checkpoint_seq` in front of the
+/// log. Recovery verifies them (CRC, frame digest, and one unbroken hash chain among
+/// them) and skips them; the skipped chain must end exactly at the checkpoint's sequence
+/// and anchor digest. Skipping is allowed only before the first frame is applied.
+#[derive(Debug, Default)]
+struct CheckpointOverlap {
+    /// Last skipped frame: `(seq, frame_sha256)`.
+    cursor: Option<(WalSeq, [u8; 32])>,
+    /// Set once replay moved past the covered frames.
+    closed: bool,
+}
+
+impl CheckpointOverlap {
+    fn covers(&self, seq: WalSeq, committed: WalSeq) -> bool {
+        !self.closed && seq <= committed
+    }
+
+    /// Record a skipped v1 frame; it must extend the skipped chain.
+    fn skip(&mut self, seq: WalSeq, prev: [u8; 32], frame_sha256: [u8; 32]) -> SynapseResult<()> {
+        if let Some((s, h)) = self.cursor {
+            if seq != s.next() {
+                return Err(SynapseError::new(
+                    RefusalCode::WalSequenceGap,
+                    format!("covered WAL frames jump from {s} to {seq}"),
+                ));
+            }
+            if prev != h {
+                return Err(SynapseError::new(
+                    RefusalCode::WalChainMismatch,
+                    format!("covered WAL frame {seq} does not chain to {s}"),
+                ));
+            }
+        }
+        self.cursor = Some((seq, frame_sha256));
+        Ok(())
+    }
+
+    /// Leave the overlap: the skipped chain, if any, must end at the checkpoint anchor.
+    fn close(&mut self, checkpoint_seq: WalSeq, anchor: [u8; 32]) -> SynapseResult<()> {
+        if self.closed {
+            return Ok(());
+        }
+        self.closed = true;
+        match self.cursor {
+            Some((s, _)) if s != checkpoint_seq => Err(SynapseError::new(
+                RefusalCode::WalSequenceGap,
+                format!(
+                    "frames covered by checkpoint.v1 end at {s}, checkpoint is {checkpoint_seq}"
+                ),
+            )),
+            Some((_, h)) if h != anchor => Err(SynapseError::new(
+                RefusalCode::WalChainMismatch,
+                format!(
+                    "frames covered by checkpoint.v1 do not end at its anchor ({checkpoint_seq})"
+                ),
+            )),
+            _ => Ok(()),
         }
     }
 }

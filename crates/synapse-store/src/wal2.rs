@@ -14,7 +14,9 @@
 //!   each extension, so size and blocks are durable before any batch lands there).
 //! * A batch starts at a 4 KiB-aligned offset with a 64-byte batch header
 //!   (`SWB2`, version 2, record count, body length, first `WalSeq`, CRC-32C of the
-//!   header), followed by `record_count` frames, then zero padding to the next 4 KiB.
+//!   header), followed by `record_count` frames and the 8-byte trailer `SWB2END!` (no
+//!   zero byte in it), then zero padding to the next 4 KiB. The declared body length
+//!   covers the frames and the trailer.
 //! * Each frame keeps the v1 88-byte header layout with `version = 2`. The payload is
 //!   `u32 meta_len | meta (JSON WalRecord) | u32 blob_count | (digest[32] | u32 len |
 //!   bytes)*`. `payload_crc32c` is CRC-32C of the payload. `frame_sha256 =
@@ -25,10 +27,11 @@
 //!
 //! Recovery applies a batch only when every frame in it validates (all or nothing).
 //! The end of the log is the first all-zero batch header followed only by zeros. An
-//! invalid batch is a torn tail only if no valid batch header follows it and the batch
-//! shows torn-write evidence (an all-zero 512-byte sector inside its extent, since the
-//! space was zero before the write); otherwise recovery fails closed with the specific
-//! refusal code. Assumption (UNVERIFIED for this drive): a 512-byte sector write is atomic.
+//! invalid batch is a torn tail only if no valid batch header follows it and the
+//! sector that should hold its end reads back as zeros (see [`torn_evidence`]); the
+//! space was zero before the write and the trailer has no zero byte, so a complete batch
+//! never ends in zeros. Otherwise recovery fails closed with the specific refusal code.
+//! Assumption (UNVERIFIED for this drive): a 512-byte sector write is atomic.
 
 use super::*;
 use std::os::unix::fs::FileExt;
@@ -49,6 +52,9 @@ pub const WAL_V2_BATCH_HEADER_LEN: usize = 64;
 pub const WAL_V2_ALIGN: u64 = 4096;
 /// Sector size used for torn-write evidence.
 pub const WAL_V2_SECTOR: usize = 512;
+/// Last 8 bytes of every batch body. No byte is zero, so the sector holding the end of
+/// a batch is all zero only when that sector never reached the disk.
+pub const WAL_V2_BATCH_TRAILER: [u8; 8] = *b"SWB2END!";
 
 pub(crate) fn align_up(x: u64) -> u64 {
     x.div_ceil(WAL_V2_ALIGN) * WAL_V2_ALIGN
@@ -328,8 +334,9 @@ impl BatchBuilder {
         }
     }
 
-    /// Finish the batch: fill the header and pad to 4 KiB.
+    /// Finish the batch: append the trailer, fill the header and pad to 4 KiB.
     pub fn finish(mut self) -> Vec<u8> {
+        self.buf.extend_from_slice(&WAL_V2_BATCH_TRAILER);
         let body_len = (self.buf.len() - WAL_V2_BATCH_HEADER_LEN) as u64;
         let h = batch_header(self.count, body_len, self.first_seq.unwrap_or(WalSeq::ZERO));
         self.buf[0..WAL_V2_BATCH_HEADER_LEN].copy_from_slice(&h);
@@ -502,7 +509,10 @@ impl WalV2Writer {
                     Ok(()) => Err(BatchFailure::RolledBack(err)),
                     Err(re) => Err(BatchFailure::Poisoned(SynapseError::new(
                         RefusalCode::IoFailure,
-                        format!("{}; rollback failed: {re}", err.message),
+                        format!(
+                            "{}; rollback failed: {re}; the outcome is unknown (the batch may be durable): reopen, then retry with the same idempotency key",
+                            err.message
+                        ),
                     ))),
                 }
             }
@@ -651,10 +661,22 @@ pub(crate) fn validate_batch(
         prev_sha = stored_sha;
         at = p_end;
     }
-    if at != body_end {
+    if at + WAL_V2_BATCH_TRAILER.len() != body_end {
         return Err(torn("batch body length does not match its frames"));
     }
+    if buf[at..body_end] != WAL_V2_BATCH_TRAILER {
+        return Err(torn("batch trailer missing or damaged"));
+    }
     Ok((frames, align_up(body_end as u64) as usize))
+}
+
+/// `prev_frame_sha256` stated by the first frame of the batch at `off` (zeros when the
+/// bytes are missing; validation then fails on its own).
+pub(crate) fn first_frame_prev(buf: &[u8], off: usize) -> [u8; 32] {
+    let at = off + WAL_V2_BATCH_HEADER_LEN;
+    buf.get(at + 16..at + 48)
+        .and_then(|s| s.try_into().ok())
+        .unwrap_or([0u8; 32])
 }
 
 /// True when any 4 KiB-aligned offset at or after `from` holds a valid batch header.
@@ -669,26 +691,41 @@ pub(crate) fn valid_batch_after(buf: &[u8], from: usize) -> bool {
     false
 }
 
-/// Smallest part of a sector inside a batch extent that counts as torn-write evidence.
-const MIN_TORN_SPAN: usize = 64;
-
-/// Torn-write evidence for the batch at `off`: a 512-byte sector whose part inside the
-/// extent the header declares (or up to end of file when the header is unreadable) is
-/// at least 64 bytes long and all zero. The space was zero before the write, so a sector
-/// that never reached the disk reads back as zeros. Limitation: a complete batch whose
-/// content has such a zero run and that is also corrupt is classified as torn.
+/// Torn-write evidence for the batch at `off` (it is invalid, and no valid batch header
+/// follows it). Batches go into space that was zero and synced, one batch in flight at a
+/// time, and every batch ends with the non-zero [`WAL_V2_BATCH_TRAILER`]. So:
+///
+/// * Readable header: torn only if the sector holding the end of the declared extent
+///   reads back all zero inside the extent (that sector never reached the disk; a
+///   complete batch never ends in zeros, however short that last part is), and every
+///   byte after the extent is zero (nothing was written after it). A batch that ends
+///   with its trailer but fails validation is corruption, never truncated, even when its
+///   content holds whole zero sectors.
+/// * Header past the end of the file, or a declared body past it: a short file, torn.
+/// * Unreadable header: torn only if the header's whole sector is zero (lost).
+///
+/// Limitation: a torn write that lost a middle sector but persisted the last one is not
+/// recognised as torn; recovery then fails closed even under `TruncateTornTail`.
 pub(crate) fn torn_evidence(buf: &[u8], off: usize) -> bool {
-    let end = buf
-        .get(off..off + WAL_V2_BATCH_HEADER_LEN)
-        .and_then(parse_batch_header)
-        .and_then(|(_, body, _)| usize::try_from(body).ok())
-        .map(|b| off + WAL_V2_BATCH_HEADER_LEN + b)
-        .unwrap_or(buf.len());
+    let Some(header) = buf.get(off..off + WAL_V2_BATCH_HEADER_LEN) else {
+        return true;
+    };
+    let Some((_, body, _)) = parse_batch_header(header) else {
+        let sector_end = (off + WAL_V2_SECTOR).min(buf.len());
+        return buf[off..sector_end].iter().all(|b| *b == 0);
+    };
+    let Some(end) = usize::try_from(body)
+        .ok()
+        .and_then(|b| (off + WAL_V2_BATCH_HEADER_LEN).checked_add(b))
+    else {
+        return false;
+    };
     if end > buf.len() {
         // The declared body runs past the end of the file: a short (torn) tail.
         return true;
     }
-    buf[off..end]
-        .chunks(WAL_V2_SECTOR)
-        .any(|s| s.len() >= MIN_TORN_SPAN && s.iter().all(|b| *b == 0))
+    let last_sector = ((end - 1) / WAL_V2_SECTOR * WAL_V2_SECTOR).max(off);
+    let lost_end = buf[last_sector..end].iter().all(|b| *b == 0);
+    let nothing_after = buf[end..].iter().all(|b| *b == 0);
+    lost_end && nothing_after
 }

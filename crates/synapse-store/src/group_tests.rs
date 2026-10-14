@@ -475,16 +475,17 @@ fn test_rollback_failure_poisons_store_until_reopen() {
         );
         assert_eq!(store.committed_seq(), WalSeq::ZERO);
     }
-    // Reopen recovers. The failed record's outcome was unknown (its bytes may be on disk);
-    // an idempotent retry resolves it to exactly one copy.
+    // Reopen recovers. The refusal was not proof of non-commit: the batch bytes reached the
+    // file (only the sync and the rollback "failed"), so after reopen the record is there,
+    // and the client's retry with the same idempotency key resolves to that one copy.
     let shared = open_shared(&dir, FsyncPolicy::GROUP_COMMIT_DEFAULT);
     assert!(shared.read().poisoned().is_none());
+    assert_eq!(shared.read().committed_seq(), WalSeq(1));
     let r1 = shared.submit(env1, &blobs1).unwrap();
-    assert!(matches!(
-        r1,
-        IngestOutcome::Committed { wal_seq, .. } | IngestOutcome::IdempotentDuplicate { wal_seq, .. }
-            if wal_seq == WalSeq(1)
-    ));
+    assert!(
+        matches!(r1, IngestOutcome::IdempotentDuplicate { wal_seq, .. } if wal_seq == WalSeq(1)),
+        "retry after a refused-but-durable batch must be an idempotent duplicate: {r1:?}"
+    );
     assert_eq!(
         committed_seq_of(&shared.submit(env2, &blobs2).unwrap()),
         WalSeq(2)
@@ -682,5 +683,350 @@ fn test_subprocess_crash_mid_batch_no_lost_ack_no_phantom() {
         RecoveryPolicy::StrictFailClosed,
     );
     assert_eq!(store.committed_seq(), WalSeq(CRASH_BATCH as u64 + 1));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------------
+// Review fixes: checkpoint crash window, torn-tail rule, atomic upgrade marker.
+// ---------------------------------------------------------------------------
+
+fn read_file(dir: &Path, name: &str) -> Vec<u8> {
+    fs::read(dir.join(name)).unwrap()
+}
+
+fn write_file(dir: &Path, name: &str, bytes: &[u8]) {
+    fs::write(dir.join(name), bytes).unwrap();
+}
+
+fn try_open(
+    dir: &Path,
+    policy: FsyncPolicy,
+    recovery: RecoveryPolicy,
+) -> SynapseResult<SynapseStore> {
+    SynapseStore::open(dir, policy, recovery, StoreLimits::default())
+}
+
+/// Crash after `checkpoint.v1` is renamed into place but before the WAL files are
+/// emptied: the logs still hold frames the checkpoint covers. Reconstructed by putting
+/// the pre-checkpoint log files back next to the new checkpoint.
+#[test]
+fn test_v2_checkpoint_crash_window_reopens_and_skips_covered_frames() {
+    let dir = temp_store_dir("gc-ckpt-window");
+    let key = SigningKey::from_bytes(&[71u8; 32]);
+    let gc = FsyncPolicy::GROUP_COMMIT_DEFAULT;
+    let strict = RecoveryPolicy::StrictFailClosed;
+    {
+        let mut v1 = reopen(&dir, FsyncPolicy::EveryCommit, strict);
+        for i in 1..=2u64 {
+            let (env, blobs) = cs(&key, &format!("cw-{i}"), 300);
+            assert_eq!(
+                committed_seq_of(&v1.ingest_changeset(env, &blobs).unwrap()),
+                WalSeq(i)
+            );
+        }
+    }
+    let (old_wal, old_v2, new_wal, root);
+    {
+        let mut store = reopen(&dir, gc, strict);
+        for i in 3..=5u64 {
+            let (env, blobs) = cs(&key, &format!("cw-{i}"), 300);
+            assert_eq!(
+                committed_seq_of(&store.ingest_changeset(env, &blobs).unwrap()),
+                WalSeq(i)
+            );
+        }
+        old_wal = read_file(&dir, "wal.log");
+        old_v2 = read_file(&dir, wal2::WAL_V2_FILE);
+        root = store.state_root_digest(None).unwrap();
+        let report = store.checkpoint_and_compact(1000).unwrap();
+        assert_eq!(report.checkpoint_seq, WalSeq(5));
+        new_wal = read_file(&dir, "wal.log");
+    }
+    let new_v2 = read_file(&dir, wal2::WAL_V2_FILE);
+
+    // Window 1: checkpoint renamed, wal.log not yet replaced, wal.v2.log not yet reset.
+    // Window 2: wal.log replaced by the marker, wal.v2.log not yet reset.
+    for (label, wal_bytes) in [
+        ("before marker replace", &old_wal),
+        ("before v2 reset", &new_wal),
+    ] {
+        write_file(&dir, "wal.log", wal_bytes);
+        write_file(&dir, wal2::WAL_V2_FILE, &old_v2);
+        let store = try_open(&dir, gc, strict).unwrap_or_else(|e| {
+            panic!("{label}: store must reopen after a checkpoint crash: {e:?}")
+        });
+        assert_eq!(store.committed_seq(), WalSeq(5), "{label}");
+        assert_eq!(store.state_root_digest(None).unwrap(), root, "{label}");
+        assert_all_readable(&store, 5);
+    }
+
+    // New commits land after the covered batches; the next reopen skips, then applies.
+    {
+        let mut store = reopen(&dir, gc, strict);
+        let (env, blobs) = cs(&key, "cw-6", 300);
+        assert_eq!(
+            committed_seq_of(&store.ingest_changeset(env, &blobs).unwrap()),
+            WalSeq(6)
+        );
+    }
+    let store = reopen(&dir, gc, strict);
+    assert_eq!(store.committed_seq(), WalSeq(6));
+    assert_all_readable(&store, 6);
+    drop(store);
+
+    // Negative control: covered frames are verified, not trusted. Damage one byte of the
+    // first covered v2 batch and the store must refuse to open.
+    write_file(&dir, "wal.log", &old_wal);
+    let mut bad = old_v2.clone();
+    bad[wal2::WAL_V2_BATCH_HEADER_LEN + WAL_HEADER_LEN + 20] ^= 0x01;
+    write_file(&dir, wal2::WAL_V2_FILE, &bad);
+    assert!(
+        try_open(&dir, gc, strict).is_err(),
+        "damaged covered frame must be refused"
+    );
+    // Negative control: covered frames that do not end at the checkpoint anchor.
+    write_file(&dir, "wal.log", &old_wal);
+    write_file(&dir, wal2::WAL_V2_FILE, &new_v2);
+    let err = try_open(&dir, gc, strict)
+        .err()
+        .expect("chain short of the checkpoint must be refused");
+    assert!(
+        matches!(
+            err.code,
+            RefusalCode::WalSequenceGap | RefusalCode::WalChainMismatch
+        ),
+        "{err:?}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// Same crash window for a v1 store: checkpoint renamed, `wal.log` not yet truncated.
+#[test]
+fn test_v1_checkpoint_crash_window_reopens_and_skips_covered_frames() {
+    let dir = temp_store_dir("v1-ckpt-window");
+    let key = SigningKey::from_bytes(&[72u8; 32]);
+    let strict = RecoveryPolicy::StrictFailClosed;
+    let (old_wal, root);
+    {
+        let mut store = reopen(&dir, FsyncPolicy::EveryCommit, strict);
+        for i in 1..=3u64 {
+            let (env, blobs) = cs(&key, &format!("v1cw-{i}"), 300);
+            assert_eq!(
+                committed_seq_of(&store.ingest_changeset(env, &blobs).unwrap()),
+                WalSeq(i)
+            );
+        }
+        old_wal = read_file(&dir, "wal.log");
+        root = store.state_root_digest(None).unwrap();
+        store.checkpoint_and_compact(1000).unwrap();
+    }
+    write_file(&dir, "wal.log", &old_wal);
+    {
+        let mut store = try_open(&dir, FsyncPolicy::EveryCommit, strict)
+            .unwrap_or_else(|e| panic!("v1 store must reopen after a checkpoint crash: {e:?}"));
+        assert_eq!(store.committed_seq(), WalSeq(3));
+        assert_eq!(store.state_root_digest(None).unwrap(), root);
+        assert_all_readable(&store, 3);
+        let (env, blobs) = cs(&key, "v1cw-4", 300);
+        assert_eq!(
+            committed_seq_of(&store.ingest_changeset(env, &blobs).unwrap()),
+            WalSeq(4)
+        );
+    }
+    let store = reopen(&dir, FsyncPolicy::EveryCommit, strict);
+    assert_eq!(store.committed_seq(), WalSeq(4));
+    assert_all_readable(&store, 4);
+    drop(store);
+    // Negative control: a damaged covered frame is refused.
+    let mut bad = old_wal.clone();
+    bad[WAL_HEADER_LEN + 10] ^= 0x01;
+    write_file(&dir, "wal.log", &bad);
+    assert!(try_open(&dir, FsyncPolicy::EveryCommit, strict).is_err());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// (offset, declared end) of the WAL v2 batch at `off`.
+fn batch_extent(v2: &[u8], off: usize) -> (usize, usize) {
+    let (_, body, _) = wal2::parse_batch_header(&v2[off..off + wal2::WAL_V2_BATCH_HEADER_LEN])
+        .expect("valid batch header");
+    (off, off + wal2::WAL_V2_BATCH_HEADER_LEN + body as usize)
+}
+
+/// Commit one base record and one record with a content of `blob_len` bytes; return the
+/// second batch's extent.
+fn two_batches(dir: &Path, key: &SigningKey, label: &str, content: &[u8]) -> (usize, usize) {
+    let mut store = reopen(
+        dir,
+        FsyncPolicy::GROUP_COMMIT_DEFAULT,
+        RecoveryPolicy::StrictFailClosed,
+    );
+    let (env, blobs) = cs(key, &format!("{label}-base"), 100);
+    store.ingest_changeset(env, &blobs).unwrap();
+    let (env, blobs) = make_signed_changeset(
+        key,
+        label,
+        &format!("src/{label}.bin"),
+        content,
+        vec![],
+        1000,
+    );
+    assert_eq!(
+        committed_seq_of(&store.ingest_changeset(env, &blobs).unwrap()),
+        WalSeq(2)
+    );
+    drop(store);
+    let v2 = read_file(dir, wal2::WAL_V2_FILE);
+    let (_, first_end) = batch_extent(&v2, 0);
+    batch_extent(&v2, wal2::align_up(first_end as u64) as usize)
+}
+
+fn letters(n: usize) -> Vec<u8> {
+    (0..n).map(|i| b'a' + (i * 7 % 26) as u8).collect()
+}
+
+/// A torn last batch whose lost final sector holds fewer than 64 bytes of the batch is
+/// still recognised as torn: strict open refuses it, `TruncateTornTail` drops it.
+#[test]
+fn test_torn_last_sector_with_short_tail_is_truncatable() {
+    let key = SigningKey::from_bytes(&[73u8; 32]);
+    // Search a content length that leaves 9 to 63 bytes of the batch (more than the
+    // trailer, less than 64) in its last 512-byte sector (the encoded size is not exactly linear in the content length).
+    let mut len: i64 = 2000;
+    let mut found = None;
+    for attempt in 0..16 {
+        let dir = temp_store_dir(&format!("gc-short-tail-{attempt}"));
+        let (start, end) = two_batches(&dir, &key, "short-tail", &letters(len as usize));
+        let tail = (end % wal2::WAL_V2_SECTOR) as i64;
+        if (9..=63).contains(&tail) {
+            found = Some((dir, start, end));
+            break;
+        }
+        let _ = fs::remove_dir_all(&dir);
+        let mut diff = (36 - tail).rem_euclid(512);
+        if diff > 256 {
+            diff -= 512;
+        }
+        len += diff.signum() * (diff.abs() * 7 / 8).max(1);
+    }
+    let (dir, start, end) =
+        found.expect("test setup: no content length ends 9 to 63 bytes into a sector");
+    let tail = end % wal2::WAL_V2_SECTOR;
+    let last_sector = end - tail;
+    assert!(last_sector > start);
+    // The last sector never reached the disk.
+    let mut v2 = read_file(&dir, wal2::WAL_V2_FILE);
+    v2[last_sector..end].fill(0);
+    write_file(&dir, wal2::WAL_V2_FILE, &v2);
+
+    let err = try_open(
+        &dir,
+        FsyncPolicy::GROUP_COMMIT_DEFAULT,
+        RecoveryPolicy::StrictFailClosed,
+    )
+    .err()
+    .expect("strict open must refuse a torn tail");
+    assert_eq!(err.code, RefusalCode::WalTornFrame, "{err:?}");
+    let store = try_open(
+        &dir,
+        FsyncPolicy::GROUP_COMMIT_DEFAULT,
+        RecoveryPolicy::TruncateTornTail,
+    )
+    .unwrap_or_else(|e| panic!("TruncateTornTail must drop the torn last batch: {e:?}"));
+    assert_eq!(store.committed_seq(), WalSeq(1));
+    drop(store);
+    let store = reopen(
+        &dir,
+        FsyncPolicy::GROUP_COMMIT_DEFAULT,
+        RecoveryPolicy::StrictFailClosed,
+    );
+    assert_eq!(store.committed_seq(), WalSeq(1));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// Bit rot in an acknowledged last batch whose blob holds a whole zero sector is not a
+/// torn write: both policies refuse to open and nothing is dropped.
+#[test]
+fn test_corrupt_last_batch_with_zero_sector_in_blob_is_not_dropped() {
+    let key = SigningKey::from_bytes(&[74u8; 32]);
+    let dir = temp_store_dir("gc-rot-zero-run");
+    let mut content = b"// zero run\n".to_vec();
+    content.extend(std::iter::repeat_n(0u8, 2048));
+    content.extend_from_slice(b"ROTMARK");
+    content.extend(letters(600));
+    let (start, end) = two_batches(&dir, &key, "rot", &content);
+    let mut v2 = read_file(&dir, wal2::WAL_V2_FILE);
+    // The acknowledged batch contains an aligned all-zero sector (blob content).
+    assert!(v2[start..end]
+        .chunks(wal2::WAL_V2_SECTOR)
+        .any(|s| s.len() == wal2::WAL_V2_SECTOR && s.iter().all(|b| *b == 0)));
+    let at = start
+        + v2[start..end]
+            .windows(7)
+            .position(|w| w == b"ROTMARK")
+            .expect("blob bytes are inline in the batch");
+    v2[at] ^= 0x04; // one flipped bit
+    write_file(&dir, wal2::WAL_V2_FILE, &v2);
+
+    for recovery in [
+        RecoveryPolicy::StrictFailClosed,
+        RecoveryPolicy::TruncateTornTail,
+    ] {
+        let err = try_open(&dir, FsyncPolicy::GROUP_COMMIT_DEFAULT, recovery)
+            .err()
+            .unwrap_or_else(|| panic!("{recovery:?} must refuse a corrupt acknowledged batch"));
+        assert_ne!(err.code, RefusalCode::WalTornFrame, "{recovery:?}: {err:?}");
+    }
+    assert_eq!(
+        read_file(&dir, wal2::WAL_V2_FILE),
+        v2,
+        "nothing was truncated"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The v1 to v2 upgrade replaces `wal.log` atomically: a crash while the new file is
+/// being written leaves only a stray temp file, and both the old v1 store and a later
+/// upgrade open cleanly.
+#[test]
+fn test_v2_upgrade_marker_is_atomic_and_survives_a_stray_temp_file() {
+    let dir = temp_store_dir("gc-upgrade-atomic");
+    let key = SigningKey::from_bytes(&[75u8; 32]);
+    let strict = RecoveryPolicy::StrictFailClosed;
+    let root;
+    {
+        let mut v1 = reopen(&dir, FsyncPolicy::EveryCommit, strict);
+        for i in 1..=2u64 {
+            let (env, blobs) = cs(&key, &format!("ua-{i}"), 200);
+            assert_eq!(
+                committed_seq_of(&v1.ingest_changeset(env, &blobs).unwrap()),
+                WalSeq(i)
+            );
+        }
+        root = v1.state_root_digest(None).unwrap();
+    }
+    let v1_wal = read_file(&dir, "wal.log");
+    // Crash mid-upgrade: a partial copy with half a marker sits next to the old log.
+    let mut partial = v1_wal.clone();
+    partial.extend_from_slice(&[0x53u8; 40]);
+    write_file(&dir, "wal.log.tmp", &partial);
+    {
+        let store = reopen(&dir, FsyncPolicy::EveryCommit, strict);
+        assert_eq!(store.committed_seq(), WalSeq(2));
+        assert!(!store.is_wal_v2());
+    }
+    assert_eq!(read_file(&dir, "wal.log"), v1_wal);
+    {
+        let store = reopen(&dir, FsyncPolicy::GROUP_COMMIT_DEFAULT, strict);
+        assert!(store.is_wal_v2());
+        assert_eq!(store.committed_seq(), WalSeq(2));
+        assert_eq!(store.state_root_digest(None).unwrap(), root);
+    }
+    assert!(!dir.join("wal.log.tmp").exists());
+    let upgraded = read_file(&dir, "wal.log");
+    assert_eq!(upgraded.len(), v1_wal.len() + WAL_HEADER_LEN);
+    assert_eq!(&upgraded[..v1_wal.len()], &v1_wal[..]);
+    let store = reopen(&dir, FsyncPolicy::GROUP_COMMIT_DEFAULT, strict);
+    assert_eq!(store.committed_seq(), WalSeq(2));
+    assert_all_readable(&store, 2);
     let _ = fs::remove_dir_all(&dir);
 }

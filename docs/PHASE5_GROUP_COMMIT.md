@@ -24,10 +24,32 @@ synced. Concretely (`crates/synapse-store/src/shared.rs`, `wal2.rs`):
 - Waiters are released only after `v2_finish` has advanced the durable watermark. The test-only
   `ack_log` records release order so tests can check it.
 
-On-disk format: `wal.v2.log`, 4 KiB aligned batches with a 64-byte `SWB2` header and CRC-32C per frame.
-A version marker frame appended to the legacy `wal.log` makes older fsync policies refuse the store
-(`WalVersionUnsupported`) instead of silently ignoring v2 data. Torn tails are detected by CRC; strict
-open refuses them, `TruncateTornTail` drops the whole unfinished batch.
+On-disk format: `wal.v2.log`, 4 KiB aligned batches with a 64-byte `SWB2` header, CRC-32C per frame,
+and an 8-byte trailer `SWB2END!` (no zero byte) closing every batch. A version marker frame added to
+the legacy `wal.log` makes older fsync policies refuse the store (`WalVersionUnsupported`) instead of
+silently ignoring v2 data. The upgrade writes the old log plus the marker to `wal.log.tmp`, syncs it,
+renames it over `wal.log` and syncs the directory, so a crash leaves either the v1 store or the
+complete marker.
+
+Torn tail rule: an invalid batch is a torn tail only when no valid batch follows it, the sector
+holding the end of its declared extent reads back all zero, and every byte after it is zero (or its
+header's whole sector is zero). The space was zero before the write and the trailer has no zero
+byte, so a complete batch never ends in zeros, however few bytes of it sit in the last sector.
+Strict open refuses a torn tail; `TruncateTornTail` drops that whole batch. A batch that still ends
+in its trailer but fails validation is corruption, and both policies refuse it, even when its blobs
+contain whole zero sectors.
+
+Checkpoint crash window: `checkpoint_and_compact` syncs the WAL, renames `checkpoint.v1` into place,
+then empties the logs. A crash between the rename and the emptying leaves frames the checkpoint
+already covers. Recovery verifies them (CRC, frame digest, one unbroken hash chain that must end at
+the checkpoint's sequence and anchor digest) and skips them, for `wal.log` (v1 frames and the v2
+marker) and `wal.v2.log` alike. Skipping is allowed only before the first frame is applied.
+
+Unknown outcome: a refusal is not proof of non-commit. When a batch's rollback fails (the store is
+then poisoned) or the leader dies after its write, callers get `IoFailure` although the batch may be
+durable. Clients must reopen and retry with the same idempotency key; the retry returns
+`IdempotentDuplicate` if the first attempt landed and commits exactly once otherwise
+(`SharedStore::submit` documents this, and the error message says so).
 
 API edit: `SynapseService::submit` was split into `admit_submit` (authorization and checks) and
 `index_submitted` (index update) with unchanged behaviour, so the bench can run admission, then
@@ -35,7 +57,7 @@ API edit: `SynapseService::submit` was split into `admit_submit` (authorization 
 
 ## 3. Tests and Red-Before-Green Evidence
 
-`crates/synapse-store/src/group_tests.rs`, 16 tests in the store crate pass:
+`crates/synapse-store/src/group_tests.rs` (15 tests; the store crate runs 21, all pass):
 
 | Test | What it proves |
 | :--- | :--- |
@@ -46,9 +68,14 @@ API edit: `SynapseService::submit` was split into `admit_submit` (authorization 
 | `test_duplicate_idempotency_keys_inside_one_batch` | Same key twice in one batch commits once |
 | `test_injected_sync_failure_acks_nothing_and_retry_commits_once` | Failed `fdatasync`: no ack, nothing visible after reopen, retry commits once |
 | `test_injected_write_failure_acks_nothing_and_retry_commits_once` | Partial write (1500 bytes): same as above |
-| `test_rollback_failure_poisons_store_until_reopen` | Sync and rollback both fail: store refuses work until reopen |
+| `test_rollback_failure_poisons_store_until_reopen` | Sync and rollback both fail: store refuses work until reopen; after reopen the refused record is there and the retry is `IdempotentDuplicate` |
 | `test_shutdown_drains_queued_submissions_and_refuses_new_ones` | Queued work finishes, new work refused |
 | `test_subprocess_crash_mid_batch_no_lost_ack_no_phantom` | Child process exits mid-batch write; every ack survives, no unacked change appears |
+| `test_v2_checkpoint_crash_window_reopens_and_skips_covered_frames` | Crash after the checkpoint rename, before `wal.log` is replaced and before `wal.v2.log` is reset: reopens with the same state, new commits follow; a damaged covered frame or a covered chain short of the anchor is refused |
+| `test_v1_checkpoint_crash_window_reopens_and_skips_covered_frames` | Same window for a v1 store (before `wal.log` is truncated) |
+| `test_torn_last_sector_with_short_tail_is_truncatable` | Last batch ends 9 to 63 bytes into its last sector and that sector is lost: strict refuses (`WalTornFrame`), `TruncateTornTail` drops only that batch |
+| `test_corrupt_last_batch_with_zero_sector_in_blob_is_not_dropped` | One flipped bit in an acknowledged last batch whose blob holds whole zero sectors: both policies refuse, nothing truncated |
+| `test_v2_upgrade_marker_is_atomic_and_survives_a_stray_temp_file` | A crash mid-upgrade leaves the v1 store intact; the upgrade then completes |
 
 Red runs (code deliberately broken, logs in `evidence/phase5-group-commit/red-green/`; each mutation
 was reverted from a saved copy):
@@ -61,6 +88,14 @@ was reverted from a saved copy):
    wal:8 while the durable watermark was wal:1" and "no waiter of a failed batch is acknowledged".
 
 Green: all three restored; full store suite 16/16, three consecutive runs.
+
+Review fixes (independent review of PR #18), red on the unfixed code, then green (`red-green/review-red.txt`, `review-green.txt`):
+
+4. Checkpoint crash window: both crash-window tests fail before the fix with `WalSequenceGap` ("expected wal:6, found wal:1" for v2, "expected wal:4, found wal:1" for v1): the store could never be opened again.
+5. Torn tail rule: before the fix the short-tail test fails because the lost sector is not recognised as torn (strict open returns `WalCrcMismatch` instead of `WalTornFrame`, so `TruncateTornTail` refuses to open too), and the bit-rot test fails because the corrupt acknowledged batch is classified as torn (`WalTornFrame`), which `TruncateTornTail` would drop.
+6. Atomic upgrade: before the fix the upgrade appended in place (the stray-temp-file test fails on its `wal.log.tmp` check).
+
+Green: store crate 21/21, three consecutive runs.
 
 ## 4. Measurement Method
 
@@ -103,7 +138,13 @@ Floor per change at N agents (assumptions: ext4 file, not raw block device; the 
 measured; all N changes share one sync; the essential CPU work runs on 20 cores in parallel):
 
 - t_floor(N) = max(0.805 ms, 0.055 ms x ceil(N/20)) / N + 11 500 B x 0.138 s/GiB
-- E_floor(N) = 22.755 W x t_floor(N) + 0.2504 mJ (above-idle energy of verify, sign, blob digest, CRC)
+- E_floor(N) = 22.755 W x t_floor(N) + 0.2752 mJ (above-idle energy of verify, sign, blob digest and CRC)
+
+One idle baseline throughout: the sweep's 30 s idle window, 22.755 W. `floor.json` stores
+per-operation above-idle energy against its own 5 s idle window (23.19 W), which gives 0.2504 mJ for
+the same four operations; re-based to 22.755 W (per operation: package joules minus 22.755 W times
+the operation's share of its window) they sum to 0.2752 mJ: verify 0.0913, sign 0.0163, blob digest
+0.1650, CRC 0.0027 mJ. `floor.json` itself is unchanged.
 
 "Fraction of floor" = floor / measured. 1.0 would mean running at the floor.
 
@@ -111,14 +152,14 @@ measured; all N changes share one sync; the essential CPU work runs on 20 cores 
 
 | Arm | Agents | s per change | floor | fraction | J per change (pkg) | floor | fraction | above idle | mean W |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| S1 | 1 | 13.784 ms | 0.807 ms | 0.059 | 366.1 mJ | 18.60 mJ | 0.051 | 43.2 mJ | 25.8 |
-| S3 | 1 | 2.010 ms | 0.807 ms | 0.401 | 50.1 mJ | 18.60 mJ | 0.371 | 3.4 mJ | 24.4 |
-| S1 | 4 | 13.817 ms | 0.203 ms | 0.015 | 382.0 mJ | 4.86 mJ | 0.013 | 67.6 mJ | 27.6 |
-| S3 | 4 | 0.718 ms | 0.203 ms | 0.282 | 20.3 mJ | 4.86 mJ | 0.239 | 4.0 mJ | 28.3 |
-| S1 | 8 | 13.916 ms | 0.102 ms | 0.007 | 357.6 mJ | 2.57 mJ | 0.007 | 40.2 mJ | 25.6 |
-| S3 | 8 | 0.398 ms | 0.102 ms | 0.257 | 14.1 mJ | 2.57 mJ | 0.183 | 5.1 mJ | 35.5 |
-| S1 | 32 | 13.892 ms | 0.027 ms | 0.002 | 350.8 mJ | 0.86 mJ | 0.002 | 27.3 mJ | 24.7 |
-| S3 | 32 | 0.348 ms | 0.027 ms | 0.077 | 11.3 mJ | 0.86 mJ | 0.076 | 3.4 mJ | 32.5 |
+| S1 | 1 | 13.784 ms | 0.806 ms | 0.059 | 366.1 mJ | 18.63 mJ | 0.051 | 43.2 mJ | 25.8 |
+| S3 | 1 | 2.010 ms | 0.806 ms | 0.401 | 50.1 mJ | 18.63 mJ | 0.372 | 3.4 mJ | 24.4 |
+| S1 | 4 | 13.817 ms | 0.203 ms | 0.015 | 382.0 mJ | 4.89 mJ | 0.013 | 67.6 mJ | 27.6 |
+| S3 | 4 | 0.718 ms | 0.203 ms | 0.282 | 20.3 mJ | 4.89 mJ | 0.241 | 4.0 mJ | 28.3 |
+| S1 | 8 | 13.916 ms | 0.102 ms | 0.007 | 357.6 mJ | 2.60 mJ | 0.007 | 40.2 mJ | 25.6 |
+| S3 | 8 | 0.398 ms | 0.102 ms | 0.257 | 14.1 mJ | 2.60 mJ | 0.185 | 5.1 mJ | 35.5 |
+| S1 | 32 | 13.892 ms | 0.027 ms | 0.002 | 350.8 mJ | 0.88 mJ | 0.003 | 27.3 mJ | 24.7 |
+| S3 | 32 | 0.348 ms | 0.027 ms | 0.077 | 11.3 mJ | 0.88 mJ | 0.078 | 3.4 mJ | 32.5 |
 
 - Gate 4 S1 for reference (`docs/GATE4_QUALIFICATION.md`): 13.79, 14.33, 13.58, 14.38 ms per change at
   1, 4, 8, 32 agents. This run's S1 agrees.
@@ -147,10 +188,19 @@ measured; all N changes share one sync; the essential CPU work runs on 20 cores 
 - Other work was running on the host (load average about 2 during the idle window).
 - One run, one host, one filesystem. No confidence intervals beyond min and max of 3 repetitions.
 - 512-byte sector write atomicity on this drive is UNVERIFIED; the torn-tail rule assumes it.
+- A torn write that lost a middle sector of the last batch but persisted its final sector is not
+  recognised as torn: recovery then refuses to open under both policies (fails closed; an operator
+  must inspect). A corrupt last batch whose final sector became all zero would be taken as torn and
+  dropped; that needs the whole final sector zeroed, not bit rot.
+- A refused submit (`IoFailure`) can still be durable after a failed rollback or a leader failure;
+  only a retry with the same idempotency key settles it.
 - The crash test kills a process; it cannot detect a missing fsync. Power loss was not tested.
 - In S3 the service's own store is opened but unused; `SharedStore` is not yet wired into
   `SynapseService`'s read path. The 64 MiB WAL pre-write happens during setup, outside the timed window.
-- The measured binary is `de17a0a`; later commits on the branch change only comments, docs and evidence.
+- The measured binary is `de17a0a`. The review fixes came after it and were not re-measured: an
+  8-byte trailer per batch (one more 8-byte copy in the one write per batch), one WAL sync at the start
+  of each checkpoint, and recovery-only logic. None of them is in the timed write path beyond the
+  trailer.
 - The floor model is a lower bound under the stated assumptions, not a proven physical limit.
 
 ## 9. Reproduction

@@ -96,7 +96,7 @@ impl Drop for LeaderGuard<'_> {
             if g.is_none() {
                 *g = Some(Err(refusal(
                     RefusalCode::IoFailure,
-                    "group commit leader failed mid-batch; the store refuses writes until reopened",
+                    "group commit leader failed mid-batch; the outcome is unknown (the batch may be durable): reopen, then retry with the same idempotency key",
                 )));
             }
         }
@@ -229,6 +229,12 @@ impl SharedStore {
 
     /// Submit a changeset. Returns after the record is durable (or refused). Safe to call
     /// from many threads at once; concurrent calls share one WAL sync per batch.
+    ///
+    /// A refusal is not proof that nothing was committed. When the batch rollback fails
+    /// (the store is then poisoned) or the leader dies after its write, the caller gets
+    /// `IoFailure` although the batch may already be durable. Clients must reopen and
+    /// retry with the same idempotency key; the retry returns `IdempotentDuplicate` if the
+    /// first attempt did land, and commits exactly once otherwise.
     pub fn submit(
         &self,
         envelope: ChangesetEnvelope,
