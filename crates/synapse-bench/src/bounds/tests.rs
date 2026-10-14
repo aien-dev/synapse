@@ -356,7 +356,25 @@ fn sealed(p: &Protocol) -> PathBuf {
     fs::write(dir.join(PROTOCOL_FILE), &pb).unwrap();
     fs::write(dir.join(RAW_FILE), &raw).unwrap();
     fs::write(dir.join(REPORT_FILE), &report).unwrap();
+    write_sums(&dir, &[PROTOCOL_FILE, RAW_FILE, REPORT_FILE]);
     dir
+}
+
+/// Writes `SHA256SUMS` in the `sha256sum` format over `names`.
+fn write_sums(dir: &Path, names: &[&str]) {
+    let text: String = names
+        .iter()
+        .map(|n| format!("{}  {n}\n", sha256_hex(&fs::read(dir.join(n)).unwrap())))
+        .collect();
+    fs::write(dir.join("SHA256SUMS"), text).unwrap();
+}
+
+/// Rewrites `report.json` so it is consistent with the (edited) raw data again.
+fn reseal_report(dir: &Path) {
+    let pb = fs::read(dir.join(PROTOCOL_FILE)).unwrap();
+    let raw = fs::read(dir.join(RAW_FILE)).unwrap();
+    let report = serde_json::to_vec_pretty(&compute_report(&pb, &raw).unwrap()).unwrap();
+    fs::write(dir.join(REPORT_FILE), report).unwrap();
 }
 
 fn edit_raw(dir: &Path, f: impl FnOnce(&mut RawEvidence)) {
@@ -464,6 +482,102 @@ fn verify_refuses_dropped_extra_or_resized_repetitions() {
         "work other than the protocol's must not verify: {:?}",
         verify_evidence(&dir)
     );
+}
+
+#[test]
+fn verify_checks_sha256sums_not_only_consistency() {
+    // Edit raw.json and regenerate a consistent report.json: consistency alone would
+    // verify, so the sealed checksums must catch it.
+    let dir = sealed(&small_protocol());
+    edit_raw(&dir, |r| r.runs[1].elapsed_ns += 1);
+    reseal_report(&dir);
+    let err = verify_evidence(&dir).map(|_| ()).unwrap_err().to_string();
+    assert!(err.starts_with("CHECKSUM_MISMATCH"), "{err}");
+    assert!(err.contains(RAW_FILE), "{err}");
+
+    // No SHA256SUMS at all.
+    let dir = sealed(&small_protocol());
+    fs::remove_file(dir.join("SHA256SUMS")).unwrap();
+    let err = verify_evidence(&dir).map(|_| ()).unwrap_err().to_string();
+    assert!(err.starts_with("CHECKSUMS_MISSING"), "{err}");
+
+    // SHA256SUMS that leaves out one of the three sealed files.
+    let dir = sealed(&small_protocol());
+    write_sums(&dir, &[PROTOCOL_FILE, RAW_FILE]);
+    let err = verify_evidence(&dir).map(|_| ()).unwrap_err().to_string();
+    assert!(err.starts_with("CHECKSUMS_MISSING"), "{err}");
+    assert!(err.contains(REPORT_FILE), "{err}");
+
+    // Every listed file is checked, not only the three sealed ones.
+    let dir = sealed(&small_protocol());
+    fs::write(dir.join("note.txt"), "log").unwrap();
+    write_sums(&dir, &[PROTOCOL_FILE, RAW_FILE, REPORT_FILE, "note.txt"]);
+    verify_evidence(&dir).expect("listed extra file matches");
+    fs::write(dir.join("note.txt"), "edited log").unwrap();
+    let err = verify_evidence(&dir).map(|_| ()).unwrap_err().to_string();
+    assert!(err.starts_with("CHECKSUM_MISMATCH"), "{err}");
+}
+
+#[test]
+fn errored_repetitions_are_counted_and_refused_beyond_the_protocol_allowance() {
+    let p = small_protocol();
+    let pb = serde_json::to_vec_pretty(&p).unwrap();
+    let clean = serde_json::to_vec_pretty(&synthetic_raw(&p, &pb)).unwrap();
+    let report = serde_json::to_value(compute_report(&pb, &clean).unwrap()).unwrap();
+    assert_eq!(report["excluded_repetitions"], 0, "count is always reported");
+
+    // Protocol v1 allows no excluded repetitions: a run marked `error` (which skips
+    // its work) must not quietly drop out of the statistics.
+    let mut raw = synthetic_raw(&p, &pb);
+    let i = raw
+        .runs
+        .iter()
+        .position(|r| r.probe == ProbeKind::MemoryRead && r.rep == 2)
+        .unwrap();
+    raw.runs[i].error = Some("synthetic failure".into());
+    raw.runs[i].work_units = 0;
+    let raw = serde_json::to_vec_pretty(&raw).unwrap();
+    let err = compute_report(&pb, &raw).map(|_| ()).unwrap_err().to_string();
+    assert!(err.starts_with("EXCLUDED_REPETITIONS"), "{err}");
+    assert!(err.contains("MemoryRead rep 2"), "{err}");
+}
+
+#[test]
+fn measured_rates_are_labelled_achieved_never_bounds() {
+    let p = small_protocol();
+    let pb = serde_json::to_vec_pretty(&p).unwrap();
+    let raw = serde_json::to_vec_pretty(&synthetic_raw(&p, &pb)).unwrap();
+    let report = serde_json::to_value(compute_report(&pb, &raw).unwrap()).unwrap();
+    let inputs = report["bound_inputs"].as_array().unwrap();
+    let kind = |name: &str| {
+        inputs
+            .iter()
+            .find(|b| b["name"] == name)
+            .unwrap_or_else(|| panic!("{name}"))["kind"]
+            .clone()
+    };
+    for name in [
+        "memory_read_bandwidth",
+        "memory_copy_bandwidth",
+        "device_write_bandwidth",
+        "device_read_bandwidth",
+    ] {
+        assert_eq!(kind(name), "achieved (lower bound on capability)", "{name}");
+    }
+    for name in [
+        "sha256_all_core_throughput",
+        "ed25519_verify_all_core_throughput",
+    ] {
+        assert_eq!(
+            kind(name),
+            "implementation reference (section 6.2 replacement rule)",
+            "{name}"
+        );
+    }
+    // Any other label, such as calling a measurement a hardware bound, is refused.
+    let mut forged = report.clone();
+    forged["bound_inputs"][0]["kind"] = "hardware measurement".into();
+    assert!(serde_json::from_value::<Report>(forged).is_err());
 }
 
 #[test]
