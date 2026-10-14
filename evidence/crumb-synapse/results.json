@@ -1,12 +1,12 @@
 {
   "schema": "synapse-crumb-synapse-qualification/v1",
   "issue": "https://github.com/aien-spark/synapse/issues/12",
-  "synapse_commit": "921b245c69ebaecd2ae3ca1df2ab0adaad5e5b8b",
+  "synapse_commit": "9c994d3edc438477228854bee5446cd46d8f74fc",
   "source_tree": "clean",
   "crumb_c": {"repo": "aien-dev/aien-architecture", "commit": "29780e56c9e6b9111d884e0d4b146737228c19f6", "sha256": "ef0f6566fb838917a750eb898f66596b76aa15a53d7d61bedac03c4c963ee147"},
-  "started_at_utc": "2026-10-14T18:14:38Z",
-  "finished_at_utc": "2026-10-14T18:14:54Z",
-  "suite": {"exit": 0, "summary": "test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.96s"},
+  "started_at_utc": "2026-10-14T18:18:08Z",
+  "finished_at_utc": "2026-10-14T18:18:19Z",
+  "suite": {"exit": 0, "summary": "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.93s"},
   "scenarios": [
     {"id": "S01", "status": "PASS", "detail": "bob's claim on src/a.rs refused (held by alice); bob's advisory shows alice's claim and alice's open proposal"},
     {"id": "S02", "status": "PASS", "detail": "separate files: both claims granted; advisory has no claims, overlaps, pending .crumb changes or staleness"},
@@ -22,7 +22,6 @@
     {"id": "S12", "status": "PASS", "detail": "advisory read (no foreign claims) + Current Pass receipt: GitHub PR projection refused without Publish (AuthCapabilityDenied, author and runner); Radicle promotion refused without delegate quorum (none / runner / author sigrefs); both open only for a Publish grant / delegate sigrefs. AEGIS not integrated (separate repo)"}
   ],
   "defects": [
-    {"test": "s05_defect_fifo_record_hangs_advisory", "status": "DEFECT", "detail": "still reproduces; https://github.com/aien-spark/synapse/issues/58"}
   ],
   "parity": {"exit": 0, "summary": "PARITY OK: crumb.c output matches the golden files"},
   "interop": {"exit": 0, "summary": "interop: 28 passed, 0 failed"},
