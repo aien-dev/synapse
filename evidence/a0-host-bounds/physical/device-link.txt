@@ -1,0 +1,26 @@
+# Device under the A0 device probes, read from sysfs on the same host after the sealed run
+# (raw.json host.work_dir_source = /dev/nvme0n1p2). Captured 2026-10-14T18:33:01Z.
+$ cat /sys/class/nvme/nvme0/{model,firmware_rev}
+SAMSUNG MZALC4T0HBL1-00B07              
+NXHB202Q
+$ readlink -f /sys/class/nvme/nvme0/device
+/sys/devices/pci0004:00/0004:00:00.0/0004:01:00.0
+$ ls /sys/class/nvme/nvme0/ | grep nvme0n1; lsblk -no PKNAME /dev/nvme0n1p2
+nvme0n1
+nvme0n1
+$ cat /sys/devices/pci0004:00/0004:00:00.0/0004:01:00.0/vendor
+0x144d
+$ cat /sys/devices/pci0004:00/0004:00:00.0/0004:01:00.0/device
+0xa810
+$ cat /sys/devices/pci0004:00/0004:00:00.0/0004:01:00.0/subsystem_vendor
+0x144d
+$ cat /sys/devices/pci0004:00/0004:00:00.0/0004:01:00.0/subsystem_device
+0xa801
+$ cat /sys/devices/pci0004:00/0004:00:00.0/0004:01:00.0/current_link_speed
+32.0 GT/s PCIe
+$ cat /sys/devices/pci0004:00/0004:00:00.0/0004:01:00.0/current_link_width
+4
+$ cat /sys/devices/pci0004:00/0004:00:00.0/0004:01:00.0/max_link_speed
+32.0 GT/s PCIe
+$ cat /sys/devices/pci0004:00/0004:00:00.0/0004:01:00.0/max_link_width
+4

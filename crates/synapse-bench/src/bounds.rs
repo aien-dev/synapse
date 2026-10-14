@@ -14,7 +14,13 @@
 //!   and every run must have exactly the work the protocol fixed.
 //! - `raw.json` holds integers only (nanoseconds, work units, microjoule counter
 //!   readings), so `report.json` is a pure function of the protocol and raw bytes, and
-//!   [`verify_evidence`] recomputes it byte for byte.
+//!   [`verify_evidence`] recomputes it byte for byte and checks every file listed in
+//!   `SHA256SUMS`. That proves consistency only; authenticity comes from
+//!   the git history and review of the sealing commit.
+//! - A repetition marked `error` is excluded and counted in the report; protocol v1
+//!   allows none, so any excluded repetition refuses the report.
+//! - Rates measured here are labelled achieved (a lower bound on the hardware's
+//!   capability), never the bound itself; see [`BoundInputKind`].
 //! - Energy preflight runs before anything else: without a working `aien_spbm` meter
 //!   the run refuses with `INSTRUMENT_UNAVAILABLE` and writes nothing.
 //!
@@ -41,12 +47,17 @@ use std::time::{Duration, Instant};
 pub const INSTRUMENT_UNAVAILABLE: &str = "INSTRUMENT_UNAVAILABLE";
 pub const PROTOCOL_SCHEMA: &str = "synapse-bench/a0-host-bounds-protocol/v1";
 pub const RAW_SCHEMA: &str = "synapse-bench/a0-host-bounds-raw/v1";
-pub const REPORT_SCHEMA: &str = "synapse-bench/a0-host-bounds-report/v1";
+pub const REPORT_SCHEMA: &str = "synapse-bench/a0-host-bounds-report/v2";
 /// A range needs at least three repetitions to say anything about spread.
 pub const MIN_REPETITIONS: u32 = 3;
 pub const PROTOCOL_FILE: &str = "protocol.json";
 pub const RAW_FILE: &str = "raw.json";
 pub const REPORT_FILE: &str = "report.json";
+/// Checksums of the sealed files, in the `sha256sum` format.
+pub const SUMS_FILE: &str = "SHA256SUMS";
+/// Repetitions a protocol v1 run may exclude (runs marked `error`). v1 has no
+/// allowance field, so none: any errored repetition refuses the report.
+pub const MAX_EXCLUDED_REPETITIONS: u32 = 0;
 
 const ENERGY_LABELS: [&str; 3] = ["pkg", "cpu_e", "cpu_p"];
 const DIRECT_IO_ALIGN: usize = 4096;
@@ -107,6 +118,9 @@ pub enum VerifyError {
     RepetitionMismatch(String),
     WorkMismatch(String),
     ReportMismatch { first_difference_at: usize },
+    ExcludedRepetitions(String),
+    ChecksumsMissing(String),
+    ChecksumMismatch(String),
 }
 
 impl fmt::Display for VerifyError {
@@ -130,6 +144,9 @@ impl fmt::Display for VerifyError {
                 f,
                 "REPORT_MISMATCH: recomputed report differs from report.json at byte {first_difference_at}"
             ),
+            Self::ExcludedRepetitions(d) => write!(f, "EXCLUDED_REPETITIONS: {d}"),
+            Self::ChecksumsMissing(d) => write!(f, "CHECKSUMS_MISSING: {d}"),
+            Self::ChecksumMismatch(d) => write!(f, "CHECKSUM_MISMATCH: {d}"),
         }
     }
 }
@@ -1188,7 +1205,7 @@ pub fn run_bounds(cfg: &BoundsConfig) -> Result<Report, BoundsRefusal> {
         .map_err(|e| BoundsRefusal::Io(format!("read {PROTOCOL_FILE}: {e}")))?;
     let protocol = Protocol::parse(&protocol_bytes).map_err(BoundsRefusal::ProtocolInvalid)?;
     let spbm = energy_preflight(&cfg.hwmon_root, &protocol.energy_preflight)?;
-    for name in [RAW_FILE, REPORT_FILE] {
+    for name in [RAW_FILE, REPORT_FILE, SUMS_FILE] {
         if cfg.evidence_dir.join(name).exists() {
             return Err(BoundsRefusal::EvidenceExists(format!(
                 "{name} already exists; sealed evidence is never overwritten"
@@ -1263,6 +1280,10 @@ pub fn run_bounds(cfg: &BoundsConfig) -> Result<Report, BoundsRefusal> {
         .map_err(|e| BoundsRefusal::Io(format!("compute report: {e}")))?;
     fs::write(cfg.evidence_dir.join(REPORT_FILE), report_bytes(&report)?)
         .map_err(|e| BoundsRefusal::Io(format!("write {REPORT_FILE}: {e}")))?;
+    let sums = sha256sums(&cfg.evidence_dir, &[PROTOCOL_FILE, RAW_FILE, REPORT_FILE])
+        .map_err(|e| BoundsRefusal::Io(format!("checksum sealed files: {e}")))?;
+    fs::write(cfg.evidence_dir.join(SUMS_FILE), sums)
+        .map_err(|e| BoundsRefusal::Io(format!("write {SUMS_FILE}: {e}")))?;
     Ok(report)
 }
 
@@ -1429,6 +1450,31 @@ pub struct ProbeSummary {
     pub reps: Vec<RepFigures>,
 }
 
+/// What a measured bound input is allowed to claim. A rate measured on this host is
+/// never the hardware's capability: a better workload can exceed it. So a hardware
+/// rate is only ever `Achieved` (a lower bound on capability; the physical bound comes
+/// from the vendor's published figure or the link, outside this run). Where no
+/// closed-form limit exists, section 6.2 makes the best all-core implementation the
+/// reference, replaced whenever a later measurement beats it. There is no third label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BoundInputKind {
+    #[serde(rename = "achieved (lower bound on capability)")]
+    Achieved,
+    #[serde(rename = "implementation reference (section 6.2 replacement rule)")]
+    ImplementationReference,
+}
+
+impl fmt::Display for BoundInputKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Achieved => "achieved (lower bound on capability)",
+            Self::ImplementationReference => {
+                "implementation reference (section 6.2 replacement rule)"
+            }
+        })
+    }
+}
+
 /// One section 6.2 bound input.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BoundInput {
@@ -1437,8 +1483,7 @@ pub struct BoundInput {
     pub unit: String,
     pub probe: ProbeKind,
     pub statistic: BoundStatistic,
-    /// `hardware measurement` or `implementation reference` (section 6.2).
-    pub kind: String,
+    pub kind: BoundInputKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1451,6 +1496,9 @@ pub struct Report {
     pub central_statistic: CentralStatistic,
     pub spread_statistic: SpreadStatistic,
     pub bound_statistic: BoundStatistic,
+    /// Repetitions marked `error` (they skip their work). At most
+    /// [`MAX_EXCLUDED_REPETITIONS`]; reported even when zero.
+    pub excluded_repetitions: u32,
     pub instruments: Instruments,
     pub w1_flush: W1Flush,
     pub bound_inputs: Vec<BoundInput>,
@@ -1461,7 +1509,9 @@ fn report_bytes(r: &Report) -> Result<Vec<u8>, BoundsRefusal> {
     serde_json::to_vec_pretty(r).map_err(|e| BoundsRefusal::Io(format!("serialize report: {e}")))
 }
 
-fn check_runs(p: &Protocol, raw: &RawEvidence) -> Result<(), VerifyError> {
+/// Checks the runs against the protocol and returns how many repetitions are excluded
+/// (marked `error`). Refuses when that exceeds [`MAX_EXCLUDED_REPETITIONS`].
+fn check_runs(p: &Protocol, raw: &RawEvidence) -> Result<u32, VerifyError> {
     let want = PROBE_ORDER.len() * p.repetitions as usize;
     if raw.runs.len() != want {
         return Err(VerifyError::RepetitionMismatch(format!(
@@ -1506,7 +1556,23 @@ fn check_runs(p: &Protocol, raw: &RawEvidence) -> Result<(), VerifyError> {
             )));
         }
     }
-    Ok(())
+    let excluded: Vec<String> = raw
+        .runs
+        .iter()
+        .filter_map(|r| {
+            r.error
+                .as_ref()
+                .map(|e| format!("{:?} rep {} ({e})", r.probe, r.rep))
+        })
+        .collect();
+    if excluded.len() as u32 > MAX_EXCLUDED_REPETITIONS {
+        return Err(VerifyError::ExcludedRepetitions(format!(
+            "{} repetition(s) marked error, protocol v1 allows {MAX_EXCLUDED_REPETITIONS}: {}",
+            excluded.len(),
+            excluded.join(", ")
+        )));
+    }
+    Ok(excluded.len() as u32)
 }
 
 fn bound_inputs(probes: &[ProbeSummary]) -> Vec<BoundInput> {
@@ -1518,20 +1584,21 @@ fn bound_inputs(probes: &[ProbeSummary]) -> Vec<BoundInput> {
             .map(|s| s.max)
     };
     let mut out = Vec::new();
-    let mut push = |name: &str, unit: &str, kind: &str, probe: ProbeKind, value: Option<f64>| {
-        if let Some(value) = value {
-            out.push(BoundInput {
-                name: name.into(),
-                value,
-                unit: unit.into(),
-                probe,
-                statistic: BoundStatistic::MaxRate,
-                kind: kind.into(),
-            });
-        }
-    };
-    let hw = "hardware measurement";
-    let imp = "implementation reference";
+    let mut push =
+        |name: &str, unit: &str, kind: BoundInputKind, probe: ProbeKind, value: Option<f64>| {
+            if let Some(value) = value {
+                out.push(BoundInput {
+                    name: name.into(),
+                    value,
+                    unit: unit.into(),
+                    probe,
+                    statistic: BoundStatistic::MaxRate,
+                    kind,
+                });
+            }
+        };
+    let hw = BoundInputKind::Achieved;
+    let imp = BoundInputKind::ImplementationReference;
     for (name, unit, probe) in [
         ("memory_read_bandwidth", "B/s", ProbeKind::MemoryRead),
         (
@@ -1581,7 +1648,7 @@ pub fn compute_report(protocol_bytes: &[u8], raw_bytes: &[u8]) -> Result<Report,
             raw_names: raw.protocol_sha256,
         });
     }
-    check_runs(&protocol, &raw)?;
+    let excluded_repetitions = check_runs(&protocol, &raw)?;
     let idle_w = |rep: u32| {
         raw.runs
             .iter()
@@ -1643,6 +1710,7 @@ pub fn compute_report(protocol_bytes: &[u8], raw_bytes: &[u8]) -> Result<Report,
         central_statistic: protocol.central_statistic,
         spread_statistic: protocol.spread_statistic,
         bound_statistic: protocol.bound_statistic,
+        excluded_repetitions,
         instruments: raw.instruments,
         w1_flush: raw.w1_flush,
         bound_inputs: bound_inputs(&probes),
@@ -1650,8 +1718,60 @@ pub fn compute_report(protocol_bytes: &[u8], raw_bytes: &[u8]) -> Result<Report,
     })
 }
 
-/// Recompute `report.json` from `protocol.json` and `raw.json` in `dir` and require the
-/// result to match byte for byte.
+/// `SHA256SUMS` text in the `sha256sum` format over `names` in `dir`.
+pub fn sha256sums(dir: &Path, names: &[&str]) -> std::io::Result<String> {
+    let mut out = String::new();
+    for name in names {
+        out.push_str(&format!(
+            "{}  {name}\n",
+            sha256_hex(&fs::read(dir.join(name))?)
+        ));
+    }
+    Ok(out)
+}
+
+/// Checks every file `SHA256SUMS` lists against its digest, and requires the three
+/// sealed files to be listed.
+fn verify_sums(dir: &Path) -> Result<(), VerifyError> {
+    let text = fs::read_to_string(dir.join(SUMS_FILE))
+        .map_err(|e| VerifyError::ChecksumsMissing(format!("read {SUMS_FILE}: {e}")))?;
+    let mut listed = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        let (digest, name) = line
+            .split_once("  ")
+            .filter(|(d, n)| d.len() == 64 && !n.is_empty())
+            .ok_or_else(|| VerifyError::Parse(format!("{SUMS_FILE} line {}: {line:?}", i + 1)))?;
+        let bytes = fs::read(dir.join(name)).map_err(|e| {
+            VerifyError::ChecksumMismatch(format!("{name} listed but unreadable: {e}"))
+        })?;
+        let actual = sha256_hex(&bytes);
+        if actual != digest {
+            return Err(VerifyError::ChecksumMismatch(format!(
+                "{name} is {actual}, {SUMS_FILE} lists {digest}"
+            )));
+        }
+        listed.push(name);
+    }
+    let missing: Vec<&str> = [PROTOCOL_FILE, RAW_FILE, REPORT_FILE]
+        .into_iter()
+        .filter(|n| !listed.contains(n))
+        .collect();
+    if !missing.is_empty() {
+        return Err(VerifyError::ChecksumsMissing(format!(
+            "{SUMS_FILE} does not list {}",
+            missing.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+/// Recompute `report.json` from `protocol.json` and `raw.json` in `dir`, require the
+/// result to match byte for byte, then check every file `SHA256SUMS` lists.
+///
+/// This proves consistency (the report is what the raw data implies) and that the
+/// files are the ones that were checksummed. It does not prove authenticity: anyone
+/// can edit `raw.json` and regenerate both files. Authenticity comes from the git
+/// history and review of the commit that sealed them.
 pub fn verify_evidence(dir: &Path) -> Result<Report, VerifyError> {
     let read = |name: &str| {
         fs::read(dir.join(name)).map_err(|e| VerifyError::Io(format!("read {name}: {e}")))
@@ -1670,6 +1790,7 @@ pub fn verify_evidence(dir: &Path) -> Result<Report, VerifyError> {
             first_difference_at,
         });
     }
+    verify_sums(dir)?;
     Ok(report)
 }
 

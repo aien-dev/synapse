@@ -1,5 +1,5 @@
 {
-  "schema": "synapse-bench/a0-host-bounds-report/v1",
+  "schema": "synapse-bench/a0-host-bounds-report/v2",
   "protocol_sha256": "a29fb25df1476355e5524834c104ce2e09c4d3e454627a7435c0b7eabe217bd5",
   "raw_sha256": "2adaf836080b7a7585704f2f5c2bc813c5c266a59d5a4a0c0fa201261ab997a0",
   "source_rev": "f24a5d65ada3ec3fc34d8401b7fd208d340be31d",
@@ -7,6 +7,7 @@
   "central_statistic": "median",
   "spread_statistic": "range",
   "bound_statistic": "max_rate",
+  "excluded_repetitions": 0,
   "instruments": {
     "clock": "CLOCK_MONOTONIC (std::time::Instant)",
     "clock_resolution_ns": 1,
@@ -93,7 +94,7 @@
       "unit": "B/s",
       "probe": "memory_read",
       "statistic": "max_rate",
-      "kind": "hardware measurement"
+      "kind": "achieved (lower bound on capability)"
     },
     {
       "name": "memory_copy_bandwidth",
@@ -101,7 +102,7 @@
       "unit": "B/s (read plus written)",
       "probe": "memory_copy",
       "statistic": "max_rate",
-      "kind": "hardware measurement"
+      "kind": "achieved (lower bound on capability)"
     },
     {
       "name": "device_write_bandwidth",
@@ -109,7 +110,7 @@
       "unit": "B/s (through fdatasync)",
       "probe": "device_write",
       "statistic": "max_rate",
-      "kind": "hardware measurement"
+      "kind": "achieved (lower bound on capability)"
     },
     {
       "name": "device_read_bandwidth",
@@ -117,7 +118,7 @@
       "unit": "B/s",
       "probe": "device_read",
       "statistic": "max_rate",
-      "kind": "hardware measurement"
+      "kind": "achieved (lower bound on capability)"
     },
     {
       "name": "sha256_all_core_throughput",
@@ -125,7 +126,7 @@
       "unit": "B/s",
       "probe": "sha256_arm_instructions",
       "statistic": "max_rate",
-      "kind": "implementation reference"
+      "kind": "implementation reference (section 6.2 replacement rule)"
     },
     {
       "name": "ed25519_verify_all_core_throughput",
@@ -133,7 +134,7 @@
       "unit": "verifications/s",
       "probe": "ed25519_verify",
       "statistic": "max_rate",
-      "kind": "implementation reference"
+      "kind": "implementation reference (section 6.2 replacement rule)"
     }
   ],
   "probes": [

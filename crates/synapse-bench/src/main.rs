@@ -11,6 +11,7 @@
 //! synapse-bench bounds --evidence <dir with protocol.json> --work-dir <dir on the store filesystem>
 //!     [--repo-root <path>] [--source-rev R] [--hwmon-root <path>]
 //! synapse-bench bounds-verify --evidence <dir>
+//! synapse-bench bounds-report --evidence <dir>   (prints report.json recomputed from protocol.json and raw.json)
 //! ```
 
 use std::path::PathBuf;
@@ -226,6 +227,28 @@ fn bounds(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Print the report recomputed from `protocol.json` and `raw.json` (exactly the bytes
+/// `bounds` writes as `report.json`). Used to reissue a report after a report-schema
+/// change without touching the raw data; `bounds-verify` then checks the result.
+fn bounds_report(args: &[String]) -> Result<(), String> {
+    use std::io::Write;
+    let opts = parse_pairs(args, &["--evidence"])?;
+    let dir = opts
+        .last()
+        .map(|(_, v)| PathBuf::from(v))
+        .ok_or("missing --evidence")?;
+    let read = |name: &str| std::fs::read(dir.join(name)).map_err(|e| format!("read {name}: {e}"));
+    let report = synapse_bench::bounds::compute_report(
+        &read(synapse_bench::bounds::PROTOCOL_FILE)?,
+        &read(synapse_bench::bounds::RAW_FILE)?,
+    )
+    .map_err(|e| e.to_string())?;
+    let bytes = serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?;
+    std::io::stdout()
+        .write_all(&bytes)
+        .map_err(|e| format!("write stdout: {e}"))
+}
+
 fn bounds_verify(args: &[String]) -> Result<(), String> {
     let opts = parse_pairs(args, &["--evidence"])?;
     let dir = opts
@@ -234,8 +257,8 @@ fn bounds_verify(args: &[String]) -> Result<(), String> {
         .ok_or("missing --evidence")?;
     let report = synapse_bench::bounds::verify_evidence(&dir).map_err(|e| e.to_string())?;
     println!(
-        "verified: report.json recomputed byte for byte from protocol.json ({}) and raw.json ({})",
-        report.protocol_sha256, report.raw_sha256
+        "verified: report.json recomputed byte for byte from protocol.json ({}) and raw.json ({}); every file in SHA256SUMS matches; {} excluded repetition(s). Consistency only: authenticity comes from git history and review.",
+        report.protocol_sha256, report.raw_sha256, report.excluded_repetitions
     );
     Ok(())
 }
@@ -248,6 +271,7 @@ fn main() -> ExitCode {
         Some("floor") => floor(&args[1..]),
         Some("bounds") => bounds(&args[1..]),
         Some("bounds-verify") => bounds_verify(&args[1..]),
+        Some("bounds-report") => bounds_report(&args[1..]),
         _ => Err("usage: synapse-bench run ... | synapse-bench child ... (see crate docs)".into()),
     };
     match outcome {

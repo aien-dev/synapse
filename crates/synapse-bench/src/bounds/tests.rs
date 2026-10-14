@@ -524,7 +524,10 @@ fn errored_repetitions_are_counted_and_refused_beyond_the_protocol_allowance() {
     let pb = serde_json::to_vec_pretty(&p).unwrap();
     let clean = serde_json::to_vec_pretty(&synthetic_raw(&p, &pb)).unwrap();
     let report = serde_json::to_value(compute_report(&pb, &clean).unwrap()).unwrap();
-    assert_eq!(report["excluded_repetitions"], 0, "count is always reported");
+    assert_eq!(
+        report["excluded_repetitions"], 0,
+        "count is always reported"
+    );
 
     // Protocol v1 allows no excluded repetitions: a run marked `error` (which skips
     // its work) must not quietly drop out of the statistics.
@@ -537,7 +540,10 @@ fn errored_repetitions_are_counted_and_refused_beyond_the_protocol_allowance() {
     raw.runs[i].error = Some("synthetic failure".into());
     raw.runs[i].work_units = 0;
     let raw = serde_json::to_vec_pretty(&raw).unwrap();
-    let err = compute_report(&pb, &raw).map(|_| ()).unwrap_err().to_string();
+    let err = compute_report(&pb, &raw)
+        .map(|_| ())
+        .unwrap_err()
+        .to_string();
     assert!(err.starts_with("EXCLUDED_REPETITIONS"), "{err}");
     assert!(err.contains("MemoryRead rep 2"), "{err}");
 }
