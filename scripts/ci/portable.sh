@@ -16,7 +16,7 @@ uname -a
 case "$mode" in
   workspace)
     cargo fmt --all --check
-    cargo fetch --locked --target aarch64-unknown-linux-gnu --target x86_64-unknown-linux-gnu
+    cargo metadata --format-version 1 --locked >/dev/null
     cargo clippy --locked --workspace --all-targets -- -D warnings
     cargo test --locked --workspace
     ;;
