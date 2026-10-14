@@ -1016,6 +1016,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// ADR 0003 A1: the WAL suite's stores hold binary codec v2 frames, so its 11 cases
+    /// qualify the binary codec, not the v1 JSON one.
+    #[test]
+    fn wal_suite_stores_write_binary_codec_frames() {
+        let dir = temp_dir("conf-wal-codec");
+        let acked = seed_store(&dir).unwrap();
+        let log = acked.wal_bytes;
+        let mut at = 0;
+        let mut frames = 0;
+        while at < log.len() {
+            assert_eq!(
+                log[at + 7],
+                synapse_store::codec::WAL_FLAG_CODEC_V2,
+                "frame {frames} flags"
+            );
+            let len = u32::from_le_bytes(log[at + 48..at + 52].try_into().unwrap()) as usize;
+            at += synapse_store::WAL_HEADER_LEN + len;
+            frames += 1;
+        }
+        assert_eq!(frames, 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn git_suite_cases_pass() {
         let dir = temp_dir("conf-git");

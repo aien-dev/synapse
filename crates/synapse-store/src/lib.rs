@@ -24,10 +24,14 @@ use synapse_core::{
 };
 
 #[cfg(test)]
+mod a1_tests;
+pub mod codec;
+#[cfg(test)]
 mod group_tests;
 mod shared;
 pub mod wal2;
 
+pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
 pub use shared::{GroupCommitStats, SharedStore};
 
 /// Magic bytes for a Synapse WAL frame (`b"SWAL"`).
@@ -162,10 +166,21 @@ pub struct StoreLimits {
     /// larger value moves that cost out of more commits.
     #[serde(default = "default_wal_prealloc_bytes")]
     pub wal_prealloc_bytes: u64,
+    /// Largest WAL record payload the store writes or reads (the frame length cap). A
+    /// frame declaring a longer payload is refused before anything is allocated for it,
+    /// and the writer refuses a record above it, so every written frame stays readable.
+    /// Must exceed `max_total_changeset_bytes` plus envelope metadata (WAL v2 frames carry
+    /// their blobs inline).
+    #[serde(default = "default_max_wal_record_bytes")]
+    pub max_wal_record_bytes: u64,
 }
 
 fn default_wal_prealloc_bytes() -> u64 {
     64 * 1024 * 1024
+}
+
+fn default_max_wal_record_bytes() -> u64 {
+    128 * 1024 * 1024
 }
 
 impl Default for StoreLimits {
@@ -177,6 +192,7 @@ impl Default for StoreLimits {
             max_inflight_admissions: 64,
             default_retention_window_ms: 3_600_000, // 1 hour default speculative retention
             wal_prealloc_bytes: default_wal_prealloc_bytes(),
+            max_wal_record_bytes: default_max_wal_record_bytes(),
         }
     }
 }
@@ -512,6 +528,16 @@ impl SynapseStore {
             ));
         }
         Ok(store)
+    }
+
+    /// Codec this store writes new WAL records with (ADR 0003 A1).
+    pub fn record_codec(&self) -> RecordCodec {
+        RecordCodec::JsonV1
+    }
+
+    /// Chain fields of the binary checkpoint this store holds, if it has one.
+    pub fn checkpoint_chain(&self) -> Option<CheckpointChain> {
+        None
     }
 
     /// True when this store writes WAL v2 (group commit).
@@ -2294,6 +2320,72 @@ fn compute_wal_frame_sha256(header_prefix_56: &[u8], payload: &[u8]) -> [u8; 32]
     hasher.update(header_prefix_56);
     hasher.update(payload);
     hasher.finalize().into()
+}
+
+/// One `wal.log` frame (88-byte header plus payload) decoded and verified on its own:
+/// header fields, length cap, CRC-32C, frame digest, record codec and kind. Sequence and
+/// chain continuity are the caller's (recovery checks them against the previous frame).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedFrame {
+    pub seq: WalSeq,
+    pub prev_frame_sha256: [u8; 32],
+    pub frame_sha256: [u8; 32],
+    pub codec: RecordCodec,
+    pub record: WalRecord,
+    /// Bytes the frame occupies (header plus payload).
+    pub frame_len: usize,
+}
+
+/// Build a `wal.log` frame around `payload` (any bytes) with header `kind` and `flags`.
+/// Returns the frame and its `frame_sha256`. Used by the writer and by test corpora.
+pub fn wal_frame_from_payload(
+    seq: WalSeq,
+    prev_frame_sha256: [u8; 32],
+    kind: u8,
+    flags: u8,
+    payload: &[u8],
+) -> (Vec<u8>, [u8; 32]) {
+    let mut header_prefix = [0u8; 56];
+    header_prefix[0..4].copy_from_slice(&WAL_MAGIC);
+    header_prefix[4..6].copy_from_slice(&WAL_VERSION.to_le_bytes());
+    header_prefix[6] = kind;
+    header_prefix[7] = flags;
+    header_prefix[8..16].copy_from_slice(&seq.0.to_le_bytes());
+    header_prefix[16..48].copy_from_slice(&prev_frame_sha256);
+    header_prefix[48..52].copy_from_slice(&(payload.len() as u32).to_le_bytes());
+    header_prefix[52..56].copy_from_slice(&crc32c(payload).to_le_bytes());
+    let sha = compute_wal_frame_sha256(&header_prefix, payload);
+    let mut frame = Vec::with_capacity(WAL_HEADER_LEN + payload.len());
+    frame.extend_from_slice(&header_prefix);
+    frame.extend_from_slice(&sha);
+    frame.extend_from_slice(payload);
+    (frame, sha)
+}
+
+/// Encode `record` with `codec` as one `wal.log` frame. Refuses a payload above `cap`.
+pub fn encode_wal_frame(
+    seq: WalSeq,
+    prev_frame_sha256: [u8; 32],
+    record: &WalRecord,
+    codec: RecordCodec,
+    cap: u64,
+) -> SynapseResult<(Vec<u8>, [u8; 32])> {
+    let _ = cap;
+    let payload = codec::encode_record_with(record, codec)?;
+    Ok(wal_frame_from_payload(
+        seq,
+        prev_frame_sha256,
+        record.kind_byte(),
+        codec.frame_flags(),
+        &payload,
+    ))
+}
+
+/// Decode and verify the `wal.log` frame at the start of `buf`; `cap` is the largest
+/// payload length accepted (`StoreLimits::max_wal_record_bytes`).
+pub fn decode_wal_frame(buf: &[u8], cap: u64) -> SynapseResult<DecodedFrame> {
+    let _ = (buf, cap);
+    Err(SynapseError::new(RefusalCode::IoFailure, "not implemented"))
 }
 
 fn sync_dir(dir: &Path) -> SynapseResult<()> {

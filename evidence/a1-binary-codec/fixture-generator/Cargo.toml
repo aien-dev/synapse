@@ -1,0 +1,13 @@
+[package]
+name = "a1-fixgen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "fast"] }
+hex = "0.4"
+synapse-core = { path = "/home/drakestapleton/.t3/projects/synapse/crates/synapse-core" }
+synapse-store = { path = "/home/drakestapleton/.t3/projects/synapse/crates/synapse-store" }

@@ -33,6 +33,8 @@ pub enum RefusalCode {
     WalChainMismatch,
     WalSequenceGap,
     WalTornFrame,
+    /// A WAL record payload passed its checksums but does not decode (binary codec v2).
+    WalRecordMalformed,
     CheckpointCorrupt,
     IoFailure,
 
