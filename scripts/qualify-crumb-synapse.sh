@@ -22,7 +22,9 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 OUT_DIR=${OUT_DIR:-$HERE/evidence/crumb-synapse}
 SCENARIOS=(S01 S02 S03 S04 S05 S06 S07 S08 S09 S10 S11 S12)
 # Known defects: "<ignored test name>|<issue URL>". Each must still fail when run.
-DEFECTS=("s05_defect_fifo_record_hangs_advisory|https://github.com/aien-spark/synapse/issues/58")
+# #58 (FIFO record hung sniff/advisory) is fixed: its test s05_fifo_record_refused_advisory_answers
+# now runs in the suite above. Add a row here for the next defect found.
+DEFECTS=()
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 overall=0
@@ -102,7 +104,7 @@ esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
   for r in "${DEFECT_ROWS[@]}"; do IFS='|' read -r n s dd <<< "$r"; echo "defect $s $n: $dd"; done
   echo "parity           exit $parity_rc; $parity_line"
   echo "interop          exit $interop_rc; $interop_line"
-  echo "overall          $([ $overall -eq 0 ] && echo "QUALIFIED: every scenario PASS or KNOWN-GAP; open defects: ${#DEFECT_ROWS[@]} (recorded, not fixed)" || echo NOT-QUALIFIED)"
+  echo "overall          $([ $overall -eq 0 ] && echo "QUALIFIED: every scenario PASS or KNOWN-GAP; open defects: ${#DEFECT_ROWS[@]}" || echo NOT-QUALIFIED)"
   echo "limit            AEGIS (aienos crates/aienos-aegis) not integrated; exit rule proven against Synapse's Publish capability and Radicle canonical promotion only"
 } > "$OUT_DIR/results.txt"
 {

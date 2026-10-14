@@ -93,12 +93,13 @@ impl std::fmt::Debug for StoreId {
 /// Read `<root>/STORE_ID`. `Ok(None)` when absent.
 pub(crate) fn read_marker(root: &Path) -> Result<Option<StoreId>, CoordError> {
     let p = root.join(STORE_ID_FILE);
-    match std::fs::read(&p) {
-        Ok(b) => StoreId::decode(&b)
+    // Bounded, non-blocking, never following a link (issue #58): a FIFO, device, symlink or
+    // oversized file as `STORE_ID` is a typed `RefusedRecord`, never a hang.
+    match crate::record::read_bounded(&p, crate::MAX_MARKER_BYTES)? {
+        Some(b) => StoreId::decode(&b)
             .map(Some)
             .map_err(|reason| CoordError::StoreIdUnreadable { path: p, reason }),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(source) => Err(CoordError::Io { path: p, source }),
+        None => Ok(None),
     }
 }
 
@@ -119,14 +120,7 @@ pub(crate) fn ensure_marker_locked(root: &Path) -> Result<StoreId, CoordError> {
     })?;
     {
         use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o644)
-            .open(&tmp)
-            .map_err(crate::io_err(&tmp))?;
+        let mut f = crate::record::create_temp(&tmp)?;
         f.write_all(&id.encode()).map_err(crate::io_err(&tmp))?;
         f.sync_all().map_err(crate::io_err(&tmp))?;
     }

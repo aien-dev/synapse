@@ -102,6 +102,34 @@ wrong root used to fail silently: each tool granted a claim on the same file in 
   transactions inside one process; the `fcntl` lock serializes processes. A negative control
   (mutex removed) made the 16-thread race test fail, so both layers are needed.
 
+## Hostile store files (issue #58)
+
+Anyone who can write into the shared store can plant a FIFO, a device, a symlink to
+`/dev/zero` or a huge file under a record name. Every store file this crate reads
+(`dirs/**/*.json`, `agents/*.json`, `STORE_ID`, and the `.lock` file a mutation opens) goes
+through one bounded read (`src/record.rs`):
+
+- `lstat` first: anything that is not a regular file is refused without being opened;
+- then `open(O_NOFOLLOW | O_NONBLOCK)` and `fstat` the descriptor, refusing anything that is
+  not a regular file (catches a swap between the two steps);
+- read at most cap + 1 bytes. Caps: `MAX_RECORD_BYTES` = 1 MiB per record (crumb.c records
+  are a few KiB), `MAX_MARKER_BYTES` = 4 KiB for `STORE_ID`.
+
+A refusal is `CoordError::RefusedRecord { path, reason }` with `reason` one of `Symlink`,
+`NotRegular("fifo" | "socket" | "char device" | ...)` or `TooLarge { limit }`. It is handled
+exactly like a corrupt record: the operation fails, nothing is written, the file is left as
+found, and the D3 pre-submit advisory reports `CoordinationStatus::Unavailable`. The scope is
+store-wide, because every mutation and `sniff` load every record: a FIFO planted at
+`dirs/sub/x.json` also fails `claim . other/y.c`. The error names the file; an operator
+moves it aside to restore the store. Mutations
+also refuse to rename over a non-regular file and to write a record over the cap; their
+temporary file is created fresh with `O_EXCL | O_NOFOLLOW`. Directory listing never opens an
+entry: it uses the entry type, does not walk symlinked directories, and ignores names that
+do not end in `.json`.
+
+crumb.c at 29780e5 has the same defect (a FIFO `dirs/*.json` hangs its `sniff` and `claim`);
+that fix belongs in aien-architecture and is out of scope here.
+
 ## What coordination state is not
 
 Coordination state is ephemeral. It is **never written into Synapse history**, is **never an
@@ -126,6 +154,9 @@ crate touches `synapse-store`, changesets or refs.
   or supply an oracle over the snapshot.
 - Directories are taken as given (normalized), not through `realpath`, so symlinked
   directories are not resolved the way crumb.c resolves them.
+- Store files are never followed (#58): a symlinked record is refused and a symlinked
+  directory under `dirs/` is not walked, where crumb.c follows both. A store written by
+  either tool contains neither.
 - `continuations/` and `ledger/` are created but not used; checkpoint/resume stay in `cc.sh`.
 
 ## Using it
