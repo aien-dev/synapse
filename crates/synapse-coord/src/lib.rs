@@ -10,8 +10,13 @@
 //! Coordination state is ephemeral. It is never written into Synapse history, is never an
 //! evidence receipt, and is never an authority for publication.
 
+pub mod identity;
 pub mod json;
 pub mod time;
+
+pub use identity::{
+    resolve_coord_root, ResolvedRoot, RootSource, StoreId, STORE_ID_FILE, STORE_ID_FORMAT,
+};
 
 use json::J;
 use std::fs::{self, File, OpenOptions};
@@ -60,6 +65,24 @@ pub enum CoordError {
         dir: String,
     },
     BadTtl(i64),
+    /// Opened expecting a registered store identity, but the root has no `STORE_ID`
+    /// marker: most likely a misconfigured root (a split coordination store).
+    StoreIdMissing {
+        root: PathBuf,
+    },
+    /// Opened expecting one store identity, but the root's marker names another store.
+    StoreIdMismatch {
+        root: PathBuf,
+        expected: StoreId,
+        found: StoreId,
+    },
+    /// `STORE_ID` exists but is not a v1 marker. Refused, never rewritten.
+    StoreIdUnreadable {
+        path: PathBuf,
+        reason: String,
+    },
+    /// [`resolve_coord_root`] could not choose a root the way crumb.c would.
+    RootUnresolved(String),
 }
 
 impl std::fmt::Display for CoordError {
@@ -91,6 +114,24 @@ impl std::fmt::Display for CoordError {
                 )
             }
             CoordError::BadTtl(t) => write!(f, "bad ttl: {t}"),
+            CoordError::StoreIdMissing { root } => write!(
+                f,
+                "coordination store {} has no {STORE_ID_FILE} marker; refusing (expected a registered store: check CRUMB_COORD_ROOT / crumb.coordinationRoot / --store)",
+                root.display()
+            ),
+            CoordError::StoreIdMismatch {
+                root,
+                expected,
+                found,
+            } => write!(
+                f,
+                "coordination store {} is store {found}, expected {expected}; refusing (split coordination roots)",
+                root.display()
+            ),
+            CoordError::StoreIdUnreadable { path, reason } => {
+                write!(f, "{} is not a store identity marker: {reason}", path.display())
+            }
+            CoordError::RootUnresolved(r) => write!(f, "cannot resolve coordination root: {r}"),
         }
     }
 }
@@ -441,6 +482,8 @@ pub struct Sniff {
     /// Other workspaces seen in records: (worktree, agents there, conflicting keys under `dir`).
     pub other_workspaces: Vec<(String, Vec<String>, Vec<String>)>,
     pub whispers: Vec<WhisperView>,
+    /// The store's identity marker; `None` until a mutating open has created it.
+    pub store_id: Option<StoreId>,
 }
 
 type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
@@ -452,12 +495,15 @@ type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 pub struct CoordStore {
     root: PathBuf,
     clock: Clock,
+    /// Registered identity this handle insists on (see [`CoordStore::open_expecting`]).
+    expected: Option<StoreId>,
 }
 
 impl std::fmt::Debug for CoordStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CoordStore")
             .field("root", &self.root)
+            .field("expected", &self.expected)
             .finish()
     }
 }
@@ -484,10 +530,66 @@ struct Txn<'a> {
 }
 
 impl CoordStore {
+    /// Open a store without an identity expectation. The first mutating transaction (or
+    /// [`CoordStore::ensure_store_id`]) creates the `STORE_ID` marker if it is absent.
     pub fn open(root: impl Into<PathBuf>) -> CoordStore {
         CoordStore {
             root: root.into(),
             clock: Arc::new(time::system_now),
+            expected: None,
+        }
+    }
+
+    /// Open a store that must carry the identity `expected` (the id Synapse registered for
+    /// this repository). Refuses now, and again inside every later transaction, with
+    /// [`CoordError::StoreIdMissing`] when the root has no marker and
+    /// [`CoordError::StoreIdMismatch`] when it names another store. Such a handle never
+    /// creates a marker, so a misconfigured root is never silently adopted.
+    pub fn open_expecting(
+        root: impl Into<PathBuf>,
+        expected: StoreId,
+    ) -> Result<CoordStore, CoordError> {
+        let mut s = CoordStore::open(root);
+        s.expected = Some(expected);
+        s.check_expected()?;
+        Ok(s)
+    }
+
+    /// The identity this handle insists on, if any.
+    pub fn expected_store_id(&self) -> Option<StoreId> {
+        self.expected
+    }
+
+    /// Read the store's identity marker without creating it (`None` if absent).
+    pub fn store_id(&self) -> Result<Option<StoreId>, CoordError> {
+        identity::read_marker(&self.root)
+    }
+
+    /// The store's identity, creating the marker under the store lock if absent (for an
+    /// expecting handle: verified, never created). Use this to register a store.
+    pub fn ensure_store_id(&self) -> Result<StoreId, CoordError> {
+        let t = self.begin(true)?;
+        let id = self.store_id()?.ok_or_else(|| CoordError::StoreIdMissing {
+            root: self.root.clone(),
+        })?;
+        t.commit()?;
+        Ok(id)
+    }
+
+    fn check_expected(&self) -> Result<(), CoordError> {
+        let Some(expected) = self.expected else {
+            return Ok(());
+        };
+        match identity::read_marker(&self.root)? {
+            None => Err(CoordError::StoreIdMissing {
+                root: self.root.clone(),
+            }),
+            Some(found) if found != expected => Err(CoordError::StoreIdMismatch {
+                root: self.root.clone(),
+                expected,
+                found,
+            }),
+            Some(_) => Ok(()),
         }
     }
 
@@ -522,6 +624,8 @@ impl CoordStore {
             now: (self.clock)(),
             lock: None,
         };
+        // An expecting handle refuses a wrong root before creating anything in it.
+        self.check_expected()?;
         if !mutate {
             return Ok(t);
         }
@@ -558,6 +662,13 @@ impl CoordStore {
             }
         }
         t.lock = Some((f, guard));
+        // Under the lock: re-check the expectation (the marker could have changed since),
+        // or create the marker on this store's first mutating open.
+        if self.expected.is_some() {
+            self.check_expected()?;
+        } else {
+            identity::ensure_marker_locked(&self.root)?;
+        }
         Ok(t)
     }
 }
@@ -1012,6 +1123,7 @@ impl CoordStore {
         let now = t.now;
         let mut s = Sniff {
             store: self.root.clone(),
+            store_id: self.store_id()?,
             ..Sniff::default()
         };
         for r in t
@@ -1103,6 +1215,11 @@ impl Sniff {
         let mut o = String::new();
         let _ = writeln!(o, "shared coordination: ACTIVE");
         let _ = writeln!(o, "  common root: {}", self.store.display());
+        match &self.store_id {
+            Some(id) => writeln!(o, "  store id: {id}"),
+            None => writeln!(o, "  store id: (none yet)"),
+        }
+        .ok();
         let _ = writeln!(
             o,
             "  this workspace: {} [{} {}] as {agent}",

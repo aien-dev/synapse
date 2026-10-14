@@ -53,6 +53,43 @@ model keeps unknown fields, and the interop script checks that crumb.c rewriting
 directory record keeps `synapse_revision` (I5). The crate takes strings, not
 `synapse_core::ChangesetId`, so it has no dependency on Synapse internals.
 
+## Store identity: catching split coordination roots (issue #15)
+
+The two tools agree on one store only by configuration (`CRUMB_COORD_ROOT` /
+`crumb.coordinationRoot` for crumb.c, `--store` or the path given to `CoordStore` here). A
+wrong root used to fail silently: each tool granted a claim on the same file in its own store.
+
+- **Marker.** `<root>/STORE_ID` holds one line, `crumb-coord-store-id/1 <32 lowercase hex>`
+  (128 random bits from `/dev/urandom`). Any other content is refused (`StoreIdUnreadable`),
+  never rewritten.
+- **Creation.** The first mutating transaction of a plain `CoordStore::open` handle (or
+  `ensure_store_id`) creates it while holding the store lock (process mutex plus `fcntl` on
+  `.lock`). It is written to `STORE_ID.tmp<pid>`, fsynced, and published with `link(2)`, which
+  never replaces an existing file; then the directory is fsynced. Concurrent first opens
+  (16 threads plus 8 processes, 5 rounds) all read one id. Either layer alone holds: a
+  negative control with `rename` outside the lock made the race test fail; `link` outside the
+  lock still passed. Reads (`sniff`, `store_id`) never create it.
+- **Expecting open.** Synapse is to register a store's id per repository (taken from
+  `ensure_store_id`; that registration is not built yet) and open agents with
+  `CoordStore::open_expecting(root, id)`. That
+  refuses with `StoreIdMissing` (no marker) or `StoreIdMismatch` (another store), before
+  creating anything, and re-checks inside every transaction under the lock. An expecting handle
+  never creates a marker, so a misconfigured root is never adopted. CLI:
+  `--expect-store-id ID`; `synapse-coord --store DIR id` prints (and if needed creates) the id.
+- **crumb.c ignores it.** The pinned crumb.c never names `STORE_ID`; it touches only `.lock`,
+  `dirs/`, `agents/`, `continuations/`, `ledger/`, and its `collect_json` walks only those
+  record directories. The interop script checks crumb.c never creates it and that it is
+  byte-identical after crumb.c's claims, closes, whispers and prunes (I11).
+- **sniff** shows `store id: <hex>` (or `(none yet)`). crumb.c's sniff does not print it;
+  that needs a crumb.c change in aien-architecture (not done here). A crumb.c-side check of the
+  id is likewise out of scope: today only the Synapse side refuses a wrong root.
+- **Root helper.** `resolve_coord_root(env, git_config, git_common_dir)` mirrors crumb.c's
+  order as a pure function (no Git calls): non-empty `CRUMB_COORD_ROOT`, else non-empty
+  `crumb.coordinationRoot` (trailing `\n`/`\r` stripped), else `<common dir>/crumb/v1` with the
+  common dir already absolute and resolved. Env and config values are returned as given
+  (crumb.c does not canonicalize them); a config value of 511 bytes or more is refused because
+  crumb.c would truncate it.
+
 ## Crash safety
 
 - A writer that dies before `rename` leaves the old record intact plus a `*.tmp<pid>` file.
@@ -110,6 +147,9 @@ codes for scripts: `synapse-coord --store DIR --top WS [--synapse LANE REV BASE]
 
 - `cargo test -p synapse-coord`: unit tests (JSON layout, ISO time, paths) and
   `tests/plane.rs` (test.sh claim/block/close, T1-T7, threads and processes racing,
-  crash before rename, torn tmp files, corrupt record refusal, byte layout, history cap).
+  crash before rename, torn tmp files, corrupt record refusal, byte layout, history cap) and
+  `tests/identity.rs` (store identity marker: creation, thread and process race, mismatch and
+  missing marker refused, recheck per transaction, crash before link, split-root control).
 - `scripts/crumb-coord-interop.sh [aien-architecture checkout]`: builds crumb.c at `29780e5`
-  with `cc` only and runs both tools against one store (I1-I10).
+  with `cc` only and runs both tools against one store (I1-I10), checks crumb.c ignores the
+  identity marker (I11), and reproduces then catches the split-root case (I12).

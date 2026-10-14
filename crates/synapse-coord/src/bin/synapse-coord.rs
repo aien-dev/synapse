@@ -1,19 +1,23 @@
 //! Thin command-line front end over `synapse_coord`, mirroring `crumb claim|update|whisper|
 //! close|sniff` output lines and exit codes (0 ok, 1 error, 2 blocked/refused).
 //!
-//! usage: synapse-coord --store DIR --top WORKSPACE [--branch B --head H --base X]
+//! usage: synapse-coord --store DIR --top WORKSPACE [--expect-store-id ID] [--branch B --head H --base X]
 //!                      [--synapse LANE REVISION BASE] [--session S] [--no-tree] <command> ...
 //!   claim <agent> <dir> <target> <intent> [ttl]
 //!   update <agent> <dir> <focus> [ttl]
 //!   whisper <from> <dir> <to|-> <message> [priority] [target_file]
 //!   close <agent> <dir> <target> [action] [message]
 //!   sniff <agent> <dir>
+//!   id                  print the store id, creating the marker if absent (--top optional)
+//!
+//! --expect-store-id ID refuses (exit 1) unless the store carries that STORE_ID marker.
 //!
 //! synapse-coord canon <file>   parse a record and print it re-serialized (format parity check)
 
 use std::process::ExitCode;
 use synapse_coord::{
-    ClaimOutcome, CloseOutcome, CoordStore, FsOracle, Holder, NoOracle, PathOracle, Workspace,
+    ClaimOutcome, CloseOutcome, CoordStore, FsOracle, Holder, NoOracle, PathOracle, StoreId,
+    Workspace,
 };
 
 fn die(msg: impl std::fmt::Display) -> ExitCode {
@@ -48,7 +52,7 @@ fn main() -> ExitCode {
             None => die(format!("{} is not valid JSON", args[1])),
         };
     }
-    let (mut store, mut top) = (None, None);
+    let (mut store, mut top, mut expect) = (None, None, None);
     let mut holder = Holder::default();
     let mut no_tree = false;
     while args.first().is_some_and(|a| a.starts_with("--")) {
@@ -63,6 +67,13 @@ fn main() -> ExitCode {
         let ok = match flag.as_str() {
             "--store" => take().map(|v| store = Some(v)).is_some(),
             "--top" => take().map(|v| top = Some(v)).is_some(),
+            "--expect-store-id" => match take().map(|v| StoreId::parse_hex(&v)) {
+                Some(Some(id)) => {
+                    expect = Some(id);
+                    true
+                }
+                _ => false,
+            },
             "--branch" => take().map(|v| holder.branch = v).is_some(),
             "--head" => take().map(|v| holder.head = v).is_some(),
             "--base" => take().map(|v| holder.base = v).is_some(),
@@ -86,8 +97,27 @@ fn main() -> ExitCode {
             return die(format!("bad or incomplete flag {flag}"));
         }
     }
-    let (Some(store), Some(top)) = (store, top) else {
-        return die("--store and --top are required");
+    let Some(store) = store else {
+        return die("--store is required");
+    };
+    let cs = match expect {
+        Some(id) => match CoordStore::open_expecting(store, id) {
+            Ok(cs) => cs,
+            Err(e) => return die(e),
+        },
+        None => CoordStore::open(store),
+    };
+    if args.len() == 1 && args[0] == "id" {
+        return match cs.ensure_store_id() {
+            Ok(id) => {
+                println!("{id}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => die(e),
+        };
+    }
+    let Some(top) = top else {
+        return die("--top is required");
     };
     let oracle: Box<dyn PathOracle> = if no_tree {
         Box::new(NoOracle)
@@ -95,7 +125,6 @@ fn main() -> ExitCode {
         Box::new(FsOracle(top.clone().into()))
     };
     let ws = Workspace::with_oracle(top.clone(), holder, oracle);
-    let cs = CoordStore::open(store);
     let a = &args;
     let n = a.len();
     let cmd = a.first().map(String::as_str).unwrap_or("");

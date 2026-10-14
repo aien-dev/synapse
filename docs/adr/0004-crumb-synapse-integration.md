@@ -78,7 +78,7 @@ This workstream sits at the Phase 7 to Phase 8 boundary: after the AI-native mod
 ### 2.5 Deliverables
 
 1. **D1 Snapshot context API (this ADR's first PR).** Crate `synapse-crumb` (typed dialects, bounded parser, `CrumbContext`, `CrumbContextDigest`); a read-only `SynapseService::crumb_context` under `Capability::Read`; a parity script that builds the pinned `crumb.c` with `cc` and checks golden outputs over a fixture tree.
-2. **D2 Shared claims.** Crate `synapse-coord`: the RFC-0002 coordination plane without Git. Separate PR.
+2. **D2 Shared claims.** Crate `synapse-coord`: the RFC-0002 coordination plane without Git. Separate PR. The two tools share a store only by configuration, so a wrong root would let each grant the same claim (split brain). Each store therefore carries a random identity marker `<root>/STORE_ID` (created under the store lock on its first Synapse mutation; ignored by `crumb.c`), and an agent opened expecting a registered id is refused with a typed error when the marker is missing or different (issue #15, `crates/synapse-coord/README.md`). Not yet done: Synapse storing the registered id per repository and opening agents with it, and `crumb.c` printing or checking the id.
 3. **D3 Pre-submit advisory.** Before a changeset is submitted, report applicable Crumb context and conflicting claims. Advisory only; it never blocks or grants.
 4. **D4 Evidence receipts.** A receipt binding `ChangesetId`, `CrumbContextDigest`, and the source revision, so evidence states which context it was produced under. Crate `synapse-evidence` and the read-only checks in `synapse-api` `evidence.rs`; section 2.7.
 5. **D5 Combined qualification.** One qualification run over D1 to D4, including forged records and a Git round trip.
