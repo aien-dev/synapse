@@ -1,7 +1,8 @@
 {
   "schema": "goals/v1",
   "project": "synapse",
-  "tracker_issue": "https://github.com/aien-spark/aien-sovereign-core/issues/515",
+  "tracker_issue": "https://github.com/aien-spark/synapse/issues/8",
+  "previous_tracker_issue": "https://github.com/aien-spark/aien-sovereign-core/issues/515",
   "goals": [
     {
       "id": "GATE-0",
@@ -26,7 +27,32 @@
     {
       "id": "GATE-4",
       "title": "Comparative concurrent agent benchmark against Git worktrees, conformance suites, and qualification receipt",
+      "status": "completed"
+    },
+    {
+      "id": "PHASE-5",
+      "title": "Close the Gate 4 measured gaps, each reported in seconds and joules per accepted change next to a physical bound: durable group commit, read path, bounded virtual tree cache, compact wire format and local daemon socket",
       "status": "in_progress"
+    },
+    {
+      "id": "PHASE-6",
+      "title": "Small Git bridge: native ref and history contracts, full-history Git import and export, git-remote-synapse remote helper",
+      "status": "pending"
+    },
+    {
+      "id": "PHASE-7",
+      "title": "AI-native model: best ideas from every system, each adopted only for a concrete AI-agent need (ADR 0003)",
+      "status": "pending"
+    },
+    {
+      "id": "PHASE-8",
+      "title": "Agent cutover: hive agents use Synapse as their primary system after the ADR 0002 cutover gates pass; legacy human edge adapters removed",
+      "status": "pending"
+    },
+    {
+      "id": "PHASE-9",
+      "title": "Native on AIEN hardware: Synapse hot path written in Omega on AIENOS, talking directly to the hardware (raw block storage, no filesystem), Git as an import and export edge only",
+      "status": "pending"
     }
   ]
 }

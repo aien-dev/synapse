@@ -292,6 +292,35 @@ The script builds `synapse-bench` in release mode, records the harness source (`
 
 ## 13. Adoption Proposal (for Drake's Decision)
 
+### Decision (Drake, 2026-10-14)
+
+Drake chose a Synapse-first direction, which none of Options A, B, or C below proposed. In his words:
+
+> "I want Synapse to do everything Git does and I want a simple small interface with Git. I want us to use both the power of Git and the benefits of Synapse. Eventually Synapse will take over Git from our actual hardware."
+>
+> "I want Synapse to be the new Git for AI."
+
+He refined the scope the same day:
+
+> "Don't just copy features because we feel like we need them. I want you to take the good parts of everything and make the best system possible."
+>
+> "This is going to be for AI only. AI is going to be the only one writing code in the future and this is not going to be for humans. Nothing human-related needs to be in this."
+
+What the decision means:
+
+* Synapse becomes the source control system for AI agents. No human-facing features are in scope.
+* Git stays as a small machine bridge for ecosystem interop (import, export, existing tooling and hosting), not as a human path.
+* The decision supersedes the Option C recommendation below and the non-goal "Replacing Git" in [aien-spark/aien-sovereign-core#515](https://github.com/aien-spark/aien-sovereign-core/issues/515).
+* The gaps this report measured are now the Phase 5 work list:
+  1. **Durable single-writer ceiling:** S1 spends 13.6 to 14.4 ms of wall-clock time per accepted change at every tier from 1 to 32 agents, while G3F spends 2.61 ms at 32 agents (each the inverse of the measured aggregate rate in section 3.1); at 32 agents the p99 latency is 1.2 s for S1 against 119 ms for G3F.
+  2. **Slower reads than `git cat-file --batch`:** Synapse `read_file` 1.11 ms against 0.18 ms, `tree` 17.7 ms against `git ls-tree -r` 3.6 ms, `diff` 2.5 ms against `git diff-tree` 1.5 ms (section 4).
+  3. **Unbounded virtual tree cache:** the query process peaked at 782,316 to 789,720 KiB RSS with no size bound (section 4).
+  4. **No compact wire format:** the signed JSON submit request has a median of 16,653 bytes against a 904-byte Git thin pack (section 7, ESTIMATE).
+* The comparisons with Git above describe the gaps; they are not targets, and the byte and memory figures are supporting facts. Phase 5 reports each fix in seconds and joules per accepted change, and watts, next to a physical bound with its derivation and sources (ADR 0002 section 2.6).
+* The roadmap (Phases 5 to 9) and the gates that must pass before agents cut over are recorded in [ADR 0002](adr/0002-synapse-first-git-as-bridge.md).
+
+The proposal text below is kept unchanged as history.
+
 **Where the numbers point.** Most of the cost of today's practice comes from the checkout, not from Git. Removing the checkout with plain Git plumbing (G3) takes a proposal from about 1,061 ms and 146 MB to about 13 to 28 ms and 12 to 60 KB, with no new service. Against that baseline, Synapse's remaining advantages are narrower:
 
 * page-cache writes (S2 against G3): higher throughput at every tier (1,557 to 2,036 against 75 to 1,016 ops/s) and lower median latency;

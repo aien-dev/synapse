@@ -1,6 +1,6 @@
 # Synapse
 
-Synapse is AIEN's high-throughput agent changeset and integration service. It enables concurrent coding, review, verification, and benchmark agents to submit, inspect, validate, and queue source changes without materializing a full Git working-tree checkout for every operation, while preserving Git as the portable repository history format and Radicle as the cryptographic canonicality boundary.
+Synapse is AIEN's high-throughput agent changeset and integration service. It enables concurrent coding, review, verification, and benchmark agents to submit, inspect, validate, and queue source changes without materializing a full Git working-tree checkout for every operation, with Radicle as the cryptographic canonicality boundary. Synapse is source control for AI agents only (ADR 0002). Git is a small machine bridge at the edge: full-history import and export and interop with existing tooling and hosting, through deterministic Git object materialization. Git is not the primary history format.
 
 ## Language
 
@@ -15,7 +15,7 @@ The 32-byte domain-separated SHA-256 digest (`"SYNAPSE_BLOB_V1\0"`) of an immuta
 _Avoid_: Git blob OID, ChangesetId, Verified Crumb digest
 
 **GitOid**:
-The 20-byte standard Git SHA-1 object identifier (`blob`, `tree`, or `commit` header plus payload). It identifies an object materialized into or imported from a Git repository.
+The 20-byte standard Git SHA-1 object identifier (`blob`, `tree`, or `commit` header plus payload). It identifies an object materialized into or imported from a Git repository through the Git bridge.
 _Avoid_: ChangesetId, BlobDigest, RadicleCanonicalHead
 
 **RadicleCanonicalHead**:
@@ -23,7 +23,7 @@ A cryptographically verified promotion receipt proving that a target `GitOid` on
 _Avoid_: WalSeq, GitHubPullRequestProjection, unverified Git ref
 
 **GitHubPullRequestProjection**:
-A human-facing projection record linking a `ChangesetId` and its materialized `GitOid` to a GitHub pull request number and bounded review metadata. Merging a GitHub pull request never by itself establishes a `RadicleCanonicalHead`.
+A human-facing projection record linking a `ChangesetId` and its materialized `GitOid` to a GitHub pull request number and bounded review metadata. Merging a GitHub pull request never by itself establishes a `RadicleCanonicalHead`. Legacy edge adapter: kept until agent cutover (Phase 8), then removed (ADR 0002).
 _Avoid_: canonical head, Radicle quorum, source of truth
 
 **IdempotencyKey**:

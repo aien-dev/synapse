@@ -1,6 +1,6 @@
 # ADR 0001: Synapse Architecture, Owning Boundary, and Compatibility Invariants
 
-* **Status**: Accepted
+* **Status**: Accepted; superseded in part by [ADR 0002](0002-synapse-first-git-as-bridge.md) (Synapse-first for AI agents, Git as a bridge; section 2.2 items 1 and 2 and the #515 non-goal "Replacing Git")
 * **Date**: 2026-10-14
 * **Tracking Issue**: [aien-spark/aien-sovereign-core#515](https://github.com/aien-spark/aien-sovereign-core/issues/515)
 
