@@ -587,12 +587,17 @@ fn test_subprocess_crash_mid_batch_no_lost_ack_no_phantom() {
         let lens: Vec<usize> = crash
             .iter()
             .map(|(env, blobs)| {
-                SynapseStore::prepare_ingest(&StoreLimits::default(), env.clone(), blobs, true)
-                    .unwrap()
-                    .encoded
-                    .unwrap()
-                    .payload
-                    .len()
+                SynapseStore::prepare_ingest(
+                    &StoreLimits::default(),
+                    env.clone(),
+                    blobs,
+                    Some(RecordCodec::BinaryV2),
+                )
+                .unwrap()
+                .encoded
+                .unwrap()
+                .payload
+                .len()
             })
             .collect();
         let frame = |len: usize| WAL_HEADER_LEN + len;

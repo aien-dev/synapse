@@ -64,6 +64,8 @@ pub(crate) fn align_up(x: u64) -> u64 {
 #[derive(Debug, Clone)]
 pub(crate) struct EncodedRecord {
     pub kind: u8,
+    /// Frame header flags byte: the codec of the record metadata.
+    pub flags: u8,
     pub payload: Vec<u8>,
     pub payload_sha256: [u8; 32],
     pub payload_crc32c: u32,
@@ -89,10 +91,9 @@ fn too_large(what: &str) -> SynapseError {
 pub(crate) fn encode_record(
     record: &WalRecord,
     blobs: &[(BlobDigest, &[u8])],
+    codec: RecordCodec,
 ) -> SynapseResult<EncodedRecord> {
-    let meta = serde_json::to_vec(record).map_err(|e| {
-        SynapseError::new(RefusalCode::IoFailure, format!("serialize WAL record: {e}"))
-    })?;
+    let meta = codec::encode_record_with(record, codec)?;
     let blob_bytes: usize = blobs.iter().map(|(_, b)| 36 + b.len()).sum();
     let mut payload = Vec::with_capacity(8 + meta.len() + blob_bytes);
     payload.extend_from_slice(
@@ -118,11 +119,52 @@ pub(crate) fn encode_record(
     u32::try_from(payload.len()).map_err(|_| too_large("payload"))?;
     Ok(EncodedRecord {
         kind: record.kind_byte(),
+        flags: codec.frame_flags(),
         payload_sha256: payload_digest(&payload),
         payload_crc32c: crc32c(&payload),
         payload,
         inline,
     })
+}
+
+impl EncodedRecord {
+    /// Codec of the record metadata.
+    pub fn codec(&self) -> RecordCodec {
+        RecordCodec::from_frame_flags(self.flags).expect("encoded with a known codec")
+    }
+
+    /// The same record with its metadata re-encoded as `codec` (inline blobs kept, their
+    /// offsets shifted). Used when a store migrates between prepare and commit.
+    pub fn recode(&self, record: &WalRecord, codec: RecordCodec) -> SynapseResult<Self> {
+        if self.codec() == codec {
+            return Ok(self.clone());
+        }
+        let old_meta = u32::from_le_bytes(self.payload[0..4].try_into().expect("4 bytes")) as usize;
+        let meta = codec::encode_record_with(record, codec)?;
+        let rest = &self.payload[4 + old_meta..];
+        let mut payload = Vec::with_capacity(4 + meta.len() + rest.len());
+        payload.extend_from_slice(
+            &u32::try_from(meta.len())
+                .map_err(|_| too_large("record metadata"))?
+                .to_le_bytes(),
+        );
+        payload.extend_from_slice(&meta);
+        payload.extend_from_slice(rest);
+        u32::try_from(payload.len()).map_err(|_| too_large("payload"))?;
+        let shift = |off: u32| (off as usize - 4 - old_meta + 4 + meta.len()) as u32;
+        Ok(Self {
+            kind: self.kind,
+            flags: codec.frame_flags(),
+            payload_sha256: payload_digest(&payload),
+            payload_crc32c: crc32c(&payload),
+            inline: self
+                .inline
+                .iter()
+                .map(|(d, o, l)| (*d, shift(*o), *l))
+                .collect(),
+            payload,
+        })
+    }
 }
 
 /// Decoded v2 payload.
@@ -140,7 +182,12 @@ fn corrupt(seq: WalSeq, what: &str) -> SynapseError {
 }
 
 /// Decode a v2 payload, verifying every inline blob digest.
-pub(crate) fn decode_payload(seq: WalSeq, payload: &[u8]) -> SynapseResult<DecodedPayload> {
+pub(crate) fn decode_payload(
+    seq: WalSeq,
+    payload: &[u8],
+    codec: RecordCodec,
+    cap: u64,
+) -> SynapseResult<DecodedPayload> {
     let rd_u32 = |at: usize| -> SynapseResult<u32> {
         payload
             .get(at..at + 4)
@@ -151,8 +198,17 @@ pub(crate) fn decode_payload(seq: WalSeq, payload: &[u8]) -> SynapseResult<Decod
     let meta = payload
         .get(4..4 + meta_len)
         .ok_or_else(|| corrupt(seq, "truncated metadata"))?;
-    let record: WalRecord =
-        serde_json::from_slice(meta).map_err(|e| corrupt(seq, &format!("record JSON: {e}")))?;
+    let record = match codec {
+        RecordCodec::JsonV1 => {
+            serde_json::from_slice(meta).map_err(|e| corrupt(seq, &format!("record JSON: {e}")))?
+        }
+        RecordCodec::BinaryV2 => codec::decode_record(meta, cap).map_err(|r| {
+            r.into_error(
+                RefusalCode::WalRecordMalformed,
+                &format!("binary WAL v2 record at {seq}"),
+            )
+        })?,
+    };
     let mut at = 4 + meta_len;
     let count = rd_u32(at)? as usize;
     at += 4;
@@ -189,6 +245,7 @@ pub(crate) fn frame_header(
     seq: WalSeq,
     prev_sha: [u8; 32],
     kind: u8,
+    flags: u8,
     payload_len: u32,
     payload_crc32c: u32,
     payload_sha256: &[u8; 32],
@@ -197,7 +254,7 @@ pub(crate) fn frame_header(
     h[0..4].copy_from_slice(&WAL_MAGIC);
     h[4..6].copy_from_slice(&WAL_V2_VERSION.to_le_bytes());
     h[6] = kind;
-    h[7] = 0;
+    h[7] = flags;
     h[8..16].copy_from_slice(&seq.0.to_le_bytes());
     h[16..48].copy_from_slice(&prev_sha);
     h[48..52].copy_from_slice(&payload_len.to_le_bytes());
@@ -316,6 +373,7 @@ impl BatchBuilder {
             seq_on_disk,
             prev,
             enc.kind,
+            enc.flags,
             enc.payload.len() as u32,
             crc,
             &enc.payload_sha256,
@@ -537,6 +595,7 @@ impl WalV2Writer {
 pub(crate) struct RecoveredFrame {
     pub seq: WalSeq,
     pub frame_sha256: [u8; 32],
+    pub codec: RecordCodec,
     pub record: WalRecord,
     /// Inline blobs: (digest, absolute file offset, length).
     pub inline: Vec<(BlobDigest, u64, u32)>,
@@ -548,6 +607,7 @@ pub(crate) fn validate_batch(
     off: usize,
     mut expected_seq: WalSeq,
     mut prev_sha: [u8; 32],
+    cap: u64,
 ) -> SynapseResult<(Vec<RecoveredFrame>, usize)> {
     let torn = |what: &str| {
         SynapseError::new(
@@ -597,17 +657,23 @@ pub(crate) fn validate_batch(
                 format!("frame version {version} inside a WAL v2 batch at offset {at}"),
             ));
         }
-        if h[7] != 0 {
-            return Err(SynapseError::new(
+        let codec = RecordCodec::from_frame_flags(h[7]).ok_or_else(|| {
+            SynapseError::new(
                 RefusalCode::WalFlagsNonZero,
-                format!("non-zero WAL flags {} at offset {at}", h[7]),
-            ));
-        }
+                format!("unknown WAL flags {} at offset {at}", h[7]),
+            )
+        })?;
         let seq = WalSeq(u64::from_le_bytes(h[8..16].try_into().expect("8")));
         let prev: [u8; 32] = h[16..48].try_into().expect("32");
         let payload_len = u32::from_le_bytes(h[48..52].try_into().expect("4")) as usize;
         let crc = u32::from_le_bytes(h[52..56].try_into().expect("4"));
         let stored_sha: [u8; 32] = h[56..88].try_into().expect("32");
+        if payload_len as u64 > cap {
+            return Err(SynapseError::new(
+                RefusalCode::QuotaPayloadTooLarge,
+                format!("WAL v2 frame at offset {at} declares {payload_len} payload bytes, above the cap {cap}"),
+            ));
+        }
         let p_start = at + WAL_HEADER_LEN;
         let p_end = p_start + payload_len;
         if p_end > body_end {
@@ -643,13 +709,20 @@ pub(crate) fn validate_batch(
                 format!("WAL frame_sha256 mismatch at {seq}"),
             ));
         }
-        let decoded = decode_payload(seq, payload)?;
+        let decoded = decode_payload(seq, payload, codec, cap)?;
         if decoded.record.kind_byte() != h[6] {
-            return Err(corrupt(seq, "record kind byte does not match payload"));
+            return Err(match codec {
+                RecordCodec::JsonV1 => corrupt(seq, "record kind byte does not match payload"),
+                RecordCodec::BinaryV2 => SynapseError::new(
+                    RefusalCode::WalRecordMalformed,
+                    format!("record kind byte does not match payload at {seq}"),
+                ),
+            });
         }
         frames.push(RecoveredFrame {
             seq,
             frame_sha256: stored_sha,
+            codec,
             record: decoded.record,
             inline: decoded
                 .inline

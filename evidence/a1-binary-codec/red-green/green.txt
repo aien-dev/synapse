@@ -1,0 +1,35 @@
+# Green (2026-10-14)
+
+test a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused ... ok
+test a1_tests::a1_encoder_refuses_a_repository_id_that_rejects_validation ... ok
+test a1_tests::a1_v1_readers_refuse_the_tombstone ... ok
+test a1_tests::a1_edge_records_match_their_json_form_in_both_directions ... ok
+test a1_tests::a1_every_record_kind_matches_its_v1_json_form_in_both_directions ... ok
+test a1_tests::a1_checkpoint_state_matches_its_v1_json_form_in_both_directions ... ok
+test a1_tests::a1_state_root_helpers_match_the_store ... ok
+test a1_tests::a1_frame_length_cap_is_enforced_on_write_and_on_replay ... ok
+test a1_tests::a1_codec_never_goes_back_and_never_runs_ahead_of_the_migration ... ok
+test a1_tests::a1_damaged_checkpoint_v2_is_refused ... ok
+test a1_tests::a1_record_prepared_before_the_migration_commits_in_the_new_codec ... ok
+test a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_log ... ok
+test a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_v2_log ... ok
+test a1_tests::a1_fresh_store_writes_binary_frames_and_records_the_empty_v1_root ... ok
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.51s
+test a1_malformed_frame_corpus_is_refused_typed_without_panic_or_allocation_above_the_cap ... ok
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running tests/a1_malformed_corpus.rs (target/debug/deps/a1_malformed_corpus-a504c58915c17321)
+A1 malformed corpus (cap 2048 bytes, largest valid payload 434 bytes):
+  bit_flipped: 12016 refused, largest allocation 100 bytes, codes {"QuotaPayloadTooLarge": 126, "WalChainMismatch": 3510, "WalCrcMismatch": 8008, "WalFlagsNonZero": 42, "WalMagicInvalid": 192, "WalTornFrame": 42, "WalVersionUnsupported": 96}
+  checkpoint_bit_flipped: 15232 refused, largest allocation 90 bytes, codes {"CheckpointCorrupt": 15232}
+  checkpoint_truncated: 1904 refused, largest allocation 90 bytes, codes {"CheckpointCorrupt": 1904}
+  oversized_frame_length: 18 refused, largest allocation 100 bytes, codes {"QuotaPayloadTooLarge": 18}
+  oversized_inner_length: 18 refused, largest allocation 136 bytes, codes {"WalRecordMalformed": 18}
+  truncated: 1502 refused, largest allocation 88 bytes, codes {"WalTornFrame": 1502}
+  total: 30690 refused, 0 panics, 0 accepted
+test a1_malformed_frame_corpus_is_refused_typed_without_panic_or_allocation_above_the_cap ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.71s
+
+test conformance::tests::wal_suite_stores_write_binary_codec_frames ... ok
+test conformance::tests::wal_suite_cases_pass ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 41 filtered out; finished in 2.39s

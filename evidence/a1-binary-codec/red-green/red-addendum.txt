@@ -1,0 +1,30 @@
+# Red addendum (2026-10-14)
+
+## 1. a1_every_record_kind_matches_its_v1_json_form_in_both_directions
+In red.txt this test failed on its own fixture-size guard (records.len() >= 20; the
+fixture holds 16: 8 frames left in wal.log after its checkpoint, 8 in wal.v2.log), not on
+the codec. The guard was corrected to assert_eq!(records.len(), 16) and the test was rerun
+against the red commit 52a99fc (codec stubs) with only that correction applied:
+
+test a1_tests::a1_every_record_kind_matches_its_v1_json_form_in_both_directions ... FAILED
+
+failures:
+--
+thread 'a1_tests::a1_every_record_kind_matches_its_v1_json_form_in_both_directions' (332449) panicked at crates/synapse-store/src/a1_tests.rs:148:5:
+assertion `left == right` failed: codec version byte
+  left: None
+--
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p synapse-store --lib`
+
+## 2. a1_record_prepared_before_the_migration_commits_in_the_new_codec (added after red.txt)
+Written after the implementation; shown red by disabling the re-encode in
+SynapseStore::conform_v2 (condition forced false), then restored:
+
+test a1_tests::a1_record_prepared_before_the_migration_commits_in_the_new_codec ... FAILED
+thread 'a1_tests::a1_record_prepared_before_the_migration_commits_in_the_new_codec' (305528) panicked at crates/synapse-store/src/a1_tests.rs:866:5:
+assertion `left == right` failed
+  left: [0]
+ right: [1]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 34 filtered out; finished in 0.10s

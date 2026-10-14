@@ -15,7 +15,7 @@
 
 use super::*;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, Instant};
 
@@ -58,6 +58,9 @@ pub struct SharedStore {
     queue: Mutex<Queue>,
     queue_cv: Condvar,
     v2: bool,
+    /// Record codec the store wrote with when last seen (frame flags byte). Submitters
+    /// encode with it; a commit re-encodes a record if the codec changed meanwhile.
+    codec_hint: AtomicU8,
     max_batch: usize,
     max_delay: Duration,
     max_queue: usize,
@@ -121,6 +124,7 @@ impl SharedStore {
         };
         Self {
             v2: store.is_wal_v2(),
+            codec_hint: AtomicU8::new(store.record_codec().frame_flags()),
             max_batch,
             max_delay,
             max_queue: store.limits().max_inflight_admissions.max(1),
@@ -158,7 +162,11 @@ impl SharedStore {
     /// Run `f` with exclusive access, after any batch in progress has finished.
     pub fn with_exclusive<R>(&self, f: impl FnOnce(&mut SynapseStore) -> R) -> R {
         let _gate = lock(&self.commit_gate);
-        f(&mut self.write_state())
+        let mut st = self.write_state();
+        let r = f(&mut st);
+        self.codec_hint
+            .store(st.record_codec().frame_flags(), Ordering::Relaxed);
+        r
     }
 
     /// Exclusive access without locking (the borrow checker proves no one else has it).
@@ -257,7 +265,10 @@ impl SharedStore {
             }
         }
         // 2. Stateless half, in parallel on the caller's thread.
-        let prepared = SynapseStore::prepare_ingest(&self.limits, envelope, blobs, self.v2)?;
+        let codec = RecordCodec::from_frame_flags(self.codec_hint.load(Ordering::Relaxed))
+            .unwrap_or(RecordCodec::BinaryV2);
+        let prepared =
+            SynapseStore::prepare_ingest(&self.limits, envelope, blobs, self.v2.then_some(codec))?;
 
         let slot: Slot = Arc::new(Mutex::new(None));
         let mut q = lock(&self.queue);
@@ -326,7 +337,7 @@ impl SharedStore {
         }
     }
 
-    fn commit_batch(&self, batch: Vec<Pending>) {
+    fn commit_batch(&self, mut batch: Vec<Pending>) {
         let _gate = lock(&self.commit_gate);
         if !self.v2 {
             // Legacy policies: one record and one sync at a time, in queue order.
@@ -353,15 +364,14 @@ impl SharedStore {
         let mut planned = Vec::with_capacity(batch.len());
         let mut accepted = Vec::new();
         let mut seq = st.committed_seq;
-        for (i, p) in batch.iter().enumerate() {
+        self.codec_hint
+            .store(st.record_codec().frame_flags(), Ordering::Relaxed);
+        for (i, p) in batch.iter_mut().enumerate() {
             let mut pl = st.plan_ingest(&p.prepared, &overlay);
             if matches!(pl, Planned::Accept) {
-                if p.prepared.encoded.is_none() {
+                if let Err(error) = st.conform_v2(&mut p.prepared) {
                     pl = Planned::Refused {
-                        error: refusal(
-                            RefusalCode::IoFailure,
-                            "changeset was prepared for WAL v1 but the store writes WAL v2",
-                        ),
+                        error,
                         depends_on_batch: false,
                     };
                 } else {

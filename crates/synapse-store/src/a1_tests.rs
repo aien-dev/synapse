@@ -162,11 +162,8 @@ fn assert_both_directions(json: &[u8]) -> u8 {
 fn a1_every_record_kind_matches_its_v1_json_form_in_both_directions() {
     let mut kinds = BTreeSet::new();
     let records = fixture_json_records();
-    assert!(
-        records.len() >= 20,
-        "fixture holds {} records",
-        records.len()
-    );
+    // 8 frames left in the v1 wal.log after its checkpoint, 8 in the group-commit log.
+    assert_eq!(records.len(), 16, "fixture record count");
     for json in &records {
         kinds.insert(assert_both_directions(json));
     }
@@ -840,4 +837,44 @@ fn a1_frame_length_cap_is_enforced_on_write_and_on_replay() {
         StoreLimits::default()
     )
     .is_ok());
+}
+
+#[test]
+fn a1_record_prepared_before_the_migration_commits_in_the_new_codec() {
+    // Group commit prepares records outside the store lock; the migration checkpoint can
+    // land between prepare and commit. The record must then be written as binary v2 with
+    // its inline blob still readable after reopen.
+    let limits = StoreLimits {
+        wal_prealloc_bytes: 64 * 1024,
+        ..Default::default()
+    };
+    let policy = FsyncPolicy::GROUP_COMMIT_DEFAULT;
+    let dir = copy_fixture("v1-wal-v2-log");
+    let mut s = SynapseStore::open(&dir, policy, STRICT, limits.clone()).unwrap();
+    assert_eq!(s.record_codec(), RecordCodec::JsonV1);
+    let key = SigningKey::from_bytes(&[0x5E; 32]);
+    let content = b"prepared before the migration checkpoint";
+    let (env, blobs) = make_signed_changeset(&key, "late", "late.rs", content, vec![], 9);
+    let digest = blobs[0].0;
+    let prepared =
+        SynapseStore::prepare_ingest(&limits, env, &blobs, Some(RecordCodec::JsonV1)).unwrap();
+    s.checkpoint_and_compact(10).unwrap();
+    assert_eq!(s.record_codec(), RecordCodec::BinaryV2);
+    let IngestOutcome::Committed { wal_seq, .. } = s.ingest_prepared(prepared).unwrap() else {
+        panic!("expected a commit");
+    };
+    assert_eq!(v2_flags(&dir), vec![WAL_FLAG_CODEC_V2]);
+    assert_eq!(
+        s.get_blob_visible(digest, None, None).unwrap(),
+        content.to_vec()
+    );
+    let root = s.state_root_digest(None).unwrap();
+    drop(s);
+    let s = SynapseStore::open(&dir, policy, STRICT, limits).unwrap();
+    assert_eq!(s.committed_seq(), wal_seq);
+    assert_eq!(s.state_root_digest(None).unwrap(), root);
+    assert_eq!(
+        s.get_blob_visible(digest, None, None).unwrap(),
+        content.to_vec()
+    );
 }
