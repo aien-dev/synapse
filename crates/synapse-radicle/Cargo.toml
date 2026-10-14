@@ -1,0 +1,18 @@
+[package]
+name = "synapse-radicle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Radicle refs/rad/id and refs/rad/sigrefs Ed25519 delegate threshold verifier and split-brain reconciliation engine for Synapse"
+
+[dependencies]
+ed25519-dalek.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+synapse-auth.workspace = true
+synapse-core.workspace = true
+synapse-store.workspace = true
