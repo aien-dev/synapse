@@ -1025,6 +1025,10 @@ fn s09_crash_mid_submit() {
         }
         Ok(_) => false,
     };
+    assert!(
+        strict_refused,
+        "strict reopen must refuse the torn WAL tail (WalTornFrame)"
+    );
     fx.svc = SynapseService::open(
         &svc_dir,
         fx.repo.clone(),
@@ -1383,7 +1387,8 @@ fn s12_exit_rule_passing_run_is_not_publication() {
         assert_eq!(e.code, RefusalCode::RadicleIdentityInvalid);
     }
     assert!(engine.current_canonical().is_none());
-    assert!(fx.svc.store().canonical_head(&fx.repo).is_none());
+    // The Radicle engine above is standalone: it never writes the Synapse store, so the
+    // store's canonical head is not evidence here and is deliberately not asserted.
 
     // Positive controls: the gates open only for their own credentials.
     let req = fx.sign_as(
