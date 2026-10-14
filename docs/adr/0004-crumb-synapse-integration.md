@@ -83,6 +83,18 @@ This workstream sits at the Phase 7 to Phase 8 boundary: after the AI-native mod
 4. **D4 Evidence receipts.** A receipt binding `ChangesetId`, `CrumbContextDigest`, and the source revision, so evidence states which context it was produced under.
 5. **D5 Combined qualification.** One qualification run over D1 to D4, including forged records and a Git round trip.
 
+### 2.6 Pre-submit advisory (D3) behaviour
+
+`SynapseService::changeset_advisory` is a read beside the submission path, not part of it: it authorizes once under `Capability::Read` and changes nothing in `submit`, `synapse-store` or `synapse-coord`. For each path a changeset would mutate it returns:
+
+* the `CrumbContext` and `CrumbContextDigest` of the path's directory at the base snapshot (a path absent from the base, such as a new file, gets its parent directory);
+* unexpired claims on the path, or on a directory above it, held by agents other than the caller, read from a supplied `CoordStore` with its read-only `sniff` (no lock taken, nothing written). Claim keys resolve through a `PathOracle` over the base snapshot, as `crumb claim` resolves them against a checkout. The caller's agent name is self-declared, so it can only hide the caller's own claims. If the store cannot be read, the advisory still answers and says so;
+* overlapping open proposals: visible changesets outside the base's lineage and the canonical head's promoted lineage that mutate the same path or collide as file and directory. Synapse has no other "closed" state for a changeset today, so this is the working definition of open;
+* the context's invariants as guidance notes (nearest crumb first, then inherited), enforced by nothing;
+* a staleness flag: the path's context digest at the base against the same directory at a later snapshot. The caller may name that snapshot; otherwise it is the changeset promoted by the canonical head when visible, else the most recently committed changeset, else staleness is `Unknown`.
+
+A request naming more than 256 paths is refused (`QuotaTooManyPaths`), as are repeated (`PathDuplicate`) and invalid (`PathInvalid`) paths. Nothing in the result blocks or authorizes a submit; Synapse source conflicts stay the only hard refusal at this layer.
+
 ## 3. Consequences
 
 * Agents get the same directory context from a Synapse snapshot as from a Git checkout, with every gap (missing, invalid, unknown dialect) visible.

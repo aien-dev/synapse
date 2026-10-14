@@ -398,7 +398,7 @@ mod tests {
             ));
             let repo = RepoId::new("aien-spark/synapse").unwrap();
             let mut svc = SynapseService::open(
-                &dir.join("svc"),
+                dir.join("svc"),
                 repo.clone(),
                 FsyncPolicy::EveryCommit,
                 RecoveryPolicy::StrictFailClosed,
