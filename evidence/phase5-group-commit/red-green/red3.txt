@@ -1,0 +1,14 @@
+thread 'group_tests::test_subprocess_crash_mid_batch_no_lost_ack_no_phantom' (2108122) panicked at crates/synapse-store/src/group_tests.rs:598:5:
+assertion `left == right` failed
+--
+thread 'group_tests::test_injected_sync_failure_acks_nothing_and_retry_commits_once' (2108118) panicked at crates/synapse-store/src/group_tests.rs:353:32:
+no waiter of a failed batch is acknowledged: Committed { wal_seq: WalSeq(3), changeset_id: ChangesetId(98a67d929dd1ab7846819a0f25c60b5d1d938563f522f6aa21f44e84ec7ec5f6), frame_sha256: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], durability: FsyncBeforeAck }
+--
+thread 'group_tests::test_injected_write_failure_acks_nothing_and_retry_commits_once' (2108119) panicked at crates/synapse-store/src/group_tests.rs:353:32:
+no waiter of a failed batch is acknowledged: Committed { wal_seq: WalSeq(3), changeset_id: ChangesetId(1d9e0c777873f7b9eb6257000b157ea8e20fb20497f6d13554b99bb1914e4f94), frame_sha256: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], durability: FsyncBeforeAck }
+--
+thread 'group_tests::test_concurrent_submitters_acks_unique_contiguous_and_durable_before_ack' (2108114) panicked at crates/synapse-store/src/group_tests.rs:239:9:
+acknowledged wal:8 while the durable watermark was wal:1
+--
+test result: FAILED. 6 passed; 4 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.82s
+

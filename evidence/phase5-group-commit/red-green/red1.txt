@@ -1,0 +1,5 @@
+thread 'group_tests::test_subprocess_crash_mid_batch_no_lost_ack_no_phantom' (2103987) panicked at crates/synapse-store/src/group_tests.rs:608:18:
+strict recovery accepted the torn batch: committed_seq wal:5 with 4 acknowledged
+--
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.09s
+

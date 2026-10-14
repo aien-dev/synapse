@@ -1,0 +1,626 @@
+{
+  "schema": "synapse-gate4-qualification-manifest/v1",
+  "smoke": false,
+  "started_at_utc": "2026-10-14T17:02:23Z",
+  "finished_at_utc": "2026-10-14T17:15:09Z",
+  "total_run_s": 765.205,
+  "command_line": [
+    "target/release/synapse-bench",
+    "run",
+    "--fixture-repo",
+    "/home/drakestapleton/workspace/aien-sovereign-core",
+    "--fixture-rev",
+    "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "--out",
+    "/home/drakestapleton/.t3/projects/synapse/.claude/worktrees/agent-acc292068feda44e4/evidence/phase5-group-commit",
+    "--work-dir",
+    "/tmp/synapse-p5.kUpL2F",
+    "--source-rev",
+    "de17a0a44b2c3942f1eca450a080ffe20b7897de",
+    "--source-dirty",
+    "clean",
+    "--source-digest",
+    "10b7df89efbf21c921c4f42a4e3b51fd42721fa58353f427c97c5312461c9599",
+    "--write-only",
+    "--arms",
+    "S1,S3",
+    "--tiers",
+    "1,4,8,32",
+    "--reps",
+    "3",
+    "--ops-floor",
+    "4000",
+    "--idle-window-s",
+    "30"
+  ],
+  "config": {
+    "fixture_repo": "/home/drakestapleton/workspace/aien-sovereign-core",
+    "fixture_rev": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "out_dir": "/home/drakestapleton/.t3/projects/synapse/.claude/worktrees/agent-acc292068feda44e4/evidence/phase5-group-commit",
+    "work_dir": "/tmp/synapse-p5.kUpL2F",
+    "reps": 3,
+    "tiers": [
+      1,
+      4,
+      8,
+      32
+    ],
+    "arms": [
+      "S1",
+      "S3"
+    ],
+    "seed": 7673641184369446932,
+    "ops_floor": 4000,
+    "min_ops_per_agent": 8,
+    "g1_ops_cap": 32,
+    "batch_window_records": 64,
+    "query_agents": 8,
+    "query_ops_per_agent": 50,
+    "query_samples": 400,
+    "recovery_sizes": [
+      100,
+      1000,
+      10000
+    ],
+    "recovery_reopen_reps": 3,
+    "radicle_repo": null,
+    "source_rev": "de17a0a44b2c3942f1eca450a080ffe20b7897de",
+    "source_dirty": "clean",
+    "source_digest": "10b7df89efbf21c921c4f42a4e3b51fd42721fa58353f427c97c5312461c9599",
+    "smoke": false,
+    "command_line": [
+      "target/release/synapse-bench",
+      "run",
+      "--fixture-repo",
+      "/home/drakestapleton/workspace/aien-sovereign-core",
+      "--fixture-rev",
+      "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+      "--out",
+      "/home/drakestapleton/.t3/projects/synapse/.claude/worktrees/agent-acc292068feda44e4/evidence/phase5-group-commit",
+      "--work-dir",
+      "/tmp/synapse-p5.kUpL2F",
+      "--source-rev",
+      "de17a0a44b2c3942f1eca450a080ffe20b7897de",
+      "--source-dirty",
+      "clean",
+      "--source-digest",
+      "10b7df89efbf21c921c4f42a4e3b51fd42721fa58353f427c97c5312461c9599",
+      "--write-only",
+      "--arms",
+      "S1,S3",
+      "--tiers",
+      "1,4,8,32",
+      "--reps",
+      "3",
+      "--ops-floor",
+      "4000",
+      "--idle-window-s",
+      "30"
+    ],
+    "write_only": true,
+    "idle_window_s": 30.0
+  },
+  "host": {
+    "hostname": "spark-b87b",
+    "kernel_release": "7.0.0-1019-nvidia",
+    "arch": "aarch64",
+    "cpu_models": [
+      "Cortex-X925",
+      "Cortex-A725"
+    ],
+    "cpu_model_source": "lscpu",
+    "logical_cpus": 20,
+    "mem_total_kib": 127598752,
+    "git_version": "git version 2.43.0",
+    "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "cargo_version": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "work_dir": "/tmp/synapse-p5.kUpL2F",
+    "work_dir_fs_type": "ext4",
+    "work_dir_source": "/dev/nvme0n1p2",
+    "work_dir_free_bytes_at_start": 1038752292864
+  },
+  "fixture": {
+    "original_repo": "/home/drakestapleton/workspace/aien-sovereign-core",
+    "requested_rev": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "commit": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "tree": "39684d806998aa579244a55aab41b954be963525",
+    "files": 4376,
+    "total_bytes": 145731971,
+    "largest_file_bytes": 65855376,
+    "skipped_entries": 0,
+    "editable_files": 2307,
+    "master_clone_method": "git clone --no-checkout --no-hardlinks (once); each cell: git clone --no-checkout --local of the master clone",
+    "master_clone_git_dir_apparent_bytes": 197693137,
+    "original_head_before": "c83eb5b2f96b3d0a36fcb5092fcf0d66af5dd0d0",
+    "original_head_after": "c83eb5b2f96b3d0a36fcb5092fcf0d66af5dd0d0",
+    "original_refs_sha256_before": "f82f11057314e03041afdea13d89db8c9e909cc71a056778fa8752af75489ef2",
+    "original_refs_sha256_after": "f82f11057314e03041afdea13d89db8c9e909cc71a056778fa8752af75489ef2"
+  },
+  "bench_clone_config": [
+    [
+      "gc.auto",
+      "0"
+    ],
+    [
+      "maintenance.auto",
+      "false"
+    ],
+    [
+      "user.name",
+      "Synapse Gate4 Bench"
+    ],
+    [
+      "user.email",
+      "gate4-bench@synapse.invalid"
+    ],
+    [
+      "commit.gpgsign",
+      "false"
+    ]
+  ],
+  "git_config": [
+    {
+      "key": "core.fsync",
+      "values_with_origin": [],
+      "set": false
+    },
+    {
+      "key": "core.fsyncMethod",
+      "values_with_origin": [],
+      "set": false
+    },
+    {
+      "key": "core.fsyncObjectFiles",
+      "values_with_origin": [],
+      "set": false
+    },
+    {
+      "key": "gc.auto",
+      "values_with_origin": [
+        "file:.git/config 0"
+      ],
+      "set": true
+    },
+    {
+      "key": "maintenance.auto",
+      "values_with_origin": [
+        "file:.git/config false"
+      ],
+      "set": true
+    }
+  ],
+  "git_config_listing": [
+    "file:/etc/gitconfig filter.lfs.clean=git-lfs clean -- %f",
+    "file:/etc/gitconfig filter.lfs.smudge=git-lfs smudge -- %f",
+    "file:/etc/gitconfig filter.lfs.process=git-lfs filter-process",
+    "file:/etc/gitconfig filter.lfs.required=true",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.clean=git-lfs clean -- %f",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.smudge=git-lfs smudge -- %f",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.process=git-lfs filter-process",
+    "file:/home/drakestapleton/.gitconfig filter.lfs.required=true",
+    "file:/home/drakestapleton/.gitconfig user.name=Drake Stapleton",
+    "file:/home/drakestapleton/.gitconfig user.email=drake@aienos.com",
+    "file:/home/drakestapleton/.gitconfig core.excludesfile=/home/drakestapleton/.gitignore_global",
+    "file:.git/config core.repositoryformatversion=0",
+    "file:.git/config core.filemode=true",
+    "file:.git/config core.bare=false",
+    "file:.git/config core.logallrefupdates=true",
+    "file:.git/config remote.origin.url=/home/drakestapleton/workspace/aien-sovereign-core",
+    "file:.git/config remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*",
+    "file:.git/config branch.docs/readme-restructure.remote=origin",
+    "file:.git/config branch.docs/readme-restructure.merge=refs/heads/docs/readme-restructure",
+    "file:.git/config gc.auto=0",
+    "file:.git/config maintenance.auto=false",
+    "file:.git/config user.name=Synapse Gate4 Bench",
+    "file:.git/config user.email=gate4-bench@synapse.invalid",
+    "file:.git/config commit.gpgsign=false"
+  ],
+  "fsync_probe": {
+    "tool": "strace",
+    "default_config_fsync_calls": 0,
+    "fsync_all_config_fsync_calls": 1,
+    "note": "counts of fsync, fdatasync, sync_file_range, and syncfs calls made by one `git hash-object -w --stdin` (strace -f -c)"
+  },
+  "disk": {
+    "free_bytes_at_start": 1038550986752,
+    "estimated_peak_cell_bytes": 2834333864,
+    "required_free_bytes": 8503001592,
+    "min_free_bytes_observed": 1037428572160
+  },
+  "source": {
+    "rev": "de17a0a44b2c3942f1eca450a080ffe20b7897de",
+    "dirty": "clean",
+    "digest": "10b7df89efbf21c921c4f42a4e3b51fd42721fa58353f427c97c5312461c9599"
+  },
+  "cell_order_seed": 3636407535504307889,
+  "cell_order": [
+    {
+      "order": 0,
+      "label": "write-S3-a01-r0",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 0
+    },
+    {
+      "order": 1,
+      "label": "write-S3-a04-r0",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 0
+    },
+    {
+      "order": 2,
+      "label": "write-S3-a32-r0",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 0
+    },
+    {
+      "order": 3,
+      "label": "write-S1-a04-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 0
+    },
+    {
+      "order": 4,
+      "label": "write-S1-a32-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 0
+    },
+    {
+      "order": 5,
+      "label": "write-S1-a01-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 0
+    },
+    {
+      "order": 6,
+      "label": "write-S3-a08-r0",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 0
+    },
+    {
+      "order": 7,
+      "label": "write-S1-a08-r0",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 0
+    },
+    {
+      "order": 8,
+      "label": "write-S3-a08-r1",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 1
+    },
+    {
+      "order": 9,
+      "label": "write-S1-a08-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 1
+    },
+    {
+      "order": 10,
+      "label": "write-S3-a01-r1",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 1
+    },
+    {
+      "order": 11,
+      "label": "write-S1-a32-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 1
+    },
+    {
+      "order": 12,
+      "label": "write-S3-a04-r1",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 1
+    },
+    {
+      "order": 13,
+      "label": "write-S1-a01-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 1
+    },
+    {
+      "order": 14,
+      "label": "write-S1-a04-r1",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 1
+    },
+    {
+      "order": 15,
+      "label": "write-S3-a32-r1",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 1
+    },
+    {
+      "order": 16,
+      "label": "write-S3-a01-r2",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 2
+    },
+    {
+      "order": 17,
+      "label": "write-S3-a04-r2",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 2
+    },
+    {
+      "order": 18,
+      "label": "write-S1-a08-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 2
+    },
+    {
+      "order": 19,
+      "label": "write-S3-a32-r2",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 2
+    },
+    {
+      "order": 20,
+      "label": "write-S1-a01-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 1,
+      "ops_per_agent": 4000,
+      "rep": 2
+    },
+    {
+      "order": 21,
+      "label": "write-S1-a32-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 32,
+      "ops_per_agent": 125,
+      "rep": 2
+    },
+    {
+      "order": 22,
+      "label": "write-S3-a08-r2",
+      "kind": "write",
+      "arm": "S3",
+      "agents": 8,
+      "ops_per_agent": 500,
+      "rep": 2
+    },
+    {
+      "order": 23,
+      "label": "write-S1-a04-r2",
+      "kind": "write",
+      "arm": "S1",
+      "agents": 4,
+      "ops_per_agent": 1000,
+      "rep": 2
+    }
+  ],
+  "cell_timings": [
+    {
+      "label": "write-S3-a01-r0",
+      "clone_ms": 25.528,
+      "child_wall_ms": 9189.933,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a04-r0",
+      "clone_ms": 23.698,
+      "child_wall_ms": 4007.87,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a32-r0",
+      "clone_ms": 33.07,
+      "child_wall_ms": 2390.217,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a04-r0",
+      "clone_ms": 34.746,
+      "child_wall_ms": 56451.191,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a32-r0",
+      "clone_ms": 23.616,
+      "child_wall_ms": 58003.456,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a01-r0",
+      "clone_ms": 25.159,
+      "child_wall_ms": 57869.356,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a08-r0",
+      "clone_ms": 26.625,
+      "child_wall_ms": 2801.802,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a08-r0",
+      "clone_ms": 23.972,
+      "child_wall_ms": 56867.713,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a08-r1",
+      "clone_ms": 33.732,
+      "child_wall_ms": 2734.026,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a08-r1",
+      "clone_ms": 35.352,
+      "child_wall_ms": 55625.894,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a01-r1",
+      "clone_ms": 24.755,
+      "child_wall_ms": 9374.089,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a32-r1",
+      "clone_ms": 25.221,
+      "child_wall_ms": 56679.66,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a04-r1",
+      "clone_ms": 32.478,
+      "child_wall_ms": 4012.888,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a01-r1",
+      "clone_ms": 24.947,
+      "child_wall_ms": 56078.032,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a04-r1",
+      "clone_ms": 24.372,
+      "child_wall_ms": 55200.634,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a32-r1",
+      "clone_ms": 34.468,
+      "child_wall_ms": 2548.882,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a01-r2",
+      "clone_ms": 36.436,
+      "child_wall_ms": 8858.964,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a04-r2",
+      "clone_ms": 23.59,
+      "child_wall_ms": 4020.321,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a08-r2",
+      "clone_ms": 33.782,
+      "child_wall_ms": 56812.095,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a32-r2",
+      "clone_ms": 25.948,
+      "child_wall_ms": 2522.016,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a01-r2",
+      "clone_ms": 23.461,
+      "child_wall_ms": 56252.852,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a32-r2",
+      "clone_ms": 34.9,
+      "child_wall_ms": 55663.223,
+      "ok": true
+    },
+    {
+      "label": "write-S3-a08-r2",
+      "clone_ms": 28.06,
+      "child_wall_ms": 2742.651,
+      "ok": true
+    },
+    {
+      "label": "write-S1-a04-r2",
+      "clone_ms": 22.26,
+      "child_wall_ms": 56388.023,
+      "ok": true
+    }
+  ],
+  "trace_files": [
+    "traces/write-S1-a01-r0.jsonl",
+    "traces/write-S1-a01-r1.jsonl",
+    "traces/write-S1-a01-r2.jsonl",
+    "traces/write-S1-a04-r0.jsonl",
+    "traces/write-S1-a04-r1.jsonl",
+    "traces/write-S1-a04-r2.jsonl",
+    "traces/write-S1-a08-r0.jsonl",
+    "traces/write-S1-a08-r1.jsonl",
+    "traces/write-S1-a08-r2.jsonl",
+    "traces/write-S1-a32-r0.jsonl",
+    "traces/write-S1-a32-r1.jsonl",
+    "traces/write-S1-a32-r2.jsonl",
+    "traces/write-S3-a01-r0.jsonl",
+    "traces/write-S3-a01-r1.jsonl",
+    "traces/write-S3-a01-r2.jsonl",
+    "traces/write-S3-a04-r0.jsonl",
+    "traces/write-S3-a04-r1.jsonl",
+    "traces/write-S3-a04-r2.jsonl",
+    "traces/write-S3-a08-r0.jsonl",
+    "traces/write-S3-a08-r1.jsonl",
+    "traces/write-S3-a08-r2.jsonl",
+    "traces/write-S3-a32-r0.jsonl",
+    "traces/write-S3-a32-r1.jsonl",
+    "traces/write-S3-a32-r2.jsonl"
+  ]
+}

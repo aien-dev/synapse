@@ -1,9 +1,10 @@
 //! WAL v2 (`wal.v2.log`): pre-written log of 4 KiB-aligned batches with inline blobs.
 //!
 //! Why: on this host's ext4/NVMe, writing into space that is already written and synced
-//! and then calling `fdatasync` measured 0.80 to 1.10 ms (4 KiB to 1 MiB), while any
-//! append, `fallocate`d write, or new file plus `fsync` needs a journal commit and
-//! measured 2.6 to 6.3 ms (`docs/PHASE5_GROUP_COMMIT.md`, floor probe). v2 therefore
+//! and then calling `fdatasync` measured 0.81 to 1.11 ms median (4 KiB to 1 MiB), while
+//! any append, `fallocate`d write, or new file plus `fsync` needs a journal commit and
+//! measured 3.5 to 6.4 ms median (`docs/PHASE5_GROUP_COMMIT.md`,
+//! `evidence/phase5-group-commit/floor.json`). v2 therefore
 //! keeps every durable commit inside pre-written space, stores blobs inside the log
 //! instead of one file each, and commits a whole batch with one `pwrite` and one
 //! `fdatasync`.
