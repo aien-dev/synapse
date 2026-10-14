@@ -1,0 +1,67 @@
+# J3 review round, red: new tests against stubs (ed25519_edge_cases empty, CORPUS_SHA256 unpinned). 2026-10-14T18:57:22Z
+$ cargo test -p synapse-bench --lib crypto_vectors
+
+running 15 tests
+test crypto_vectors::tests::inner_portable_backend_is_in_use ... ok
+test crypto_vectors::tests::sealed_corpus_digest_is_pinned ... FAILED
+test crypto_vectors::tests::decoder_refuses_malformed_corpora_with_typed_errors ... ok
+test crypto_vectors::tests::corpus_pins_the_edge_case_decisions ... ok
+test crypto_vectors::tests::every_length_across_the_block_boundaries_is_in_the_corpus ... ok
+test crypto_vectors::tests::rfc8032_vectors_match_the_rust_crate_and_are_in_the_corpus ... ok
+test crypto_vectors::tests::corpus_round_trips_byte_for_byte ... ok
+test crypto_vectors::tests::models_reproduce_dalek_on_the_whole_corpus ... ok
+test crypto_vectors::tests::each_edge_case_is_in_the_corpus_and_catches_a_wrong_implementation ... FAILED
+test crypto_vectors::tests::a0_instruction_code_gives_every_corpus_digest ... ok
+test crypto_vectors::tests::published_sha256_answers_match_the_rust_crate_and_are_in_the_corpus ... ok
+test crypto_vectors::tests::every_corpus_answer_is_the_rust_crates_answer ... ok
+test crypto_vectors::tests::sealed_corpus_matches_the_rust_crates_exactly ... ok
+test crypto_vectors::tests::workspace_sha2_is_built_with_its_aarch64_instruction_backend ... ok
+test crypto_vectors::tests::portable_sha2_backend_gives_the_sealed_corpus ... ok
+
+failures:
+
+---- crypto_vectors::tests::sealed_corpus_digest_is_pinned stdout ----
+
+thread 'crypto_vectors::tests::sealed_corpus_digest_is_pinned' (11814) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:440:5:
+assertion `left == right` failed: corpus digest not pinned
+  left: 0
+ right: 64
+
+---- crypto_vectors::tests::each_edge_case_is_in_the_corpus_and_catches_a_wrong_implementation stdout ----
+
+thread 'crypto_vectors::tests::each_edge_case_is_in_the_corpus_and_catches_a_wrong_implementation' (11806) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:696:32:
+edge case noncanonical_r_y_p_plus_1 missing
+
+
+failures:
+    crypto_vectors::tests::each_edge_case_is_in_the_corpus_and_catches_a_wrong_implementation
+    crypto_vectors::tests::sealed_corpus_digest_is_pinned
+
+test result: FAILED. 13 passed; 2 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.69s
+
+error: test failed, to rerun pass `-p synapse-bench --lib`
+
+# Negative control for the backend check: the portable-backend assertion run in the default (instruction) build must fail.
+$ SYNAPSE_J3_PORTABLE_INNER=1 cargo test -p synapse-bench --lib -- --exact crypto_vectors::tests::inner_portable_backend_is_in_use
+
+running 1 test
+test crypto_vectors::tests::inner_portable_backend_is_in_use ... FAILED
+
+failures:
+
+---- crypto_vectors::tests::inner_portable_backend_is_in_use stdout ----
+
+thread 'crypto_vectors::tests::inner_portable_backend_is_in_use' (11895) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:375:5:
+assertion `left == right` failed: sha2 backend: instruction code linked = true, CPU reports sha2 = true
+  left: Instructions
+ right: Portable
+
+
+failures:
+    crypto_vectors::tests::inner_portable_backend_is_in_use
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 56 filtered out; finished in 0.52s
+
+error: test failed, to rerun pass `-p synapse-bench --lib`
+
+# Note: portable_sha2_backend_gives_the_sealed_corpus is a regression guard on the fallback; it first failed only because the symbol needle matched its own constant in the binary (fixed by storing it reversed). It cannot be red for the intended reason without breaking sha2's portable code.

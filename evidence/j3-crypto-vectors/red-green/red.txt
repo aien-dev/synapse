@@ -1,0 +1,87 @@
+# J3 red: tests against the skeleton (stubs), before any implementation. b04ad31 + uncommitted skeleton; 2026-10-14T18:41:58Z
+$ cargo test -p synapse-bench --lib crypto_vectors
+
+running 10 tests
+test crypto_vectors::tests::a0_instruction_code_gives_every_corpus_digest ... FAILED
+test crypto_vectors::tests::corpus_round_trips_byte_for_byte ... FAILED
+test crypto_vectors::tests::decoder_refuses_malformed_corpora_with_typed_errors ... FAILED
+test crypto_vectors::tests::every_corpus_answer_is_the_rust_crates_answer ... FAILED
+test crypto_vectors::tests::corpus_pins_the_edge_case_decisions ... FAILED
+test crypto_vectors::tests::every_length_across_the_block_boundaries_is_in_the_corpus ... FAILED
+test crypto_vectors::tests::published_sha256_answers_match_the_rust_crate_and_are_in_the_corpus ... FAILED
+test crypto_vectors::tests::sealed_corpus_matches_the_rust_crates_exactly ... FAILED
+test crypto_vectors::tests::rfc8032_vectors_match_the_rust_crate_and_are_in_the_corpus ... FAILED
+test crypto_vectors::tests::workspace_sha2_is_built_with_its_aarch64_instruction_backend ... FAILED
+
+failures:
+
+---- crypto_vectors::tests::a0_instruction_code_gives_every_corpus_digest stdout ----
+
+thread 'crypto_vectors::tests::a0_instruction_code_gives_every_corpus_digest' (3952216) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:333:5:
+assertion failed: n > 0
+
+---- crypto_vectors::tests::corpus_round_trips_byte_for_byte stdout ----
+
+thread 'crypto_vectors::tests::corpus_round_trips_byte_for_byte' (3952218) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:239:22:
+range end index 8 out of range for slice of length 0
+
+---- crypto_vectors::tests::decoder_refuses_malformed_corpora_with_typed_errors stdout ----
+
+thread 'crypto_vectors::tests::decoder_refuses_malformed_corpora_with_typed_errors' (3952219) panicked at crates/synapse-bench/src/crypto_vectors.rs:100:5:
+not implemented: J3 skeleton
+
+---- crypto_vectors::tests::every_corpus_answer_is_the_rust_crates_answer stdout ----
+
+thread 'crypto_vectors::tests::every_corpus_answer_is_the_rust_crates_answer' (3952220) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:224:5:
+assertion failed: !corpus.is_empty()
+
+---- crypto_vectors::tests::corpus_pins_the_edge_case_decisions stdout ----
+
+thread 'crypto_vectors::tests::corpus_pins_the_edge_case_decisions' (3952217) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:188:5:
+assertion `left == right` failed: small-order key case missing or not split between verify and verify_strict
+  left: None
+ right: Some(Ed25519Verdict { key_decodes: true, verify: true, verify_strict: false })
+
+---- crypto_vectors::tests::every_length_across_the_block_boundaries_is_in_the_corpus stdout ----
+
+thread 'crypto_vectors::tests::every_length_across_the_block_boundaries_is_in_the_corpus' (3952221) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:150:9:
+no SHA-256 vector of 0 bytes
+
+---- crypto_vectors::tests::published_sha256_answers_match_the_rust_crate_and_are_in_the_corpus stdout ----
+
+thread 'crypto_vectors::tests::published_sha256_answers_match_the_rust_crate_and_are_in_the_corpus' (3952222) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:123:9:
+FIPS message of 0 bytes missing from the corpus
+
+---- crypto_vectors::tests::sealed_corpus_matches_the_rust_crates_exactly stdout ----
+
+thread 'crypto_vectors::tests::sealed_corpus_matches_the_rust_crates_exactly' (3952224) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:309:58:
+/home/drakestapleton/.t3/projects/synapse/.claude/worktrees/j3/crates/synapse-bench/../../evidence/j3-crypto-vectors/vectors.bin: No such file or directory (os error 2)
+
+---- crypto_vectors::tests::rfc8032_vectors_match_the_rust_crate_and_are_in_the_corpus stdout ----
+
+thread 'crypto_vectors::tests::rfc8032_vectors_match_the_rust_crate_and_are_in_the_corpus' (3952223) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:168:9:
+assertion `left == right` failed: RFC 8032 vector missing or not accepted
+  left: None
+ right: Some(Ed25519Verdict { key_decodes: true, verify: true, verify_strict: true })
+
+---- crypto_vectors::tests::workspace_sha2_is_built_with_its_aarch64_instruction_backend stdout ----
+
+thread 'crypto_vectors::tests::workspace_sha2_is_built_with_its_aarch64_instruction_backend' (3952225) panicked at crates/synapse-bench/src/crypto_vectors/tests.rs:108:13:
+"registry+https://github.com/rust-lang/crates.io-index#sha2@0.10.9" is built without its `asm` feature, so aarch64 uses the software backend (features: ["default", "std"])
+
+
+failures:
+    crypto_vectors::tests::a0_instruction_code_gives_every_corpus_digest
+    crypto_vectors::tests::corpus_pins_the_edge_case_decisions
+    crypto_vectors::tests::corpus_round_trips_byte_for_byte
+    crypto_vectors::tests::decoder_refuses_malformed_corpora_with_typed_errors
+    crypto_vectors::tests::every_corpus_answer_is_the_rust_crates_answer
+    crypto_vectors::tests::every_length_across_the_block_boundaries_is_in_the_corpus
+    crypto_vectors::tests::published_sha256_answers_match_the_rust_crate_and_are_in_the_corpus
+    crypto_vectors::tests::rfc8032_vectors_match_the_rust_crate_and_are_in_the_corpus
+    crypto_vectors::tests::sealed_corpus_matches_the_rust_crates_exactly
+    crypto_vectors::tests::workspace_sha2_is_built_with_its_aarch64_instruction_backend
+
+test result: FAILED. 0 passed; 10 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `-p synapse-bench --lib`
