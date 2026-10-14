@@ -223,7 +223,10 @@ pub fn run_recovery_cell(spec: &RecoverySpec) -> Result<RecoveryResult, String> 
         };
         let checkpoint_compact_ms = ms(t);
         let wal_after = file_len(&dir.join("wal.log"));
-        let ckpt_bytes = file_len(&dir.join("checkpoint.v1"));
+        // Both checkpoint files: since ADR 0003 A1 the state is in checkpoint.v2 and
+        // checkpoint.v1 is the small tombstone.
+        let ckpt_bytes =
+            file_len(&dir.join("checkpoint.v2")) + file_len(&dir.join("checkpoint.v1"));
         let mut store_ckpt = Vec::new();
         timed("after_checkpoint", "SynapseStore::open", &mut store_ckpt);
 
