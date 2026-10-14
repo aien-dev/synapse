@@ -23,7 +23,9 @@ use synapse_api::{
     SynapseService, TreeTarget, VerifyEvidenceReceiptPayload,
 };
 use synapse_auth::{AgentCapabilityGrant, AuthenticatedRequest, Capability};
-use synapse_coord::{ClaimOutcome, CoordError, CoordStore, Holder, NoOracle, StoreId, Workspace};
+use synapse_coord::{
+    ClaimOutcome, CoordError, CoordStore, Holder, NoOracle, RecordRefusal, StoreId, Workspace,
+};
 use synapse_core::{
     encode_did_key_ed25519, BlobDigest, ChangesetEnvelope, ChangesetId, FileMode, GitOid,
     IdempotencyKey, MutationOp, PathMutation, RefusalCode, RepoId, SYNAPSE_ENVELOPE_VERSION,
@@ -686,13 +688,15 @@ fn s05_forged_coordination_records() {
     );
 }
 
-/// Defect found by D5 (see the `ignore` reason): a non-regular `*.json` record (a FIFO) in
-/// the coordination store blocks `sniff` forever, so the advisory never answers instead of
-/// reporting `Unavailable`. Run with `--ignored` to reproduce; it fails after 5 s.
+/// Found by D5, fixed by #58: a non-regular `*.json` record (a FIFO) in the coordination
+/// store used to block `sniff` forever, so the advisory never answered. Now the record is
+/// refused without being opened (typed `RefusedRecord`), `sniff` answers at once, the
+/// advisory reports `Unavailable`, and the FIFO is left as found. A 5 s watchdog turns a
+/// regression into a failure instead of a hang.
 #[test]
-#[ignore = "defect aien-spark/synapse#58: coordination record reads are unbounded (FIFO hangs sniff/advisory; no size cap)"]
-fn s05_defect_fifo_record_hangs_advisory() {
-    let fx = Fx::new("s05-fifo");
+fn s05_fifo_record_refused_advisory_answers() {
+    use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+    let mut fx = Fx::new("s05-fifo");
     let st = fx.coord(T0);
     assert!(matches!(
         claim(&st, "alice", "src/a.rs", 600),
@@ -706,15 +710,34 @@ fn s05_defect_fifo_record_hangs_advisory() {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let st = CoordStore::open(root).with_clock(|| T0);
-        let _ = tx.send(st.sniff(&ws("bob"), "bob", ROOT_DIR).is_ok());
+        let _ = tx.send(st.sniff(&ws("bob"), "bob", ROOT_DIR).err());
     });
     let answered = rx.recv_timeout(std::time::Duration::from_secs(5));
-    // Unblock the reader so the thread can finish.
-    let _ = fs::OpenOptions::new().write(true).open(&fifo);
+    if answered.is_err() {
+        // Regression: unblock the reader (non-blocking writer open) so the thread can end.
+        let _ = fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&fifo);
+    }
+    let err = answered.expect("sniff did not answer within 5 s on a FIFO record");
     assert!(
-        answered.is_ok(),
-        "sniff did not answer within 5 s on a FIFO record"
+        matches!(
+            err,
+            Some(CoordError::RefusedRecord {
+                ref path,
+                reason: RecordRefusal::NotRegular("fifo"),
+            }) if *path == fifo
+        ),
+        "{err:?}"
     );
+    // The sniff answered, so the advisory (same read path) answers too: Unavailable.
+    let adv = fx.advise("bob", &["src/a.rs"], Some(&st));
+    assert!(
+        matches!(adv.coordination, CoordinationStatus::Unavailable { .. }),
+        "{adv:?}"
+    );
+    assert!(fs::symlink_metadata(&fifo).unwrap().file_type().is_fifo());
 }
 
 // ------------------------------------------------------------------------------------------

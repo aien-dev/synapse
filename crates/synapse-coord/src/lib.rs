@@ -12,11 +12,13 @@
 
 pub mod identity;
 pub mod json;
+pub mod record;
 pub mod time;
 
 pub use identity::{
     resolve_coord_root, ResolvedRoot, RootSource, StoreId, STORE_ID_FILE, STORE_ID_FORMAT,
 };
+pub use record::{RecordRefusal, MAX_MARKER_BYTES, MAX_RECORD_BYTES};
 
 use json::J;
 use std::fs::{self, File, OpenOptions};
@@ -47,6 +49,13 @@ pub enum CoordError {
     /// A record file exists but is not a JSON object. Like crumb.c, refuse rather than overwrite.
     CorruptRecord {
         path: PathBuf,
+    },
+    /// A store file is not a regular file, is a symlink, or is over its size cap (issue
+    /// #58). Handled like [`CoordError::CorruptRecord`]: refused, never opened in a blocking
+    /// way, never followed, never overwritten. See [`record`].
+    RefusedRecord {
+        path: PathBuf,
+        reason: RecordRefusal,
     },
     /// A path normalizes to somewhere above the repository root.
     EscapesRoot {
@@ -96,6 +105,11 @@ impl std::fmt::Display for CoordError {
                     path.display()
                 )
             }
+            CoordError::RefusedRecord { path, reason } => write!(
+                f,
+                "{} {reason}; refusing to read it (fix or move it aside)",
+                path.display()
+            ),
             CoordError::EscapesRoot { path } => write!(f, "target {path} escapes the repository"),
             CoordError::OutsideWorkspace { path, workspace } => {
                 write!(f, "target {path} is outside the repository {workspace}")
@@ -641,8 +655,20 @@ impl CoordStore {
             .create(true)
             .truncate(false)
             .mode(0o644)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
             .open(&lp)
-            .map_err(io_err(&lp))?;
+            .map_err(|e| match e.raw_os_error() {
+                Some(libc::ELOOP) => CoordError::RefusedRecord {
+                    path: lp.clone(),
+                    reason: RecordRefusal::Symlink,
+                },
+                _ => io_err(&lp)(e),
+            })?;
+        // The lock file is a store file too: a FIFO or device planted as `.lock` is refused.
+        let m = f.metadata().map_err(io_err(&lp))?;
+        if let Some(reason) = record::refusal_for(&m.file_type()) {
+            return Err(CoordError::RefusedRecord { path: lp, reason });
+        }
         // SAFETY: zeroed flock is a valid "whole file from offset 0" request.
         let mut fl: libc::flock = unsafe { std::mem::zeroed() };
         fl.l_type = libc::F_WRLCK as _;
@@ -713,20 +739,26 @@ fn fsync_dir(dir: &Path) {
 /// `durable_write`: write `<path>.tmp<pid>`, fsync, rename over `path`, fsync the directory.
 /// A crash before the rename leaves the old record intact and a `*.tmp<pid>` file that no
 /// reader ever loads (only names ending in `.json` are records).
+///
+/// Refuses (typed [`CoordError::RefusedRecord`]) to replace anything but a regular file, and
+/// to write a record over [`MAX_RECORD_BYTES`], which readers would refuse.
 fn durable_write(path: &Path, data: &[u8]) -> Result<(), CoordError> {
+    if data.len() as u64 > MAX_RECORD_BYTES {
+        return Err(CoordError::RefusedRecord {
+            path: path.to_path_buf(),
+            reason: RecordRefusal::TooLarge {
+                limit: MAX_RECORD_BYTES,
+            },
+        });
+    }
+    record::check_replaceable(path)?;
     let dd = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(dd).map_err(io_err(dd))?;
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(format!(".tmp{}", std::process::id()));
     let tmp = PathBuf::from(tmp);
     {
-        let mut f = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o644)
-            .open(&tmp)
-            .map_err(io_err(&tmp))?;
+        let mut f = record::create_temp(&tmp)?;
         f.write_all(data).map_err(io_err(&tmp))?;
         f.sync_all().map_err(io_err(&tmp))?;
     }
@@ -744,12 +776,21 @@ fn fault_point(point: &str) {
     }
 }
 
+/// List record names under `dir`, recursively, without opening any entry. Entry types come
+/// from the directory entry (`d_type`, falling back to `lstat`), so nothing is followed:
+/// real subdirectories are walked, symlinked directories are not (crumb.c follows them with
+/// `stat`; not following also rules out a symlink loop). Every name ending in `.json` that
+/// is not a directory is returned, whatever its type; [`record::read_bounded`] then refuses
+/// a non-regular one without opening it, so a planted FIFO is reported, never read.
 fn collect_json(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(rd) = fs::read_dir(dir) else { return };
-    let mut names: Vec<_> = rd.filter_map(|e| e.ok()).map(|e| e.path()).collect();
-    names.sort();
-    for full in names {
-        if fs::metadata(&full).map(|m| m.is_dir()).unwrap_or(false) {
+    let mut ents: Vec<_> = rd
+        .filter_map(|e| e.ok())
+        .map(|e| (e.path(), e.file_type().ok()))
+        .collect();
+    ents.sort_by(|a, b| a.0.cmp(&b.0));
+    for (full, ft) in ents {
+        if ft.is_some_and(|t| t.is_dir()) {
             collect_json(&full, out);
         } else if let Some(n) = full.file_name().and_then(|n| n.to_str()) {
             if n.len() > 5 && n.ends_with(".json") {
@@ -765,8 +806,8 @@ impl Txn<'_> {
         if let Some(i) = self.recs.iter().position(|r| r.path == path) {
             return Ok(i);
         }
-        let (mut j, existed) = match fs::read(path) {
-            Ok(bytes) => match json::parse(&bytes) {
+        let (mut j, existed) = match record::read_bounded(path, MAX_RECORD_BYTES)? {
+            Some(bytes) => match json::parse(&bytes) {
                 Some(j) if j.is_obj() => (j, true),
                 _ => {
                     return Err(CoordError::CorruptRecord {
@@ -774,13 +815,7 @@ impl Txn<'_> {
                     })
                 }
             },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (J::obj(), false),
-            Err(e) => {
-                return Err(CoordError::Io {
-                    path: path.to_path_buf(),
-                    source: e,
-                })
-            }
+            None => (J::obj(), false),
         };
         if !agent {
             if j.get("schema_version").is_none() {
