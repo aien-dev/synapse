@@ -1,0 +1,26 @@
+{
+  "schema": "synapse-bench/pmu-diag-protocol/v1",
+  "purpose": "Issue #64 host sample: short diagnostic run of every leg kind on the GB10 Spark, unprivileged, both core classes pinned. Diagnostic only, not qualification; seconds per operation are the measured unit; hardware counts (if permitted) are supporting units.",
+  "seed": 64,
+  "fixture_rev": "e863c87b581ddd0d33183667d6d4842d2de1f4fe",
+  "reps": 3,
+  "order": "control-then-instrumented",
+  "affinity": ["a725", "x925"],
+  "legs": [
+    {"kind": "floor", "op": "sha256_content_12k", "iterations": 20000},
+    {"kind": "floor", "op": "ed25519_verify", "iterations": 2000},
+    {"kind": "floor", "op": "envelope_validate", "iterations": 2000},
+    {"kind": "floor", "op": "json_decode_submit_request", "iterations": 2000},
+    {"kind": "write", "arm": "every_commit", "agents": 1, "ops_per_agent": 4},
+    {"kind": "write", "arm": "every_commit", "agents": 4, "ops_per_agent": 4},
+    {"kind": "write", "arm": "every_commit", "agents": 8, "ops_per_agent": 4},
+    {"kind": "write", "arm": "every_commit", "agents": 32, "ops_per_agent": 4},
+    {"kind": "write", "arm": "group_commit", "agents": 1, "ops_per_agent": 4},
+    {"kind": "write", "arm": "group_commit", "agents": 4, "ops_per_agent": 4},
+    {"kind": "write", "arm": "group_commit", "agents": 8, "ops_per_agent": 4},
+    {"kind": "write", "arm": "group_commit", "agents": 32, "ops_per_agent": 4},
+    {"kind": "query", "populate_agents": 4, "populate_ops_per_agent": 4, "samples": 20},
+    {"kind": "crumb", "samples": 20}
+  ],
+  "held_out": "Nothing is tuned from this run. Any later optimisation decision needs its own pre-registered, held-out runs."
+}

@@ -1,0 +1,47 @@
+Red proof by guard reversal (issue #64). Each block reverts one guard in the implementation
+(diff lines shown), runs 'cargo test -p synapse-bench --lib pmu', and lists the failing tests.
+A first 'discovery-unchecked' mutant (fall back to the first PMU when a reading names an unknown one)
+survived: the coverage check (every discovered PMU and event read exactly once) still refused the
+edited evidence, so it was replaced by 'class-unchecked' below. Base commit e6243c7.
+
+=== mutation disabled-mode-opens (crates/synapse-bench/src/pmu.rs)
+-        if mode == PmuMode::Disabled {
+-            return s;
+-        }
+thread 'pmu_diag::tests::acceptance1_disabled_mode_makes_no_system_call'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:199:5:
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.51s
+=== mutation counts-scaled (crates/synapse-bench/src/pmu.rs)
+-                            raw_count: raw[0],
++                            raw_count: raw[0] * raw[1] / raw[2].max(1),
+thread 'pmu_diag::tests::acceptance1_multiplexed_and_partial_residency_are_labelled_not_scaled'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:262:5:
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.44s
+=== mutation multiplex-unlabelled (crates/synapse-bench/src/pmu.rs)
+-    Ok(if running_ns == enabled_ns {
++    Ok(if running_ns <= enabled_ns {
+thread 'pmu_diag::tests::acceptance1_multiplexed_and_partial_residency_are_labelled_not_scaled'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:259:5:
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.36s
+=== mutation refusal-yields-counts (crates/synapse-bench/src/pmu.rs)
+-            Some((reason, detail)) => PmuSample::InstrumentUnavailable { reason, detail },
++            Some(_) => PmuSample::Counted { readings },
+thread 'pmu_diag::tests::acceptance1_real_host_sample_is_counted_or_typed_unavailable'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:411:48:
+thread 'pmu_diag::tests::acceptance1_unsupported_or_missing_pmu_refuses_before_any_open'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:317:9:
+thread 'pmu_diag::tests::acceptance1_malformed_reads_are_refused_never_repaired'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:374:9:
+thread 'pmu_diag::tests::acceptance1_permission_denied_is_instrument_unavailable_without_counts'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:285:18:
+thread 'pmu_diag::tests::acceptance1_verify_refuses_mismatched_pmu_output'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:496:33:
+thread 'pmu_diag::tests::acceptance3_report_recomputes_from_raw_and_digests_verify'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:496:33:
+thread 'pmu_diag::tests::acceptance1_manifest_attribution_and_every_leg_kind_runs'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:496:33:
+test result: FAILED. 7 passed; 7 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.26s
+=== mutation encoding-unchecked (crates/synapse-bench/src/pmu.rs)
+-                    .is_some_and(|v| v == u64::from(spec.arm_event));
++                    .is_some();
+thread 'pmu_diag::tests::acceptance1_unsupported_or_missing_pmu_refuses_before_any_open'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:317:9:
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.28s
+=== mutation sums-unchecked (crates/synapse-bench/src/pmu_diag.rs)
+-    verify_sums(dir)?;
+thread 'pmu_diag::tests::acceptance3_report_recomputes_from_raw_and_digests_verify'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:732:5:
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.30s
+=== mutation class-unchecked (crates/synapse-bench/src/pmu_diag.rs)
+-        if dev.core_class != r.core_class {
++        if false {
+thread 'pmu_diag::tests::acceptance1_verify_refuses_mismatched_pmu_output'  panicked at crates/synapse-bench/src/pmu_diag/tests.rs:530:33:
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.28s
