@@ -53,7 +53,7 @@ pub struct QueryTrace {
     pub request_bytes: Option<u64>,
     pub response_bytes: Option<u64>,
     pub pages: Option<usize>,
-    /// Synapse only: the call materialized a virtual tree that was not yet cached.
+    /// Synapse only: the call built at least one changeset tree (not answered from the memo).
     pub cold: Option<bool>,
     pub result_items: Option<usize>,
     pub ok: bool,
@@ -439,14 +439,14 @@ pub fn run_query_cell(spec: &QuerySpec) -> Result<QueryCellResult, String> {
         let (pi, path, expected) = &readable[ri];
         let cs = populated[*pi].changeset;
         let mut t = trace(rep, "read_file/synapse", s);
-        let before = client.svc.path_index().cached_trees_count();
+        let before = client.svc.tree_store().stats().root_builds;
         let start = Instant::now();
         let r = client.call(
             (TreeTarget::Changeset(cs), path.clone(), None),
             |svc, req, now| svc.read_file(req, now),
         );
         t.latency_us = start.elapsed().as_micros() as u64;
-        t.cold = Some(client.svc.path_index().cached_trees_count() > before);
+        t.cold = Some(client.svc.tree_store().stats().root_builds > before);
         match r {
             Ok(c) if c.value.as_slice() == expected.as_slice() => {
                 t.ok = true;
@@ -525,7 +525,7 @@ pub fn run_query_cell(spec: &QuerySpec) -> Result<QueryCellResult, String> {
     for (s, &i) in trees.iter().enumerate() {
         let target = TreeTarget::Changeset(populated[i].changeset);
         let mut t = trace(rep, "tree/synapse", s);
-        let before = client.svc.path_index().cached_trees_count();
+        let before = client.svc.tree_store().stats().root_builds;
         let start = Instant::now();
         let r = client.all_pages(
             |page| TreeQueryPayload {
@@ -536,7 +536,7 @@ pub fn run_query_cell(spec: &QuerySpec) -> Result<QueryCellResult, String> {
             SynapseService::tree,
         );
         t.latency_us = start.elapsed().as_micros() as u64;
-        t.cold = Some(client.svc.path_index().cached_trees_count() > before);
+        t.cold = Some(client.svc.tree_store().stats().root_builds > before);
         match r {
             Ok((items, pages, api, rq, rs)) => {
                 t.ok = true;
@@ -601,7 +601,7 @@ pub fn run_query_cell(spec: &QuerySpec) -> Result<QueryCellResult, String> {
     for (s, &i) in diffs.iter().enumerate() {
         let target = TreeTarget::Changeset(populated[i].changeset);
         let mut t = trace(rep, "diff/synapse", s);
-        let before = client.svc.path_index().cached_trees_count();
+        let before = client.svc.tree_store().stats().root_builds;
         let start = Instant::now();
         let r = client.all_pages(
             |page| DiffQueryPayload {
@@ -612,7 +612,7 @@ pub fn run_query_cell(spec: &QuerySpec) -> Result<QueryCellResult, String> {
             SynapseService::diff,
         );
         t.latency_us = start.elapsed().as_micros() as u64;
-        t.cold = Some(client.svc.path_index().cached_trees_count() > before);
+        t.cold = Some(client.svc.tree_store().stats().root_builds > before);
         match r {
             Ok((items, pages, api, rq, rs)) => {
                 t.ok = true;
@@ -748,7 +748,7 @@ pub fn run_query_cell(spec: &QuerySpec) -> Result<QueryCellResult, String> {
     ));
     rows.append(&mut chunk);
 
-    let cached_after = client.svc.path_index().cached_trees_count();
+    let cached_after = client.svc.tree_store().memoized_roots();
     write_jsonl(&spec.trace_path, &rows)?;
     Ok(QueryCellResult {
         rep,

@@ -1,0 +1,5 @@
+cold_build: n=400 built=400 p50=Some(0.073) ms bound_p50=Some(6.081684981684982e-5) ms fraction_p50=Some(0.0008635010713698495)
+warm_page_engine: n=400 built=0 p50=Some(0.213) ms bound_p50=Some(0.0011116043956043956) ms fraction_p50=Some(0.0052001964596345256)
+warm_page_api: n=400 built=0 p50=Some(1.196) ms bound_p50=Some(0.0011116043956043956) ms fraction_p50=Some(0.000929428119357292)
+warm_diff_engine: n=400 built=246 p50=Some(0.021) ms bound_p50=None ms fraction_p50=None
+cache: bound 4194304 B, high water 4194114 B, held true; peak RSS 307260 KiB

@@ -7,6 +7,12 @@ use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+mod tree;
+pub use tree::{
+    tree_entry_order, validate_tree_entry_name, TreeDigest, TreeNodeEncoder, DOMAIN_TREE_V1,
+    MAX_TREE_ENTRY_NAME_BYTES, TREE_TAG_DIRECTORY,
+};
+
 /// Current canonical changeset envelope schema version.
 pub const SYNAPSE_ENVELOPE_VERSION: u16 = 1;
 
@@ -55,6 +61,12 @@ pub enum RefusalCode {
     PathDuplicate,
     MutationsUnsorted,
     BaseTreeNotFound,
+    /// A native tree node is not canonical: a bad entry name, a duplicate name, entries out of
+    /// canonical order, or a wrong entry count (ADR 0003 section 5.1, step C1).
+    TreeNodeMalformed,
+    /// A native tree node is not in the bounded tree store (evicted or never built); the tree is
+    /// rebuilt from its source (step C1).
+    TreeNodeNotFound,
     ParentChangesetNotFound,
     ChangesetNotFound,
     VisibilitySeqAhead,

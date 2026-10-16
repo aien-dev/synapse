@@ -1,0 +1,7 @@
+parity: 401 trees, 1754839 entries, 0 mismatched: tree entries (mode, type, object id, path, order) vs git ls-tree -r --full-tree
+parity: 400 trees, 660 entries, 0 mismatched: diff entries (modes, object ids, status, path, order) vs git diff-tree -r --raw --no-renames, base to changeset
+cold_build: n=400 built=400 p50=Some(0.064) ms bound_p50=Some(6.081684981684982e-5) ms fraction_p50=Some(0.0009073540296350013)
+warm_page_engine: n=400 built=0 p50=Some(0.218) ms bound_p50=Some(0.0011116043956043956) ms fraction_p50=Some(0.005090858473078132)
+warm_page_api: n=400 built=0 p50=Some(1.251) ms bound_p50=Some(0.0011116043956043956) ms fraction_p50=Some(0.0008882365161532325)
+warm_diff_engine: n=400 built=0 p50=Some(0.003) ms bound_p50=None ms fraction_p50=None
+cache: bound 67108864 B, high water 10231333 B, held true; peak RSS 307452 KiB

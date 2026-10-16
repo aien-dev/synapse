@@ -242,19 +242,7 @@ impl SynapseService {
         envelope: &ChangesetEnvelope,
         snapshot_seq: Option<WalSeq>,
     ) -> SynapseResult<BTreeMap<String, VirtualTreeEntry>> {
-        if envelope.parent_changesets.is_empty() {
-            return self.materialize_virtual_tree(
-                TreeTarget::BaseGitCommit(envelope.base_git_oid),
-                snapshot_seq,
-            );
-        }
-        let mut merged = BTreeMap::new();
-        for &parent in &envelope.parent_changesets {
-            merged.extend(
-                self.materialize_virtual_tree(TreeTarget::Changeset(parent), snapshot_seq)?,
-            );
-        }
-        Ok(merged)
+        self.changeset_base_files(envelope, snapshot_seq)
     }
 }
 
