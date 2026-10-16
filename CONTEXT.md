@@ -41,7 +41,7 @@ The signed, immutable proposal record submitted by an agent. It binds the reposi
 _Avoid_: working tree diff, mutable draft, WorldDraft
 
 **VirtualTree**:
-An in-memory or indexed directory tree view constructed by applying one or more committed `ChangesetEnvelope` path mutation sets atop a base Git tree without checking out files onto the filesystem.
+An in-memory or indexed directory tree view constructed by applying one or more committed `ChangesetEnvelope` path mutation sets atop a base Git tree without checking out files onto the filesystem. Since C1 it is served from the shared, bounded Merkle tree store: each view is a `TreeDigest` root whose unchanged subtrees are shared with every other view.
 _Avoid_: Git worktree checkout, working directory
 
 **GarbageRoot**:

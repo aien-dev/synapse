@@ -305,12 +305,85 @@ fn crypto_vectors_verify(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// C1 (ADR 0003 step 4): shared Merkle tree parity, cold build and warm paging times, and the
+/// cache bound on the Gate 4 query population (see `synapse_bench::c1`).
+fn c1(args: &[String]) -> Result<(), String> {
+    let opts = parse_pairs(
+        args,
+        &[
+            "--clone",
+            "--base",
+            "--work-dir",
+            "--out",
+            "--seed",
+            "--rep",
+            "--agents",
+            "--ops-per-agent",
+            "--samples",
+            "--cache-bytes",
+            "--skip-parity",
+        ],
+    )?;
+    let get = |k: &str| {
+        opts.iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.clone())
+    };
+    let num = |k: &str, d: u64| -> Result<u64, String> {
+        get(k).map_or(Ok(d), |v| parse_u64(&v).ok_or(format!("invalid {k}")))
+    };
+    let spec = synapse_bench::c1::C1Spec {
+        clone_dir: PathBuf::from(get("--clone").ok_or("missing --clone")?),
+        base_commit: get("--base").ok_or("missing --base")?,
+        seed: num("--seed", synapse_bench::orchestrator::DEFAULT_SEED)?,
+        rep: num("--rep", 0)? as usize,
+        agents: num("--agents", 8)? as usize,
+        ops_per_agent: num("--ops-per-agent", 50)? as usize,
+        samples: num("--samples", 400)? as usize,
+        cache_bytes: num(
+            "--cache-bytes",
+            synapse_api::DEFAULT_TREE_CACHE_BYTES as u64,
+        )? as usize,
+        work_dir: PathBuf::from(get("--work-dir").ok_or("missing --work-dir")?),
+        out_dir: PathBuf::from(get("--out").ok_or("missing --out")?),
+        skip_parity: get("--skip-parity").is_some_and(|v| v == "1" || v == "true"),
+    };
+    let r = synapse_bench::c1::run_c1(&spec)?;
+    for p in &r.parity {
+        println!(
+            "parity: {} trees, {} entries, {} mismatched: {}",
+            p.compared_trees, p.compared_entries, p.mismatched_trees, p.check
+        );
+    }
+    for ph in &r.phases {
+        println!(
+            "{}: n={} built={} p50={:?} ms bound_p50={:?} ms fraction_p50={:?}",
+            ph.phase,
+            ph.samples,
+            ph.samples_that_built,
+            ph.latency.as_ref().map(|l| l.p50_ms),
+            ph.bound_ms_p50,
+            ph.fraction_of_bound_p50
+        );
+    }
+    println!(
+        "cache: bound {} B, high water {} B, held {}; peak RSS {} KiB",
+        r.cache_after.max_bytes,
+        r.cache_after.high_water_bytes,
+        r.cache_bound_held,
+        r.peak_rss_self_kib
+    );
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
         Some("run") => run(&args[1..]),
         Some("child") => child(&args[1..]),
         Some("floor") => floor(&args[1..]),
+        Some("c1") => c1(&args[1..]),
         Some("bounds") => bounds(&args[1..]),
         Some("bounds-verify") => bounds_verify(&args[1..]),
         Some("bounds-report") => bounds_report(&args[1..]),

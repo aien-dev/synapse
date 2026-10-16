@@ -15,6 +15,7 @@
 //! [aien-sovereign-core#515]: https://github.com/aien-spark/aien-sovereign-core/issues/515
 
 pub mod bounds;
+pub mod c1;
 pub mod conflict;
 pub mod conformance;
 pub mod crypto_vectors;
@@ -31,6 +32,7 @@ pub mod rng;
 pub mod rusage;
 pub mod stats;
 pub mod synapse_arm;
+pub mod tree_parity;
 pub mod workload;
 pub mod write_phase;
 

@@ -1,0 +1,201 @@
+{
+  "spec": {
+    "clone_dir": "~/workspace/backlog-sweep/synapse/24/c1-run/clone",
+    "base_commit": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+    "seed": 7673641184369446932,
+    "rep": 0,
+    "agents": 8,
+    "ops_per_agent": 50,
+    "samples": 400,
+    "cache_bytes": 67108864,
+    "work_dir": "~/workspace/backlog-sweep/synapse/24/c1-run/work-64m",
+    "out_dir": "~/workspace/backlog-sweep/synapse/24/c1-run/out-64m",
+    "skip_parity": false
+  },
+  "base_files": 4376,
+  "base_tree_encoded_bytes": 303468,
+  "base_tree_nodes": 488,
+  "population_changesets": 400,
+  "populate_s": 7.322,
+  "parity": [
+    {
+      "check": "tree entries (mode, type, object id, path, order) vs git ls-tree -r --full-tree",
+      "compared_trees": 401,
+      "compared_entries": 1754839,
+      "mismatched_trees": 0,
+      "first_mismatch": null
+    },
+    {
+      "check": "diff entries (modes, object ids, status, path, order) vs git diff-tree -r --raw --no-renames, base to changeset",
+      "compared_trees": 400,
+      "compared_entries": 660,
+      "mismatched_trees": 0,
+      "first_mismatch": null
+    }
+  ],
+  "memory_bandwidth_bps": 273000000000.0,
+  "phases": [
+    {
+      "phase": "cold_build",
+      "method": "SynapseService::tree_digest on a changeset whose root is not memoized (engine only): read upserted blobs for Git ids, edit the touched paths, encode and SHA-256 the new nodes",
+      "samples": 400,
+      "latency": {
+        "n": 400,
+        "min_ms": 0.011,
+        "p50_ms": 0.064,
+        "p95_ms": 0.17,
+        "p99_ms": 0.245,
+        "max_ms": 0.285,
+        "mean_ms": 0.075
+      },
+      "samples_that_built": 400,
+      "bound_bytes_p50": 16603,
+      "bound_ms_p50": 0.00006081684981684982,
+      "fraction_of_bound_p50": 0.0009073540296350013,
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 0.030347098,
+        "valid": true,
+        "refusal": null,
+        "samples": 2,
+        "largest_gap_ms": 30.39,
+        "pkg_j": 0.0,
+        "cpu_p_j": 0.0,
+        "cpu_e_j": 0.0,
+        "rest_j": 0.0,
+        "pkg_mean_w": 0.0,
+        "pkg_edge_sd_j": 0.0,
+        "sys_total_mean_w": 34.901,
+        "nvme_temp_k": 316.0,
+        "loadavg_start": [
+          4.06,
+          4.65,
+          4.66
+        ],
+        "loadavg_end": [
+          4.06,
+          4.65,
+          4.66
+        ],
+        "machine_busy_cpu_s": 0.11000000010244548
+      }
+    },
+    {
+      "phase": "warm_page_engine",
+      "method": "SynapseService::tree_page, every page of 256 entries of a changeset tree (engine only)",
+      "samples": 400,
+      "latency": {
+        "n": 400,
+        "min_ms": 0.213,
+        "p50_ms": 0.218,
+        "p95_ms": 0.225,
+        "p99_ms": 0.24,
+        "max_ms": 0.343,
+        "mean_ms": 0.219
+      },
+      "samples_that_built": 0,
+      "bound_bytes_p50": 303468,
+      "bound_ms_p50": 0.0011116043956043956,
+      "fraction_of_bound_p50": 0.005090858473078132,
+      "energy": {
+        "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
+        "window_s": 0.10835689,
+        "valid": true,
+        "refusal": null,
+        "samples": 3,
+        "largest_gap_ms": 100.527,
+        "pkg_j": 2.913,
+        "cpu_p_j": 1.005,
+        "cpu_e_j": 0.151,
+        "rest_j": 1.757,
+        "pkg_mean_w": 26.883385080542638,
+        "pkg_edge_sd_j": 2.1950192002026507,
+        "sys_total_mean_w": 33.603,
+        "nvme_temp_k": 316.0,
+        "loadavg_start": [
+          4.06,
+          4.65,
+          4.66
+        ],
+        "loadavg_end": [
+          4.06,
+          4.65,
+          4.66
+        ],
+        "machine_busy_cpu_s": 0.35999999986961484
+      }
+    },
+    {
+      "phase": "warm_page_api",
+      "method": "SynapseService::tree, every page (request authorization plus engine; client signing and wire encoding excluded, as Gate 4 api_only)",
+      "samples": 400,
+      "latency": {
+        "n": 400,
+        "min_ms": 1.228,
+        "p50_ms": 1.251,
+        "p95_ms": 1.271,
+        "p99_ms": 1.283,
+        "max_ms": 1.63,
+        "mean_ms": 1.254
+      },
+      "samples_that_built": 0,
+      "bound_bytes_p50": 303468,
+      "bound_ms_p50": 0.0011116043956043956,
+      "fraction_of_bound_p50": 0.0008882365161532325,
+      "energy": null
+    },
+    {
+      "phase": "warm_diff_engine",
+      "method": "SynapseService::diff_trees base to changeset (engine only; skips equal subtrees)",
+      "samples": 400,
+      "latency": {
+        "n": 400,
+        "min_ms": 0.0,
+        "p50_ms": 0.003,
+        "p95_ms": 0.007,
+        "p99_ms": 0.009,
+        "max_ms": 0.014,
+        "mean_ms": 0.003
+      },
+      "samples_that_built": 0,
+      "bound_bytes_p50": null,
+      "bound_ms_p50": null,
+      "fraction_of_bound_p50": null,
+      "energy": null
+    }
+  ],
+  "cache_after": {
+    "max_bytes": 67108864,
+    "total_bytes": 10231333,
+    "high_water_bytes": 10231333,
+    "pinned_bytes": 617903,
+    "nodes": 3085,
+    "pinned_nodes": 489,
+    "memoized_roots": 400,
+    "root_builds": 400,
+    "root_hits": 15600,
+    "node_hits": 883433,
+    "node_misses": 0,
+    "nodes_inserted": 3085,
+    "encoded_bytes_inserted": 5087427,
+    "nodes_evicted": 0,
+    "roots_evicted": 0
+  },
+  "cache_bound_held": true,
+  "peak_rss_self_kib": 307452,
+  "loadavg_start": [
+    4.34,
+    4.72,
+    4.68
+  ],
+  "loadavg_end": [
+    4.06,
+    4.65,
+    4.66
+  ],
+  "notes": [
+    "Bound: physical memory bandwidth 273 GB/s (A0). Cold: (upserted blob bytes + new node encoded bytes) / bandwidth. Warm: encoded bytes of the tree's distinct nodes / bandwidth. fraction_of_bound = bound / measured.",
+    "Energy windows are whole-phase SPBM readings (provisional, uncalibrated, 10 Hz; see energy.rs refusal rules); no idle baseline is subtracted. A refused window reports no joules.",
+    "peak_rss_self_kib covers the whole process: the loaded base blobs, the store, the parity pass, and Git plumbing buffers, not the tree cache alone."
+  ]
+}

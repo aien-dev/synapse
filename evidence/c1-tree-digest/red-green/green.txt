@@ -1,0 +1,19 @@
+# C1 green run on feat/adr0003-c1 (2026-10-16)
+
+     Running tests/c1_tree_cache_bound.rs (target/debug/deps/c1_tree_cache_bound-da9957660dd05dec)
+test c1_cold_build_then_warm_paging_with_structural_sharing ... ok
+test c1_memory_stays_under_the_configured_bound_under_the_gate4_query_load ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.61s
+     Running tests/c1_tree_parity.rs (target/debug/deps/c1_tree_parity-69a43103c1cd0400)
+test c1_tree_and_diff_parity_with_git_on_gate4_fixture ... ignored, needs the Gate 4 fixture repository (run with --ignored where it is present)
+test c1_tree_and_diff_parity_with_git_on_edge_cases ... ok
+test c1_tree_parity_with_git_ls_tree_r_on_gate4_shaped_population ... ok
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.44s
+     Running tests/c1_tree_digest.rs (target/debug/deps/c1_tree_digest-8e8c2e33028ee0ea)
+test c1_tree_store_accounting_covers_the_real_heap_under_eviction ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s
+
+## Gate 4 fixture (aien-sovereign-core 1b6e340d), cargo test -p synapse-bench --test c1_tree_parity -- --ignored
+c1 gate4 fixture parity: base tree plus 400 changesets, tree and diff, per entry: all equal
+test c1_tree_and_diff_parity_with_git_on_gate4_fixture ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 26.83s

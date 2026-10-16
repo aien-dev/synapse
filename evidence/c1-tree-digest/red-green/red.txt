@@ -1,0 +1,30 @@
+# C1 red runs (2026-10-16). Excerpts; compiler noise removed.
+
+## 1. Parity tests against main e863c87 (tests/c1_tree_parity.rs and src/tree_parity.rs copied onto main unchanged)
+# main lists every entry correctly for the Gate 4 shaped population, but reports M where Git reports T.
+test c1_tree_and_diff_parity_with_git_on_gate4_fixture ... ignored, needs the Gate 4 fixture repository (run with --ignored where it is present)
+test c1_tree_and_diff_parity_with_git_on_edge_cases ... FAILED
+test c1_tree_parity_with_git_ls_tree_r_on_gate4_shaped_population ... ok
+thread 'c1_tree_and_diff_parity_with_git_on_edge_cases' (4167041) panicked at crates/synapse-bench/tests/c1_tree_parity.rs:96:5:
+symlink becomes a regular file: diff parity mismatch at entry 0 of 1 (git) / 1 (synapse)
+  git:     Some(":120000 100644 e0e63473c2593040d7d1c67637864821b28cef4b e0e63473c2593040d7d1c67637864821b28cef4b T\tlink")
+  synapse: Some(":120000 100644 e0e63473c2593040d7d1c67637864821b28cef4b e0e63473c2593040d7d1c67637864821b28cef4b M\tlink")
+regular file becomes a symlink: diff parity mismatch at entry 0 of 1 (git) / 1 (synapse)
+  git:     Some(":100644 120000 cbd152b848cdc37d0a4ffca0dac873c8b51936f9 6bc0e647512d2a0bef4f26111e484dc87df7f5ca T\ta-b")
+  synapse: Some(":100644 120000 cbd152b848cdc37d0a4ffca0dac873c8b51936f9 6bc0e647512d2a0bef4f26111e484dc87df7f5ca M\ta-b")
+test result: FAILED. 1 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.96s
+
+## 2. Bound and cold/warm tests against red stubs in crates/synapse-api/src/tree.rs
+# stub A: TreeStore::make_room returns at once (bound not enforced)
+# stub B: TreeStore::memo_root always returns None (no warm path)
+test c1_cold_build_then_warm_paging_with_structural_sharing ... FAILED
+test c1_memory_stays_under_the_configured_bound_under_the_gate4_query_load ... FAILED
+thread 'c1_cold_build_then_warm_paging_with_structural_sharing' (157669) panicked at crates/synapse-bench/tests/c1_tree_cache_bound.rs:178:9:
+assertion `left == right` failed: warm queries build nothing
+thread 'c1_memory_stays_under_the_configured_bound_under_the_gate4_query_load' (157670) panicked at crates/synapse-bench/tests/c1_tree_cache_bound.rs:49:5:
+after diff: tree cache holds 1051644 accounted bytes, over the 1048576 byte bound
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.21s
+test c1_tree_store_accounting_covers_the_real_heap_under_eviction ... FAILED
+thread 'c1_tree_store_accounting_covers_the_real_heap_under_eviction' (164786) panicked at crates/synapse-api/tests/c1_tree_digest.rs:99:9:
+edit 66: accounted 2099129 > bound 2097152
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s

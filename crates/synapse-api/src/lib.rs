@@ -1,5 +1,6 @@
-//! Bounded paginated read/proposal API, checkout-free `VirtualTree` inspection,
-//! exact `PathIndex` invalidation, and durable subscription cursors (`synapse-api`, Gate 2b).
+//! Bounded paginated read/proposal API, checkout-free tree inspection over a shared Merkle tree
+//! store with a bounded cache (`tree`, ADR 0003 step C1), exact `PathIndex` invalidation, and
+//! durable subscription cursors (`synapse-api`, Gate 2b).
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,7 +12,7 @@ use synapse_auth::{AuditEntry, AuthenticatedRequest, BoundaryKind, Capability, P
 use synapse_core::{
     validate_repo_relative_path, BlobDigest, ChangesetEnvelope, ChangesetId, EvidenceAttachment,
     FileMode, GitHubPullRequestProjection, GitOid, IdempotencyKey, MutationOp,
-    RadicleCanonicalHead, RefusalCode, RepoId, SynapseError, SynapseResult, WalSeq,
+    RadicleCanonicalHead, RefusalCode, RepoId, SynapseError, SynapseResult, TreeDigest, WalSeq,
 };
 use synapse_store::{
     CompactionReport, FsyncPolicy, IngestOutcome, RecoveryPolicy, ReviewRecord, StoreLimits,
@@ -21,6 +22,7 @@ use synapse_store::{
 mod advisory;
 mod crumb;
 mod evidence;
+pub mod tree;
 pub use advisory::{
     ChangesetAdvisory, ChangesetAdvisoryPayload, CoordinationStatus, GuidanceNote,
     OverlappingProposal, PathAdvisory, Staleness, MAX_ADVISORY_PATHS,
@@ -29,6 +31,10 @@ pub use crumb::CrumbContextQueryPayload;
 pub use evidence::{
     EvidenceBase, EvidenceBaseQueryPayload, ReceiptMismatch, ReceiptVerification, StaleContext,
     StaleReason, VerifyEvidenceReceiptPayload,
+};
+pub use tree::{
+    TreeCacheConfig, TreeDiffEntry, TreeEdit, TreeEntry, TreeEntryKind, TreeFile, TreeNode,
+    TreeStore, TreeStoreStats, DEFAULT_TREE_CACHE_BYTES, MIN_TREE_CACHE_BYTES,
 };
 
 /// Default maximum page size for bounded API queries.
@@ -70,7 +76,7 @@ pub enum TreeTarget {
     Changeset(ChangesetId),
 }
 
-/// Single entry in a materialized `VirtualTree`.
+/// One file of a tree as returned by `tree`, `diff`, and `materialize_virtual_tree`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VirtualTreeEntry {
     pub path: String,
@@ -86,6 +92,8 @@ pub enum DiffStatus {
     Added,
     Modified,
     Deleted,
+    /// The entry changed between a symlink and a regular or executable file (Git status `T`).
+    TypeChanged,
 }
 
 impl DiffStatus {
@@ -94,6 +102,7 @@ impl DiffStatus {
             Self::Added => "A",
             Self::Modified => "M",
             Self::Deleted => "D",
+            Self::TypeChanged => "T",
         }
     }
 }
@@ -227,13 +236,12 @@ pub struct WatchQueryPayload {
     pub page: PageRequest,
 }
 
-/// Exact path index mapping repository paths to touching `ChangesetId`s,
-/// plus an invalidatable cache of materialized `VirtualTree` views.
+/// Exact path index mapping repository paths to touching `ChangesetId`s. Trees live in the
+/// service's shared [`TreeStore`].
 #[derive(Debug, Default)]
 pub struct PathIndex {
     path_to_changesets: BTreeMap<String, BTreeSet<ChangesetId>>,
     changeset_to_paths: BTreeMap<ChangesetId, Vec<String>>,
-    virtual_tree_cache: BTreeMap<ChangesetId, BTreeMap<String, VirtualTreeEntry>>,
 }
 
 impl PathIndex {
@@ -253,8 +261,7 @@ impl PathIndex {
         self.changeset_to_paths.insert(changeset_id, paths);
     }
 
-    /// Remove a `ChangesetId` from the path index and invalidate its cached `VirtualTree`
-    /// (and any cached descendant trees).
+    /// Remove a `ChangesetId` from the path index.
     pub fn invalidate_changeset(&mut self, changeset_id: ChangesetId) {
         if let Some(paths) = self.changeset_to_paths.remove(&changeset_id) {
             for p in paths {
@@ -266,7 +273,6 @@ impl PathIndex {
                 }
             }
         }
-        self.virtual_tree_cache.remove(&changeset_id);
     }
 
     pub fn changesets_for_path(&self, path: &str) -> Option<&BTreeSet<ChangesetId>> {
@@ -275,10 +281,6 @@ impl PathIndex {
 
     pub fn indexed_paths_count(&self) -> usize {
         self.path_to_changesets.len()
-    }
-
-    pub fn cached_trees_count(&self) -> usize {
-        self.virtual_tree_cache.len()
     }
 }
 
@@ -290,7 +292,8 @@ pub struct SynapseService {
     store: SynapseStore,
     auth: PolicyEnforcer,
     path_index: PathIndex,
-    base_trees: BTreeMap<GitOid, BTreeMap<String, VirtualTreeEntry>>,
+    base_roots: BTreeMap<GitOid, TreeDigest>,
+    trees: TreeStore,
     base_blobs: BTreeMap<BlobDigest, Vec<u8>>,
     max_page_size: usize,
 }
@@ -322,7 +325,8 @@ impl SynapseService {
             store,
             auth: PolicyEnforcer::new(),
             path_index,
-            base_trees: BTreeMap::new(),
+            base_roots: BTreeMap::new(),
+            trees: TreeStore::new(TreeCacheConfig::default())?,
             base_blobs: BTreeMap::new(),
             max_page_size: DEFAULT_MAX_PAGE_SIZE,
         })
@@ -354,31 +358,36 @@ impl SynapseService {
             .register_repo_authority(self.repo_id.clone(), authority_did);
     }
 
-    /// Register an in-memory base Git commit tree for checkout-free virtual tree overlays.
+    /// Register an in-memory base Git commit tree for checkout-free tree overlays. The tree is
+    /// built once as a native Merkle tree and pinned in the [`TreeStore`] (base trees are the
+    /// source every changeset tree is rebuilt from); a base that does not fit in the tree cache
+    /// bound is refused with `RefusalCode::BackpressureOverCapacity`.
     pub fn register_base_tree(
         &mut self,
         base_git_oid: GitOid,
         files: Vec<(String, FileMode, Vec<u8>)>,
     ) -> SynapseResult<()> {
-        let mut map = BTreeMap::new();
+        let mut edit = TreeEdit::new(&mut self.trees, TreeDigest::empty())?;
+        let mut blobs = Vec::with_capacity(files.len());
         for (path, mode, bytes) in files {
             validate_repo_relative_path(&path)?;
-            let blob_digest = BlobDigest::compute(&bytes);
-            let git_blob_oid = GitOid::compute_blob(&bytes);
-            let size_bytes = bytes.len() as u64;
-            self.base_blobs.insert(blob_digest, bytes);
-            map.insert(
-                path.clone(),
-                VirtualTreeEntry {
-                    path,
-                    mode,
-                    blob_digest,
-                    git_blob_oid,
-                    size_bytes,
-                },
-            );
+            let file = TreeFile {
+                mode,
+                blob_digest: BlobDigest::compute(&bytes),
+                size_bytes: bytes.len() as u64,
+                git_blob_oid: GitOid::compute_blob(&bytes),
+            };
+            edit.upsert(&mut self.trees, &path, file)?;
+            blobs.push((file.blob_digest, bytes));
         }
-        self.base_trees.insert(base_git_oid, map);
+        let root = edit.finish(&mut self.trees)?;
+        if self.base_roots.get(&base_git_oid) != Some(&root) {
+            self.trees.pin(root)?;
+            if let Some(old) = self.base_roots.insert(base_git_oid, root) {
+                self.trees.unpin(old);
+            }
+        }
+        self.base_blobs.extend(blobs);
         Ok(())
     }
 
@@ -510,7 +519,7 @@ impl SynapseService {
             ));
         }
         if !self
-            .base_trees
+            .base_roots
             .contains_key(&req.payload.envelope.base_git_oid)
         {
             return Err(SynapseError::new(
@@ -567,14 +576,15 @@ impl SynapseService {
             now_ms,
         )?;
         let (target, ref path, snap_seq) = req.payload;
-        let tree = self.materialize_virtual_tree(target, snap_seq)?;
-        let entry = tree.get(path).ok_or_else(|| {
-            SynapseError::new(
-                RefusalCode::BlobNotFound,
-                format!("path {path} not found in virtual tree"),
-            )
-        })?;
-        self.read_blob_bytes(entry.blob_digest, snap_seq)
+        let file = self
+            .with_tree(target, snap_seq, |trees, root| trees.lookup(root, path))?
+            .ok_or_else(|| {
+                SynapseError::new(
+                    RefusalCode::BlobNotFound,
+                    format!("path {path} not found in tree"),
+                )
+            })?;
+        self.read_blob_bytes(file.blob_digest, snap_seq)
     }
 
     /// API 3: `tree` returns a bounded, cursor-paginated `VirtualTree` without checkout (`Capability::Read`).
@@ -592,20 +602,18 @@ impl SynapseService {
             now_ms,
         )?;
         let snap_seq = self.validate_page_request(&req.payload.page)?;
-        let full_tree = self.materialize_virtual_tree(req.payload.target, Some(snap_seq))?;
-
-        let filtered: Vec<VirtualTreeEntry> = full_tree
-            .values()
-            .filter(|e| {
-                req.payload
-                    .path_prefix
-                    .as_ref()
-                    .is_none_or(|prefix| e.path.starts_with(prefix))
-            })
-            .cloned()
-            .collect();
-
-        paginate_slice(&filtered, &req.payload.page, snap_seq)
+        let prefix = req.payload.path_prefix.as_deref().unwrap_or("");
+        let offset = parse_offset_cursor(&req.payload.page)?;
+        let limit = req.payload.page.limit;
+        let (total, items) =
+            self.tree_page(req.payload.target, prefix, offset, limit, Some(snap_seq))?;
+        let end = offset + items.len() as u64;
+        Ok(PageResponse {
+            items,
+            next_cursor: (end < total).then(|| format!("offset:{end}")),
+            snapshot_seq: snap_seq,
+            total_matching: total as usize,
+        })
     }
 
     /// API 4: `diff` computes a bounded, cursor-paginated path diff between two `TreeTarget`s (`Capability::Read`).
@@ -623,42 +631,11 @@ impl SynapseService {
             now_ms,
         )?;
         let snap_seq = self.validate_page_request(&req.payload.page)?;
-        let base_tree = self.materialize_virtual_tree(req.payload.base, Some(snap_seq))?;
-        let target_tree = self.materialize_virtual_tree(req.payload.target, Some(snap_seq))?;
-
-        let mut all_paths: BTreeSet<&String> = BTreeSet::new();
-        all_paths.extend(base_tree.keys());
-        all_paths.extend(target_tree.keys());
-
-        let mut diffs = Vec::new();
-        for path in all_paths {
-            match (base_tree.get(path), target_tree.get(path)) {
-                (None, Some(new_e)) => diffs.push(DiffEntry {
-                    path: path.clone(),
-                    status: DiffStatus::Added,
-                    old_entry: None,
-                    new_entry: Some(new_e.clone()),
-                }),
-                (Some(old_e), None) => diffs.push(DiffEntry {
-                    path: path.clone(),
-                    status: DiffStatus::Deleted,
-                    old_entry: Some(old_e.clone()),
-                    new_entry: None,
-                }),
-                (Some(old_e), Some(new_e)) => {
-                    if old_e.blob_digest != new_e.blob_digest || old_e.mode != new_e.mode {
-                        diffs.push(DiffEntry {
-                            path: path.clone(),
-                            status: DiffStatus::Modified,
-                            old_entry: Some(old_e.clone()),
-                            new_entry: Some(new_e.clone()),
-                        });
-                    }
-                }
-                (None, None) => {}
-            }
-        }
-
+        let diffs: Vec<DiffEntry> = self
+            .diff_trees(req.payload.base, req.payload.target, Some(snap_seq))?
+            .into_iter()
+            .map(diff_entry)
+            .collect();
         paginate_slice(&diffs, &req.payload.page, snap_seq)
     }
 
@@ -894,7 +871,7 @@ impl SynapseService {
             state_root_digest,
             total_changesets: visible_cs.len(),
             indexed_paths_count: self.path_index.indexed_paths_count(),
-            cached_virtual_trees: self.path_index.cached_trees_count(),
+            cached_virtual_trees: self.trees.memoized_roots(),
             canonical_head: self.store.canonical_head(&self.repo_id).cloned(),
             audit_chain_head,
         })
@@ -1029,99 +1006,246 @@ impl SynapseService {
         for id in before_ids {
             if !retained_set.contains(&id) {
                 self.path_index.invalidate_changeset(id);
+                self.trees.forget_root(id);
             }
         }
         Ok(report)
     }
 
-    /// Materialize the complete sorted `VirtualTree` for `target` without a working-tree checkout.
+    /// Materialize the complete sorted file list of `target` without a working-tree checkout.
+    /// Prefer [`SynapseService::tree`] or [`SynapseService::tree_digest`] where a flat copy of
+    /// the whole tree is not needed.
     pub fn materialize_virtual_tree(
         &mut self,
         target: TreeTarget,
         snapshot_seq: Option<WalSeq>,
     ) -> SynapseResult<BTreeMap<String, VirtualTreeEntry>> {
-        match target {
-            TreeTarget::BaseGitCommit(oid) => self.base_trees.get(&oid).cloned().ok_or_else(|| {
-                SynapseError::new(
-                    RefusalCode::BaseTreeNotFound,
-                    format!("base_git_oid {oid} not found"),
-                )
-            }),
-            TreeTarget::Changeset(cs_id) => {
-                // Ensure the changeset is visible at `snapshot_seq`
-                let stored = self.store.get_changeset(cs_id, None, snapshot_seq)?;
-                if let Some(cached) = self.path_index.virtual_tree_cache.get(&cs_id) {
-                    return Ok(cached.clone());
-                }
+        let files = self.with_tree(target, snapshot_seq, |trees, root| trees.files(root))?;
+        Ok(files
+            .into_iter()
+            .map(|(path, f)| (path.clone(), virtual_tree_entry(path, &f)))
+            .collect())
+    }
 
-                // Start from base_git_oid or overlay parent changesets in topological order
-                let mut tree = if stored.envelope.parent_changesets.is_empty() {
-                    self.base_trees
-                        .get(&stored.envelope.base_git_oid)
-                        .cloned()
-                        .ok_or_else(|| {
-                            SynapseError::new(
-                                RefusalCode::BaseTreeNotFound,
-                                format!("base_git_oid {} not found", stored.envelope.base_git_oid),
-                            )
-                        })?
-                } else {
-                    let mut merged = BTreeMap::new();
-                    for &parent_id in &stored.envelope.parent_changesets {
-                        let parent_tree = self.materialize_virtual_tree(
-                            TreeTarget::Changeset(parent_id),
-                            snapshot_seq,
-                        )?;
-                        for (k, v) in parent_tree {
-                            merged.insert(k, v);
-                        }
-                    }
-                    merged
-                };
+    /// The native [`TreeDigest`] of `target`: the domain-separated Merkle root of the whole
+    /// repository state (ADR 0003 section 5.1). Built on first use (the cold path) and then
+    /// answered from the bounded root memo (the warm path).
+    pub fn tree_digest(
+        &mut self,
+        target: TreeTarget,
+        snapshot_seq: Option<WalSeq>,
+    ) -> SynapseResult<TreeDigest> {
+        self.with_tree(target, snapshot_seq, |_, root| Ok(root))
+    }
 
-                // Apply this changeset's sorted path mutations
-                for m in &stored.envelope.mutations {
-                    match &m.op {
-                        MutationOp::Upsert {
-                            mode,
-                            blob_digest,
-                            size_bytes,
-                        } => {
-                            // Remove any conflicting file-vs-directory ancestor/descendant entries
-                            let keys_to_remove: Vec<String> = tree
-                                .keys()
-                                .filter(|existing| is_file_dir_prefix_collision(existing, &m.path))
-                                .cloned()
-                                .collect();
-                            for k in keys_to_remove {
-                                tree.remove(&k);
-                            }
+    /// One page of the files of `target` under `prefix` (path byte order) and the total count,
+    /// paged straight from the Merkle tree by seeking with subtree file counts (no flat copy).
+    /// This is the engine behind [`SynapseService::tree`] without the request authorization;
+    /// an `offset` past the end is `CursorInvalid`.
+    pub fn tree_page(
+        &mut self,
+        target: TreeTarget,
+        prefix: &str,
+        offset: u64,
+        limit: usize,
+        snapshot_seq: Option<WalSeq>,
+    ) -> SynapseResult<(u64, Vec<VirtualTreeEntry>)> {
+        let (total, files) = self.with_tree(target, snapshot_seq, |trees, root| {
+            let total = trees.count_files(root, prefix)?;
+            if offset > total {
+                return Err(SynapseError::new(
+                    RefusalCode::CursorInvalid,
+                    format!("cursor offset {offset} out of bounds for {total} items"),
+                ));
+            }
+            Ok((total, trees.page_files(root, prefix, offset, limit)?))
+        })?;
+        Ok((
+            total,
+            files
+                .into_iter()
+                .map(|(path, f)| virtual_tree_entry(path, &f))
+                .collect(),
+        ))
+    }
 
-                            let raw = self.read_blob_bytes(*blob_digest, snapshot_seq)?;
-                            let git_blob_oid = GitOid::compute_blob(&raw);
-                            tree.insert(
-                                m.path.clone(),
-                                VirtualTreeEntry {
-                                    path: m.path.clone(),
-                                    mode: *mode,
-                                    blob_digest: *blob_digest,
-                                    git_blob_oid,
-                                    size_bytes: *size_bytes,
-                                },
-                            );
-                        }
-                        MutationOp::Delete => {
-                            tree.remove(&m.path);
-                        }
-                    }
-                }
+    /// Canonical encoded bytes and count of the distinct nodes of `target`'s tree: the bytes a
+    /// full walk of the tree reads (the input of the warm paging bound).
+    pub fn tree_encoded_bytes(
+        &mut self,
+        target: TreeTarget,
+        snapshot_seq: Option<WalSeq>,
+    ) -> SynapseResult<(u64, u64)> {
+        self.with_tree(target, snapshot_seq, |trees, root| {
+            trees.encoded_bytes(root)
+        })
+    }
 
-                self.path_index
-                    .virtual_tree_cache
-                    .insert(cs_id, tree.clone());
-                Ok(tree)
+    /// Path-level differences from `base` to `target` in path byte order, computed by walking
+    /// both Merkle trees and skipping every subtree whose digest is equal on both sides.
+    pub fn diff_trees(
+        &mut self,
+        base: TreeTarget,
+        target: TreeTarget,
+        snapshot_seq: Option<WalSeq>,
+    ) -> SynapseResult<Vec<TreeDiffEntry>> {
+        let attempt = |svc: &mut Self, force: bool| -> SynapseResult<Vec<TreeDiffEntry>> {
+            let a = svc.tree_root(base, snapshot_seq, force)?;
+            let b = svc.tree_root(target, snapshot_seq, force)?;
+            svc.trees.diff(a, b)
+        };
+        match attempt(self, false) {
+            Err(e) if e.code == RefusalCode::TreeNodeNotFound => {
+                attempt(self, true).map_err(cache_bound_too_small)
+            }
+            other => other,
+        }
+    }
+
+    /// The shared Merkle tree store (read-only view, for statistics and bounds).
+    pub fn tree_store(&self) -> &TreeStore {
+        &self.trees
+    }
+
+    /// Replace the tree store with one bounded by `config`, carrying the pinned base trees over.
+    /// Memoized changeset roots are dropped and rebuilt on demand.
+    pub fn set_tree_cache_config(&mut self, config: TreeCacheConfig) -> SynapseResult<()> {
+        let mut next = TreeStore::new(config)?;
+        for &root in self.base_roots.values() {
+            copy_tree(&mut self.trees, &mut next, root)?;
+            next.pin(root)?;
+        }
+        self.trees = next;
+        Ok(())
+    }
+
+    /// Run `f` on the root of `target`. If `f` reaches a node evicted from the bounded store,
+    /// the tree is rebuilt from its source once and `f` runs again; a tree that still cannot be
+    /// walked means the bound is too small for one tree (`BackpressureOverCapacity`).
+    fn with_tree<T>(
+        &mut self,
+        target: TreeTarget,
+        snapshot_seq: Option<WalSeq>,
+        mut f: impl FnMut(&mut TreeStore, TreeDigest) -> SynapseResult<T>,
+    ) -> SynapseResult<T> {
+        let first = self
+            .tree_root(target, snapshot_seq, false)
+            .and_then(|root| f(&mut self.trees, root));
+        match first {
+            Err(e) if e.code == RefusalCode::TreeNodeNotFound => {
+                let root = self
+                    .tree_root(target, snapshot_seq, true)
+                    .map_err(cache_bound_too_small)?;
+                f(&mut self.trees, root).map_err(cache_bound_too_small)
+            }
+            other => other,
+        }
+    }
+
+    /// Root digest of `target`. A changeset tree is its parents' tree (or its base tree) with
+    /// its mutations applied; `force` rebuilds it and every ancestor instead of trusting memos.
+    fn tree_root(
+        &mut self,
+        target: TreeTarget,
+        snapshot_seq: Option<WalSeq>,
+        force: bool,
+    ) -> SynapseResult<TreeDigest> {
+        let cs_id = match target {
+            TreeTarget::BaseGitCommit(oid) => {
+                return self.base_roots.get(&oid).copied().ok_or_else(|| {
+                    SynapseError::new(
+                        RefusalCode::BaseTreeNotFound,
+                        format!("base_git_oid {oid} not found"),
+                    )
+                })
+            }
+            TreeTarget::Changeset(cs_id) => cs_id,
+        };
+        // Visibility at `snapshot_seq` is checked on every lookup, memoized or not.
+        let stored = self.store.get_changeset(cs_id, None, snapshot_seq)?;
+        if !force {
+            if let Some(root) = self.trees.memo_root(cs_id) {
+                return Ok(root);
             }
         }
+        self.trees.count_root_build();
+        let base = self.changeset_base_root(&stored.envelope, snapshot_seq, force)?;
+        let mut edit = TreeEdit::new(&mut self.trees, base)?;
+        for m in &stored.envelope.mutations {
+            match &m.op {
+                MutationOp::Upsert {
+                    mode,
+                    blob_digest,
+                    size_bytes,
+                } => {
+                    let raw = self.read_blob_bytes(*blob_digest, snapshot_seq)?;
+                    let file = TreeFile {
+                        mode: *mode,
+                        blob_digest: *blob_digest,
+                        size_bytes: *size_bytes,
+                        git_blob_oid: GitOid::compute_blob(&raw),
+                    };
+                    edit.upsert(&mut self.trees, &m.path, file)?;
+                }
+                MutationOp::Delete => edit.delete(&mut self.trees, &m.path)?,
+            }
+        }
+        let root = edit.finish(&mut self.trees)?;
+        self.trees.remember_root(cs_id, root);
+        Ok(root)
+    }
+
+    /// The tree a changeset was built on: its base tree when it has no parents, else its parent
+    /// trees overlaid in order (later parents win, including at a file and directory collision,
+    /// the same rule as an upsert).
+    pub(crate) fn changeset_base_root(
+        &mut self,
+        envelope: &ChangesetEnvelope,
+        snapshot_seq: Option<WalSeq>,
+        force: bool,
+    ) -> SynapseResult<TreeDigest> {
+        let Some((&first, rest)) = envelope.parent_changesets.split_first() else {
+            return self.tree_root(
+                TreeTarget::BaseGitCommit(envelope.base_git_oid),
+                snapshot_seq,
+                force,
+            );
+        };
+        let first_root = self.tree_root(TreeTarget::Changeset(first), snapshot_seq, force)?;
+        if rest.is_empty() {
+            return Ok(first_root);
+        }
+        let mut roots = Vec::with_capacity(rest.len());
+        for &parent in rest {
+            roots.push(self.tree_root(TreeTarget::Changeset(parent), snapshot_seq, force)?);
+        }
+        let mut edit = TreeEdit::new(&mut self.trees, first_root)?;
+        for root in roots {
+            edit.overlay(&mut self.trees, root)?;
+        }
+        edit.finish(&mut self.trees)
+    }
+
+    /// Flat file list of the tree a changeset was built on (see `changeset_base_root`).
+    pub(crate) fn changeset_base_files(
+        &mut self,
+        envelope: &ChangesetEnvelope,
+        snapshot_seq: Option<WalSeq>,
+    ) -> SynapseResult<BTreeMap<String, VirtualTreeEntry>> {
+        let attempt = |svc: &mut Self, force: bool| {
+            let root = svc.changeset_base_root(envelope, snapshot_seq, force)?;
+            svc.trees.files(root)
+        };
+        let files = match attempt(self, false) {
+            Err(e) if e.code == RefusalCode::TreeNodeNotFound => {
+                attempt(self, true).map_err(cache_bound_too_small)?
+            }
+            other => other?,
+        };
+        Ok(files
+            .into_iter()
+            .map(|(path, f)| (path.clone(), virtual_tree_entry(path, &f)))
+            .collect())
     }
 
     /// Read raw blob bytes from either the committed `SynapseStore` or imported base blobs.
@@ -1201,34 +1325,40 @@ impl SynapseService {
     }
 }
 
+/// Parse an `offset:N` pagination cursor (absent cursor: offset 0).
+fn parse_offset_cursor(page: &PageRequest) -> SynapseResult<u64> {
+    let Some(cur) = page.cursor.as_ref() else {
+        return Ok(0);
+    };
+    let stripped = cur.strip_prefix("offset:").ok_or_else(|| {
+        SynapseError::new(
+            RefusalCode::CursorInvalid,
+            format!("invalid pagination cursor: {cur}"),
+        )
+    })?;
+    stripped.parse().map_err(|_| {
+        SynapseError::new(
+            RefusalCode::CursorInvalid,
+            format!("non-numeric pagination cursor: {cur}"),
+        )
+    })
+}
+
 fn paginate_slice<T: Clone>(
     all: &[T],
     page: &PageRequest,
     snapshot_seq: WalSeq,
 ) -> SynapseResult<PageResponse<T>> {
-    let start_idx = if let Some(ref cur) = page.cursor {
-        let stripped = cur.strip_prefix("offset:").ok_or_else(|| {
-            SynapseError::new(
-                RefusalCode::CursorInvalid,
-                format!("invalid pagination cursor: {cur}"),
-            )
-        })?;
-        let idx: usize = stripped.parse().map_err(|_| {
-            SynapseError::new(
-                RefusalCode::CursorInvalid,
-                format!("non-numeric pagination cursor: {cur}"),
-            )
-        })?;
-        if idx > all.len() {
-            return Err(SynapseError::new(
-                RefusalCode::CursorInvalid,
-                format!("cursor offset {idx} out of bounds for {} items", all.len()),
-            ));
-        }
-        idx
-    } else {
-        0
-    };
+    let start_idx = parse_offset_cursor(page)? as usize;
+    if start_idx > all.len() {
+        return Err(SynapseError::new(
+            RefusalCode::CursorInvalid,
+            format!(
+                "cursor offset {start_idx} out of bounds for {} items",
+                all.len()
+            ),
+        ));
+    }
 
     let end_idx = (start_idx + page.limit).min(all.len());
     let items = all[start_idx..end_idx].to_vec();
@@ -1244,6 +1374,63 @@ fn paginate_slice<T: Clone>(
         snapshot_seq,
         total_matching: all.len(),
     })
+}
+
+fn virtual_tree_entry(path: String, f: &TreeFile) -> VirtualTreeEntry {
+    VirtualTreeEntry {
+        path,
+        mode: f.mode,
+        blob_digest: f.blob_digest,
+        git_blob_oid: f.git_blob_oid,
+        size_bytes: f.size_bytes,
+    }
+}
+
+/// Convert a tree diff entry into the API's `DiffEntry`, classifying it as Git does: a change
+/// between a symlink and a regular or executable file is a type change (`T`).
+fn diff_entry(d: TreeDiffEntry) -> DiffEntry {
+    let status = match (&d.old, &d.new) {
+        (None, _) => DiffStatus::Added,
+        (_, None) => DiffStatus::Deleted,
+        (Some(o), Some(n)) => {
+            let link = |m: FileMode| m == FileMode::Symlink120000;
+            if link(o.mode) != link(n.mode) {
+                DiffStatus::TypeChanged
+            } else {
+                DiffStatus::Modified
+            }
+        }
+    };
+    DiffEntry {
+        old_entry: d.old.map(|f| virtual_tree_entry(d.path.clone(), &f)),
+        new_entry: d.new.map(|f| virtual_tree_entry(d.path.clone(), &f)),
+        path: d.path,
+        status,
+    }
+}
+
+/// A tree that cannot be walked even right after a rebuild: the bound cannot hold one tree.
+fn cache_bound_too_small(e: SynapseError) -> SynapseError {
+    if e.code == RefusalCode::TreeNodeNotFound {
+        SynapseError::new(
+            RefusalCode::BackpressureOverCapacity,
+            format!("tree cache bound too small to hold one tree: {}", e.message),
+        )
+    } else {
+        e
+    }
+}
+
+/// Copy every node reachable from `root` from one store into another.
+fn copy_tree(from: &mut TreeStore, to: &mut TreeStore, root: TreeDigest) -> SynapseResult<()> {
+    let node = from.get(root)?;
+    for e in node.entries() {
+        if let TreeEntryKind::Dir { digest, .. } = e.kind {
+            copy_tree(from, to, digest)?;
+        }
+    }
+    to.insert(TreeNode::new(node.entries().to_vec())?);
+    Ok(())
 }
 
 fn is_file_dir_prefix_collision(a: &str, b: &str) -> bool {
@@ -1806,7 +1993,7 @@ mod tests {
             let _ = svc
                 .materialize_virtual_tree(TreeTarget::Changeset(cs_a_id), None)
                 .unwrap();
-            assert_eq!(svc.path_index().cached_trees_count(), 1);
+            assert_eq!(svc.tree_store().memoized_roots(), 1);
             assert_eq!(
                 svc.path_index()
                     .changesets_for_path("src/shared.rs")
@@ -1818,7 +2005,7 @@ mod tests {
             // Compact at t=2000: cs_a (t=100) is evicted and invalidated from PathIndex!
             let report = svc.checkpoint_compact_and_invalidate_index(2000).unwrap();
             assert_eq!(report.evicted_changesets, 1);
-            assert_eq!(svc.path_index().cached_trees_count(), 0);
+            assert_eq!(svc.tree_store().memoized_roots(), 0);
             let remaining_for_shared = svc
                 .path_index()
                 .changesets_for_path("src/shared.rs")
