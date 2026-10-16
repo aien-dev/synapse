@@ -43,6 +43,9 @@ pub enum RecordRefusal {
     NotRegular(&'static str),
     /// The file is larger than `limit` bytes.
     TooLarge { limit: u64 },
+    /// A directory component of a record path is not a directory (for example a regular
+    /// file planted where a subdirectory of `dirs/` is expected).
+    NotDirectory,
 }
 
 impl std::fmt::Display for RecordRefusal {
@@ -51,6 +54,7 @@ impl std::fmt::Display for RecordRefusal {
             RecordRefusal::Symlink => write!(f, "is a symbolic link"),
             RecordRefusal::NotRegular(k) => write!(f, "is a {k}, not a regular file"),
             RecordRefusal::TooLarge { limit } => write!(f, "is larger than {limit} bytes"),
+            RecordRefusal::NotDirectory => write!(f, "is not a directory"),
         }
     }
 }
@@ -161,4 +165,43 @@ pub(crate) fn create_temp(tmp: &Path) -> Result<File, CoordError> {
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(tmp)
         .map_err(|e| io(tmp, e))
+}
+
+/// Refuse a record path whose directory components below `root` are not all real
+/// directories. Every existing component from `root` (exclusive) down to `path`'s parent is
+/// checked with `lstat`: a symbolic link is refused (a write would otherwise land outside the
+/// store, and a read would load a record the listing never shows, since listing does not
+/// follow symlinked directories), and anything else that is not a directory is refused as
+/// not regular. Components that do not exist yet are fine; they are created as real
+/// directories by the writer. A path outside `root` is refused as a symlink escape.
+pub(crate) fn check_real_parents(root: &Path, path: &Path) -> Result<(), CoordError> {
+    let parent = path.parent().unwrap_or(Path::new(""));
+    let rel = parent
+        .strip_prefix(root)
+        .map_err(|_| refused(path, RecordRefusal::Symlink))?;
+    let mut cur = root.to_path_buf();
+    for comp in rel.components() {
+        cur.push(comp);
+        match fs::symlink_metadata(&cur) {
+            Ok(m) => {
+                let ft = m.file_type();
+                if ft.is_symlink() {
+                    return Err(refused(&cur, RecordRefusal::Symlink));
+                }
+                if !ft.is_dir() {
+                    return Err(refused(&cur, RecordRefusal::NotDirectory));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(io(&cur, e)),
+        }
+    }
+    Ok(())
+}
+
+/// Read a store record file (at most [`MAX_RECORD_BYTES`]) without following a final
+/// symbolic link or blocking on a FIFO; `Ok(None)` when it does not exist. For tools such
+/// as the `synapse-coord canon` command, which must not trust the file they are given.
+pub fn read_record_file(path: &Path) -> Result<Option<Vec<u8>>, CoordError> {
+    read_bounded(path, MAX_RECORD_BYTES)
 }

@@ -40,8 +40,9 @@ fn ttl(s: Option<&String>) -> Result<Option<i64>, String> {
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() == 2 && args[0] == "canon" {
-        return match std::fs::read(&args[1])
+        return match synapse_coord::read_record_file(std::path::Path::new(&args[1]))
             .ok()
+            .flatten()
             .and_then(|b| synapse_coord::json::parse(&b))
         {
             Some(j) => {

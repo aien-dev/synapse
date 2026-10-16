@@ -18,7 +18,7 @@ pub mod time;
 pub use identity::{
     resolve_coord_root, ResolvedRoot, RootSource, StoreId, STORE_ID_FILE, STORE_ID_FORMAT,
 };
-pub use record::{RecordRefusal, MAX_MARKER_BYTES, MAX_RECORD_BYTES};
+pub use record::{read_record_file, RecordRefusal, MAX_MARKER_BYTES, MAX_RECORD_BYTES};
 
 use json::J;
 use std::fs::{self, File, OpenOptions};
@@ -662,6 +662,11 @@ impl CoordStore {
                     path: lp.clone(),
                     reason: RecordRefusal::Symlink,
                 },
+                // A directory planted as `.lock` is a refused store file, not an I/O error.
+                Some(libc::EISDIR) => CoordError::RefusedRecord {
+                    path: lp.clone(),
+                    reason: RecordRefusal::NotRegular("directory"),
+                },
                 _ => io_err(&lp)(e),
             })?;
         // The lock file is a store file too: a FIFO or device planted as `.lock` is refused.
@@ -730,8 +735,15 @@ fn has_lock_by(root: &J, agent: &str) -> bool {
     }
 }
 
+/// Best-effort directory flush. Opened like every other store file: never following a final
+/// link, never blocking (a FIFO planted in place of a directory cannot stall the writer),
+/// and only if it really is a directory.
 fn fsync_dir(dir: &Path) {
-    if let Ok(f) = File::open(dir) {
+    if let Ok(f) = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(dir)
+    {
         let _ = f.sync_all();
     }
 }
@@ -742,7 +754,7 @@ fn fsync_dir(dir: &Path) {
 ///
 /// Refuses (typed [`CoordError::RefusedRecord`]) to replace anything but a regular file, and
 /// to write a record over [`MAX_RECORD_BYTES`], which readers would refuse.
-fn durable_write(path: &Path, data: &[u8]) -> Result<(), CoordError> {
+fn durable_write(root: &Path, path: &Path, data: &[u8]) -> Result<(), CoordError> {
     if data.len() as u64 > MAX_RECORD_BYTES {
         return Err(CoordError::RefusedRecord {
             path: path.to_path_buf(),
@@ -751,6 +763,7 @@ fn durable_write(path: &Path, data: &[u8]) -> Result<(), CoordError> {
             },
         });
     }
+    record::check_real_parents(root, path)?;
     record::check_replaceable(path)?;
     let dd = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(dd).map_err(io_err(dd))?;
@@ -806,6 +819,9 @@ impl Txn<'_> {
         if let Some(i) = self.recs.iter().position(|r| r.path == path) {
             return Ok(i);
         }
+        // Never read through a symlinked directory: listing does not follow one, so a record
+        // behind it would be invisible to prune yet loadable and writable here.
+        record::check_real_parents(&self.store.root, path)?;
         let (mut j, existed) = match record::read_bounded(path, MAX_RECORD_BYTES)? {
             Some(bytes) => match json::parse(&bytes) {
                 Some(j) if j.is_obj() => (j, true),
@@ -890,7 +906,7 @@ impl Txn<'_> {
             }
             let now = r.root.dump();
             if now != r.before {
-                durable_write(&r.path, &now)?;
+                durable_write(&self.store.root, &r.path, &now)?;
             }
         }
         self.lock.take();

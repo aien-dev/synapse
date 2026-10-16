@@ -265,3 +265,82 @@ fn planted_lock_file_fifo_is_refused() {
     // Read-only sniff takes no lock, so it still answers.
     assert_eq!(sniff(&f).unwrap().locks.len(), 1);
 }
+
+/// Issue #63 item 1: a symlinked directory component under `dirs/` is refused for reads and
+/// writes alike (listing already skips it), and nothing is written through it.
+#[test]
+fn symlinked_dir_component_under_dirs_is_refused_and_not_written_through() {
+    let f = fx("symlinkdir");
+    seeded(&f);
+    fs::create_dir_all(f.top.join("sub/deep")).unwrap();
+    fs::write(f.top.join("sub/deep/x.rs"), "x").unwrap();
+    let outside = f.base.join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    let link = f.store.join("dirs/sub");
+    std::os::unix::fs::symlink(&outside, &link).unwrap();
+    assert_eq!(
+        refusal(claim(&f, "sub/deep/x.rs")),
+        (link.clone(), RecordRefusal::Symlink)
+    );
+    assert_eq!(
+        fs::read_dir(&outside).unwrap().count(),
+        0,
+        "nothing may be written through the symlinked directory"
+    );
+    // A regular file planted where a subdirectory is expected is refused as not a directory.
+    fs::remove_file(&link).unwrap();
+    fs::write(&link, "not a dir").unwrap();
+    assert_eq!(
+        refusal(claim(&f, "sub/deep/x.rs")),
+        (link.clone(), RecordRefusal::NotDirectory)
+    );
+    // Removing it restores service: the record is created under a real directory.
+    fs::remove_file(&link).unwrap();
+    assert!(matches!(
+        claim(&f, "sub/deep/x.rs").unwrap(),
+        ClaimOutcome::Claimed { .. }
+    ));
+    assert!(fs::symlink_metadata(&link).unwrap().is_dir());
+}
+
+/// Issue #63 item 4: a directory planted as `.lock` is a typed refusal, not `Io(EISDIR)`.
+#[test]
+fn planted_lock_file_directory_is_refused() {
+    let f = fx("lockdir");
+    seeded(&f);
+    let lp = f.store.join(".lock");
+    fs::remove_file(&lp).unwrap();
+    fs::create_dir(&lp).unwrap();
+    assert_eq!(
+        refusal(claim(&f, "src/b.rs")),
+        (lp.clone(), RecordRefusal::NotRegular("directory"))
+    );
+    assert!(fs::symlink_metadata(&lp).unwrap().is_dir());
+}
+
+/// Issue #63 item 3: `synapse-coord canon` uses the bounded, non-blocking read, so a FIFO or
+/// an oversize file is refused promptly instead of hanging or being read whole.
+#[test]
+fn canon_refuses_fifo_and_oversize_promptly() {
+    let f = fx("canon");
+    fs::create_dir_all(&f.base).unwrap();
+    let fifo = f.base.join("p.json");
+    mkfifo(&fifo);
+    let big = f.base.join("big.json");
+    let mut body = vec![b' '; synapse_coord::MAX_RECORD_BYTES as usize + 1];
+    body[0] = b'{';
+    *body.last_mut().unwrap() = b'}';
+    fs::write(&big, &body).unwrap();
+    let ok = f.base.join("ok.json");
+    fs::write(&ok, br#"{ "b": 1, "a": 2 }"#).unwrap();
+    for (p, want_ok) in [(fifo, false), (big, false), (ok, true)] {
+        let st = within("canon", move || {
+            std::process::Command::new(env!("CARGO_BIN_EXE_synapse-coord"))
+                .arg("canon")
+                .arg(&p)
+                .output()
+                .unwrap()
+        });
+        assert_eq!(st.status.success(), want_ok, "{st:?}");
+    }
+}
