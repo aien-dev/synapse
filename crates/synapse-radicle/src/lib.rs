@@ -2,6 +2,13 @@
 //! Ed25519 delegate threshold verifier, canonical promotion gate, and split-brain
 //! reconciliation state machine (`synapse-radicle`, Gate 3).
 
+pub mod identity;
+
+pub use identity::{
+    Ed25519PublicKey, IdentityDocumentDigest, IdentityEdit, IdentityLog, IdentityLogEntry,
+    IdentitySignature, ReceiptRefusal, RepositoryIdentityDocument,
+};
+
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

@@ -1,0 +1,87 @@
+[
+  {
+    "suite": "radicle",
+    "cases": [
+      {
+        "suite": "radicle",
+        "case": "threshold_met_promotes",
+        "expected": "2 of 3 delegate signatures on X promote X with 2 verified delegates",
+        "observed": "result Ok((GitOid(91e22fc06774ec0f5c082b2f82c9ac917ae5a703), 2))",
+        "outcome": "Pass"
+      },
+      {
+        "suite": "radicle",
+        "case": "below_threshold_refused",
+        "expected": "1 of 3 signatures (threshold 2) is refused with RadicleQuorumInsufficient",
+        "observed": "result Some(RadicleQuorumInsufficient)",
+        "outcome": "Pass"
+      },
+      {
+        "suite": "radicle",
+        "case": "vote_for_other_oid_not_counted",
+        "expected": "a delegate signature over Y does not count toward X; promotion of X refused with RadicleQuorumInsufficient",
+        "observed": "result Some(RadicleQuorumInsufficient)",
+        "outcome": "Pass"
+      },
+      {
+        "suite": "radicle",
+        "case": "tampered_refs_blob_refused",
+        "expected": "a sigrefs blob edited after signing (OID swapped) is refused with RadicleSignatureInvalid",
+        "observed": "result Some(RadicleSignatureInvalid)",
+        "outcome": "Pass"
+      },
+      {
+        "suite": "radicle",
+        "case": "non_delegate_signer_refused",
+        "expected": "a valid signature from a key not listed in the identity document is refused with RadicleIdentityInvalid",
+        "observed": "result Some(RadicleIdentityInvalid)",
+        "outcome": "Pass"
+      },
+      {
+        "suite": "radicle",
+        "case": "forged_delegate_signature_refused",
+        "expected": "a sigrefs claiming a delegate DID but signed by another key is refused with RadicleSignatureInvalid",
+        "observed": "result Some(RadicleSignatureInvalid)",
+        "outcome": "Pass"
+      },
+      {
+        "suite": "radicle",
+        "case": "stale_base_refused",
+        "expected": "after X is canonical, a candidate whose proposal base is not X is refused with StaleBaseHead",
+        "observed": "result Some(StaleBaseHead); canonical still X true",
+        "outcome": "Pass"
+      },
+      {
+        "suite": "radicle",
+        "case": "github_merged_without_quorum_refused",
+        "expected": "a GitHub-merged candidate with 1 of 2 required signatures classifies as SplitBrainGithubMergedWithoutRadicleQuorum and promotion is refused with RadicleQuorumInsufficient",
+        "observed": "state SplitBrainGithubMergedWithoutRadicleQuorum { candidate_oid: GitOid(91e22fc06774ec0f5c082b2f82c9ac917ae5a703), verified_count: 1, required_threshold: 2 }; result Some(RadicleQuorumInsufficient)",
+        "outcome": "Pass"
+      },
+      {
+        "suite": "radicle",
+        "case": "diverged_quorum_refused",
+        "expected": "when the delegate quorum signs Y, promoting X is refused with SplitBrainDivergence",
+        "observed": "result Some(SplitBrainDivergence)",
+        "outcome": "Pass"
+      },
+      {
+        "suite": "radicle",
+        "case": "invalid_threshold_identity_refused",
+        "expected": "an identity document with threshold 4 of 3 delegates is refused with RadicleIdentityInvalid",
+        "observed": "result Some(RadicleIdentityInvalid)",
+        "outcome": "Pass"
+      },
+      {
+        "suite": "radicle",
+        "case": "live_repository_load_and_classify",
+        "expected": "read-only: load refs/rad/id and every delegate's sigrefs from the given bare Radicle storage repository, verify signatures, and classify the delegate-signed default-branch head as CanonicalQuorumSatisfied",
+        "observed": "project \"openclaw-rs\"; delegates 1; threshold 1; sigrefs loaded 1; default branch refs/heads/main head d491aff96f6a875f5de46db8f5f7c7a98d73a4fa signed by 1; state CanonicalQuorumSatisfied",
+        "outcome": "Pass"
+      }
+    ],
+    "passed": 11,
+    "failed": 0,
+    "skipped": 0
+  }
+]
