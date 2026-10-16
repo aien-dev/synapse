@@ -1,0 +1,15 @@
+## mutation M8: WAL v2 decode skips the chunk digest check
+test g2_tests::g2_invalid_chunk_parameters_are_refused_at_open ... ok
+test g2_tests::g2_segment_index_v2_round_trips_and_refuses_damage ... ok
+test g2_tests::g2_manifest_naming_an_unindexed_chunk_is_refused_at_replay ... ok
+test g2_tests::g2_parameters_change_without_changing_identity ... ok
+test g2_tests::g2_damaged_chunk_is_refused ... FAILED
+test g2_tests::g2_chunking_off_writes_the_a2_formats ... ok
+test g2_tests::g2_dedup_inside_one_batch_counts_earlier_records ... ok
+test g2_tests::g2_crash_after_chunked_batch_sync_before_index_keeps_every_ack ... ok
+test g2_tests::g2_old_stores_stay_readable ... ok
+test g2_tests::g2_dedup_between_two_revisions_follows_the_x6_rule ... ok
+test g2_tests::g2_every_blob_round_trips_byte_for_byte_with_unchanged_blob_digest ... ok
+thread 'g2_tests::g2_damaged_chunk_is_refused' (1269061) panicked at crates/synapse-store/src/g2_tests.rs:546:9:
+open must refuse a chunk whose digest does not match
+test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 56 filtered out; finished in 1.00s

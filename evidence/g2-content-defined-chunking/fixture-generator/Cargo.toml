@@ -1,0 +1,21 @@
+# Generator of the A2 segment-store fixture used by `g2_old_stores_stay_readable`
+# (crates/synapse-store/tests/fixtures/g2-a2/segment-store). It links the A2 store code
+# itself, not the G2 code: before running, check out the A2 commit (6431fcf, "docs(store):
+# A2 segment store design ...") as a git worktree named `a2` next to this clone:
+#   git worktree add ../a2 <A2 commit>
+#   cargo run --offline --manifest-path evidence/g2-content-defined-chunking/fixture-generator/Cargo.toml -- <out dir>
+# Not a workspace member (it has its own [workspace] table).
+[package]
+name = "g2-a2-fixture-generator"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[workspace]
+
+[dependencies]
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "fast"] }
+hex = "0.4"
+synapse-core = { path = "../../../../a2/crates/synapse-core" }
+synapse-store = { path = "../../../../a2/crates/synapse-store" }
