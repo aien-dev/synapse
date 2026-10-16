@@ -38,21 +38,21 @@
     },
     {
       "name": "synapse-wire",
-      "role": "Binary wire frames with a fuzzed decoder, have-want chunk negotiation, and stream transports (ADR 0003 step G1)"
+      "role": "Binary wire frames with a fuzzed decoder, have-want chunk negotiation, stream transports (ADR 0003 step G1), and a hostile-peer-safe shared-memory ring for local agents (step G3, optional transport unless X5 adopts it)"
     }
   ],
   "extensions": {
     "generated": {
       "children": [],
       "children_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "compiled_at": "2026-10-16T09:12:08Z",
+      "compiled_at": "2026-10-16T12:56:21Z",
       "compiler": "crumb-compile/1",
-      "digest": "sha256:279410a8da95ac0a5c9e9cf32a56684e2ca85469ad52267efcce5e6dbbbef821",
-      "evidence_files": 241,
-      "evidence_root": "sha256:f103bd6c7728e5a399cede51d9c64e4d42afc97e0d48dd424536b6cc72e48314",
-      "files": 411,
-      "generated_at_commit": "5d287e0e4ab4439f79711243518c0a83cce56eff",
-      "source_tree": "sha256:07947598e29d8d8fca9b546541ebe7e575c954cf18901eeb74304d2a9f594e2b"
+      "digest": "sha256:61ef7ced3c6ac754de8363526cd8c4944d83b0451d03f6b644f5b573a07aabb4",
+      "evidence_files": 255,
+      "evidence_root": "sha256:addde2e4e81114f272092454be1ad89759b01e7938c2f7f4882e3b181c9594cb",
+      "files": 434,
+      "generated_at_commit": "2cc8b3e46e2fe1c0c941f79f5410de870d3a7ab1",
+      "source_tree": "sha256:02404b0419fcb13e7201384cc1e9428042dc738405b4543380f724ebf0b4f390"
     },
     "synapse": {
       "component_paths": {
