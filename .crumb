@@ -1,8 +1,4 @@
 {
-  "schema_version": "1.0.0",
-  "name": "synapse",
-  "layer": "root",
-  "purpose": "Synapse agent-native changeset service with Git and Radicle interoperability (aien-sovereign-core#515)",
   "below": [
     {
       "name": "synapse-core",
@@ -45,27 +41,43 @@
       "role": "Binary wire frames with a fuzzed decoder, have-want chunk negotiation, and stream transports (ADR 0003 step G1)"
     }
   ],
-  "invariants": [],
   "extensions": {
+    "generated": {
+      "children": [],
+      "children_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compiled_at": "2026-10-16T09:12:08Z",
+      "compiler": "crumb-compile/1",
+      "digest": "sha256:279410a8da95ac0a5c9e9cf32a56684e2ca85469ad52267efcce5e6dbbbef821",
+      "evidence_files": 241,
+      "evidence_root": "sha256:f103bd6c7728e5a399cede51d9c64e4d42afc97e0d48dd424536b6cc72e48314",
+      "files": 411,
+      "generated_at_commit": "5d287e0e4ab4439f79711243518c0a83cce56eff",
+      "source_tree": "sha256:07947598e29d8d8fca9b546541ebe7e575c954cf18901eeb74304d2a9f594e2b"
+    },
     "synapse": {
-      "repository": "aien-spark/synapse",
-      "tracker": "aien-sovereign-core#515",
       "component_paths": {
-        "synapse-core": "crates/synapse-core",
-        "synapse-store": "crates/synapse-store",
-        "synapse-auth": "crates/synapse-auth",
         "synapse-api": "crates/synapse-api",
+        "synapse-auth": "crates/synapse-auth",
+        "synapse-bench": "crates/synapse-bench",
+        "synapse-coord": "crates/synapse-coord",
+        "synapse-core": "crates/synapse-core",
+        "synapse-crumb": "crates/synapse-crumb",
         "synapse-git": "crates/synapse-git",
         "synapse-radicle": "crates/synapse-radicle",
-        "synapse-bench": "crates/synapse-bench",
-        "synapse-crumb": "crates/synapse-crumb",
-        "synapse-coord": "crates/synapse-coord",
+        "synapse-store": "crates/synapse-store",
         "synapse-wire": "crates/synapse-wire"
       },
       "migrated_from": {
         "dialect": "D3 (schema: \"crumb/v1\", ADR 0004)",
         "updated_at": "2026-10-14T15:35:01Z"
-      }
+      },
+      "repository": "aien-spark/synapse",
+      "tracker": "aien-sovereign-core#515"
     }
-  }
+  },
+  "invariants": [],
+  "layer": "root",
+  "name": "synapse",
+  "purpose": "Synapse agent-native changeset service with Git and Radicle interoperability (aien-sovereign-core#515)",
+  "schema_version": "1.0.0"
 }
