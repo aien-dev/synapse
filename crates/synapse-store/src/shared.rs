@@ -369,7 +369,7 @@ impl SharedStore {
         for (i, p) in batch.iter_mut().enumerate() {
             let mut pl = st.plan_ingest(&p.prepared, &overlay);
             if matches!(pl, Planned::Accept) {
-                if let Err(error) = st.conform_v2(&mut p.prepared) {
+                if let Err(error) = st.conform_v2(&mut p.prepared, &mut overlay) {
                     pl = Planned::Refused {
                         error,
                         depends_on_batch: false,
@@ -444,7 +444,7 @@ impl SharedStore {
                 for (k, &i) in accepted.iter().enumerate() {
                     let p = &batch[i].prepared;
                     let enc = p.encoded.as_ref().expect("checked above");
-                    st.apply_v2_ingest(&placed[k], p.record(), &enc.inline);
+                    st.apply_v2_ingest(&placed[k], p.record(), enc);
                     outcomes.push(IngestOutcome::Committed {
                         wal_seq: placed[k].seq,
                         changeset_id: p.changeset_id,

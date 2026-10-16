@@ -25,6 +25,15 @@
 //!   `"SYNAPSE_SEGMENT_INDEX_V1\0" || every preceding byte`. `binding` is the digest of the
 //!   checkpoint file the index belongs to ([`checkpoint_binding`]), so an index written
 //!   just before a crash that kept the older checkpoint is never used with it.
+//! * Chunks (ADR 0003 G2): an index whose checkpoint retains chunked blobs has version 2:
+//!   the version 1 layout up to the blob entries, then `u64 chunk_count | chunk_count x
+//!   (chunk_digest[32] | u64 segment | u64 offset | u32 len) | u64 manifest_count |
+//!   manifest_count x (blob_digest[32] | u64 len | u32 n | n x (chunk_digest[32] | u32 len))`
+//!   before the trailing digest; chunks and manifests in strictly increasing digest order,
+//!   every chunk named by a manifest and before the replay position, every manifest length
+//!   the sum of its chunks. An index without chunks stays version 1, so a store that never
+//!   chunked stays readable by builds before G2; builds before G2 refuse one that did
+//!   (`CheckpointCorrupt` for the index, `WalFlagsNonZero` for its chunked frames).
 
 use super::*;
 use std::os::unix::fs::FileExt;
@@ -39,6 +48,8 @@ pub const SEGMENT_INDEX_PREFIX: &str = "wal.v2.index.";
 pub const SEGMENT_INDEX_MAGIC: [u8; 4] = *b"SSX1";
 /// Segment index format version.
 pub const SEGMENT_INDEX_VERSION: u16 = 1;
+/// Segment index format version with chunks and manifests (ADR 0003 G2).
+pub const SEGMENT_INDEX_VERSION_CHUNKS: u16 = 2;
 /// Domain tag of the segment index trailer digest.
 pub const DOMAIN_SEGMENT_INDEX: &[u8] = b"SYNAPSE_SEGMENT_INDEX_V1\0";
 /// Domain tag of the checkpoint binding digest.
@@ -136,6 +147,10 @@ pub(crate) struct SegmentIndex {
     /// Locations of the blobs the checkpoint retains that live in segment bytes before
     /// the replay position.
     pub entries: BTreeMap<BlobDigest, BlobLoc>,
+    /// Locations of the chunks the retained chunked blobs name (ADR 0003 G2; version 2).
+    pub chunks: BTreeMap<ChunkDigest, BlobLoc>,
+    /// Manifests of the retained chunked blobs (version 2).
+    pub manifests: BTreeMap<BlobDigest, ChunkManifest>,
 }
 
 fn index_corrupt(what: &str) -> SynapseError {
@@ -158,21 +173,48 @@ impl SegmentIndex {
         format!("{SEGMENT_INDEX_PREFIX}{}", hex::encode(&binding[..8]))
     }
 
+    /// Encoded index: version 1 when it holds no chunks (readable by pre-G2 builds),
+    /// version 2 otherwise.
     pub fn encode(&self) -> Vec<u8> {
+        let v2 = !self.chunks.is_empty() || !self.manifests.is_empty();
         let mut b =
             Vec::with_capacity(INDEX_HEADER_LEN + self.entries.len() * INDEX_ENTRY_LEN + 32);
         b.extend_from_slice(&SEGMENT_INDEX_MAGIC);
-        b.extend_from_slice(&SEGMENT_INDEX_VERSION.to_le_bytes());
+        let version = if v2 {
+            SEGMENT_INDEX_VERSION_CHUNKS
+        } else {
+            SEGMENT_INDEX_VERSION
+        };
+        b.extend_from_slice(&version.to_le_bytes());
         b.extend_from_slice(&0u16.to_le_bytes());
         b.extend_from_slice(&self.binding);
         b.extend_from_slice(&self.replay_segment.to_le_bytes());
         b.extend_from_slice(&self.replay_offset.to_le_bytes());
         b.extend_from_slice(&(self.entries.len() as u64).to_le_bytes());
-        for (d, loc) in &self.entries {
-            b.extend_from_slice(&d.0);
+        let put_loc = |b: &mut Vec<u8>, d: &[u8; 32], loc: &BlobLoc| {
+            b.extend_from_slice(d);
             b.extend_from_slice(&loc.segment.to_le_bytes());
             b.extend_from_slice(&loc.offset.to_le_bytes());
             b.extend_from_slice(&loc.len.to_le_bytes());
+        };
+        for (d, loc) in &self.entries {
+            put_loc(&mut b, &d.0, loc);
+        }
+        if v2 {
+            b.extend_from_slice(&(self.chunks.len() as u64).to_le_bytes());
+            for (d, loc) in &self.chunks {
+                put_loc(&mut b, &d.0, loc);
+            }
+            b.extend_from_slice(&(self.manifests.len() as u64).to_le_bytes());
+            for m in self.manifests.values() {
+                b.extend_from_slice(&m.blob.0);
+                b.extend_from_slice(&m.len.to_le_bytes());
+                b.extend_from_slice(&(m.chunks.len() as u32).to_le_bytes());
+                for (d, l) in &m.chunks {
+                    b.extend_from_slice(&d.0);
+                    b.extend_from_slice(&l.to_le_bytes());
+                }
+            }
         }
         let sha = index_digest(&b);
         b.extend_from_slice(&sha);
@@ -191,7 +233,13 @@ impl SegmentIndex {
         if body[0..4] != SEGMENT_INDEX_MAGIC {
             return Err(index_corrupt("bad magic"));
         }
-        if u16::from_le_bytes([body[4], body[5]]) != SEGMENT_INDEX_VERSION || body[6..8] != [0, 0] {
+        let version = u16::from_le_bytes([body[4], body[5]]);
+        let v2 = match version {
+            SEGMENT_INDEX_VERSION => false,
+            SEGMENT_INDEX_VERSION_CHUNKS => true,
+            _ => return Err(index_corrupt("unsupported version or reserved bytes")),
+        };
+        if body[6..8] != [0, 0] {
             return Err(index_corrupt("unsupported version or reserved bytes"));
         }
         let u64_at = |at: usize| u64::from_le_bytes(body[at..at + 8].try_into().expect("8"));
@@ -199,21 +247,19 @@ impl SegmentIndex {
         let replay_segment = u64_at(40);
         let replay_offset = u64_at(48);
         let count = u64_at(56);
-        let expected = (count as u128) * INDEX_ENTRY_LEN as u128 + INDEX_HEADER_LEN as u128;
-        if expected != body.len() as u128 {
-            return Err(index_corrupt("entry count does not match the length"));
-        }
         if replay_segment == 0 || replay_offset % wal2::WAL_V2_ALIGN != 0 {
             return Err(index_corrupt("invalid replay position"));
         }
-        let mut entries = BTreeMap::new();
-        let mut prev: Option<BlobDigest> = None;
-        for e in body[INDEX_HEADER_LEN..].as_chunks::<INDEX_ENTRY_LEN>().0 {
-            let d = BlobDigest(e[0..32].try_into().expect("32"));
-            if prev.is_some_and(|p| p >= d) {
-                return Err(index_corrupt("entries not in strictly increasing order"));
+        let mut at = INDEX_HEADER_LEN;
+        let take = |at: &mut usize, n: u128| -> SynapseResult<&[u8]> {
+            if n > (body.len() - *at) as u128 {
+                return Err(index_corrupt("entry count does not match the length"));
             }
-            prev = Some(d);
+            let s = &body[*at..*at + n as usize];
+            *at += n as usize;
+            Ok(s)
+        };
+        let check_loc = |e: &[u8]| -> SynapseResult<BlobLoc> {
             let loc = BlobLoc {
                 segment: u64::from_le_bytes(e[32..40].try_into().expect("8")),
                 offset: u64::from_le_bytes(e[40..48].try_into().expect("8")),
@@ -225,13 +271,87 @@ impl SegmentIndex {
             if loc.segment == 0 || end.is_none() || !before_replay {
                 return Err(index_corrupt("entry outside the covered segment bytes"));
             }
-            entries.insert(d, loc);
+            Ok(loc)
+        };
+        let region = take(&mut at, count as u128 * INDEX_ENTRY_LEN as u128)?;
+        let mut entries = BTreeMap::new();
+        let mut prev: Option<BlobDigest> = None;
+        for e in region.as_chunks::<INDEX_ENTRY_LEN>().0 {
+            let d = BlobDigest(e[0..32].try_into().expect("32"));
+            if prev.is_some_and(|p| p >= d) {
+                return Err(index_corrupt("entries not in strictly increasing order"));
+            }
+            prev = Some(d);
+            entries.insert(d, check_loc(e)?);
+        }
+        let mut chunks = BTreeMap::new();
+        let mut manifests = BTreeMap::new();
+        if v2 {
+            let n = u64::from_le_bytes(take(&mut at, 8)?.try_into().expect("8"));
+            let region = take(&mut at, n as u128 * INDEX_ENTRY_LEN as u128)?;
+            let mut prev: Option<ChunkDigest> = None;
+            for e in region.as_chunks::<INDEX_ENTRY_LEN>().0 {
+                let d = ChunkDigest(e[0..32].try_into().expect("32"));
+                if prev.is_some_and(|p| p >= d) {
+                    return Err(index_corrupt("chunks not in strictly increasing order"));
+                }
+                prev = Some(d);
+                chunks.insert(d, check_loc(e)?);
+            }
+            let n = u64::from_le_bytes(take(&mut at, 8)?.try_into().expect("8"));
+            let mut prev: Option<BlobDigest> = None;
+            let mut referenced = BTreeSet::new();
+            for _ in 0..n {
+                let h = take(&mut at, 44)?;
+                let blob = BlobDigest(h[0..32].try_into().expect("32"));
+                let len = u64::from_le_bytes(h[32..40].try_into().expect("8"));
+                let k = u32::from_le_bytes(h[40..44].try_into().expect("4"));
+                if prev.is_some_and(|p| p >= blob) {
+                    return Err(index_corrupt("manifests not in strictly increasing order"));
+                }
+                prev = Some(blob);
+                let region = take(&mut at, k as u128 * 36)?;
+                let mut list = Vec::with_capacity(k as usize);
+                let mut sum = 0u64;
+                for e in region.as_chunks::<36>().0 {
+                    let d = ChunkDigest(e[0..32].try_into().expect("32"));
+                    let l = u32::from_le_bytes(e[32..36].try_into().expect("4"));
+                    if chunks.get(&d).is_none_or(|loc: &BlobLoc| loc.len != l) || l == 0 {
+                        return Err(index_corrupt("manifest names a chunk the index lacks"));
+                    }
+                    referenced.insert(d);
+                    sum += u64::from(l);
+                    list.push((d, l));
+                }
+                if k == 0 || sum != len {
+                    return Err(index_corrupt("manifest length does not match its chunks"));
+                }
+                manifests.insert(
+                    blob,
+                    ChunkManifest {
+                        blob,
+                        len,
+                        chunks: list,
+                    },
+                );
+            }
+            if referenced.len() != chunks.len() {
+                return Err(index_corrupt("chunk named by no manifest"));
+            }
+            if chunks.is_empty() {
+                return Err(index_corrupt("version 2 index without chunks"));
+            }
+        }
+        if at != body.len() {
+            return Err(index_corrupt("entry count does not match the length"));
         }
         Ok(Self {
             binding,
             replay_segment,
             replay_offset,
             entries,
+            chunks,
+            manifests,
         })
     }
 
@@ -443,4 +563,9 @@ pub(crate) fn read_at(f: &File, offset: u64, len: u32) -> std::io::Result<Vec<u8
     let mut bytes = vec![0u8; len as usize];
     f.read_exact_at(&mut bytes, offset)?;
     Ok(bytes)
+}
+
+/// Fill `buf` from `offset` of `f`.
+pub(crate) fn read_into(f: &File, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+    f.read_exact_at(buf, offset)
 }

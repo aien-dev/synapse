@@ -590,7 +590,7 @@ impl crate::SynapseStore {
             let result = Self::v2_write(&mut ticket, &[&encoded]);
             let placed = self.v2_finish(ticket, result)?;
             let seq = placed[0].seq;
-            self.apply_v2_ingest(&placed[0], record, &encoded.inline);
+            self.apply_v2_ingest(&placed[0], record, &encoded);
             return Ok(seq);
         }
         let payload = self.encode_v1_payload(&record)?;
