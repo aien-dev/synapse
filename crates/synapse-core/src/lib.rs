@@ -56,6 +56,10 @@ pub enum RefusalCode {
     /// not a subset of the have, an unsolicited or repeated chunk, or a submit before every
     /// wanted chunk arrived (step G1).
     WireProtocolViolation,
+    /// The peer broke the shared-memory ring protocol: an index out of range, moved back or
+    /// misaligned, a record length over the cap or past the published bytes, or a wrong
+    /// record sequence number (step G3).
+    WireRingViolation,
     CheckpointCorrupt,
     IoFailure,
 
