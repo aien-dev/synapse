@@ -5,7 +5,7 @@ ADR 0003 section 9 step G2 (issue #45), design in section 5.9, parameters chosen
 chunker and stored in the segments as chunks, one copy per `ChunkDigest`. A blob's identity stays its
 `BlobDigest` over the whole content (CONTEXT.md), so changing the parameters never changes an identity.
 
-This branch is based on A2 (`feat/adr0003-a2`, not yet merged); the A2 commits come first.
+Based on A2 (PR #77, merged) and B1 (PR #81, merged); revision records (B1) still store their blobs whole.
 
 ## 1. Design
 

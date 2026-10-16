@@ -2901,7 +2901,8 @@ impl SynapseStore {
                             for blob_digest in &fr.record.upsert_blobs() {
                                 {
                                     let inline = fr.inline.iter().any(|(d, _, _)| d == blob_digest);
-                                    let inline = inline || fr.manifests.iter().any(|m| m.blob == *blob_digest);
+                                    let inline = inline
+                                        || fr.manifests.iter().any(|m| m.blob == *blob_digest);
                                     if inline
                                         || self.blob_locations.contains_key(blob_digest)
                                         || self.blob_chunks.contains_key(blob_digest)
