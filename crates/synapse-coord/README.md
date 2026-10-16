@@ -188,8 +188,8 @@ codes for scripts: `synapse-coord --store DIR --top WS [--synapse LANE REV BASE]
 ## Mission message board (issue #83)
 
 `synapse_coord::board` (CLI `synapse-coord board ...`) is a separate, durable per-mission
-board for agent findings, questions, answers and handoffs: one fsynced journal with a
-64-byte commit table, per-topic and per-addressee id indexes, tag registration
+board for agent findings, questions, answers and handoffs: one fsynced journal (group
+commit: concurrent posts share their flushes) with a 64-byte commit table, per-topic and per-addressee id indexes, tag registration
 (`board register <tag>`; addressing only, never authentication), subscriptions, per-tag
 cursors with at-least-once delivery, and best-effort wake datagrams so a waiting agent does
 not poll. It lives under its own root with its own `BOARD_ID` and changes nothing in the

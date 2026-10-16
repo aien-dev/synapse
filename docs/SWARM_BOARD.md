@@ -51,8 +51,11 @@ There is no private-message mode in v0.
 
 ## Delivery: at least once, by cursor
 
-Each tag has `cursors/<tag>.json` with `delivered` (highest id handed out) and `acked`
-(highest id the agent says it processed). `read` (default `--from acked`) returns everything
+Each tag has `cursors/<tag>.json` with `acked` (highest id the agent says it processed),
+written durably by `ack`, and an advisory `cursors/<tag>.delivered` (highest id handed out),
+written on every read without an fsync so a reader never waits on the disk. Losing or
+garbling the advisory marker only re-delivers events after `acked`; an unparseable value or
+an id past the last event is ignored. `read` (default `--from acked`) returns everything
 not yet acknowledged and moves `delivered`; after a crash the agent reads again from `acked`
 and gets every unprocessed event back with the same ids. `ack <id>` is idempotent at or
 below the cursor (it never moves it back) and refused beyond the last committed event.
@@ -70,20 +73,34 @@ act; the board removes the polling and the orchestrator repost, not the reasonin
 
 ## Durability and crash rules
 
-All writes take the `fcntl` lock on `<root>/.lock`. One post:
+Writes take the `fcntl` lock on `<root>/.lock`, but a post never holds it across an fsync
+(group commit: concurrent writers share their disk flushes). One post:
 
-1. append the frame (`u32 len | u32 crc32c | one-line JSON + \n`) to `journal.log`, fdatasync;
-2. append the id to `topics/<hash>.idx` and every addressee's `inbox/<tag>.idx`, fdatasync
-   them in one parallel group;
-3. write the 64-byte entry (id, offset, length, crc, topic/thread/idempotency hashes, entry
-   crc) to `journal.idx` and fdatasync it. **This entry is the commit point**;
-4. release the lock, print the receipt (the ACK), send wake datagrams.
+1. under the lock: append the frame (`u32 len | u32 crc32c | one-line JSON + \n`) to
+   `journal.log` at the next id; release the lock;
+2. fdatasync `journal.log` (this covers the post's frame and every frame before it);
+3. under the lock: commit every pending frame up to its own id, in id order: append the id
+   to `topics/<hash>.idx` and every addressee's `inbox/<tag>.idx`, then write the 64-byte
+   entry (id, offset, length, crc, topic/thread/idempotency hashes, entry crc) to
+   `journal.idx`. **This entry is the commit point**, and it is written only for a frame that
+   is already durable; release the lock;
+4. fdatasync `journal.idx` and the event's index files in one parallel group, print the
+   receipt (the ACK), send wake datagrams.
 
-The next writer reconciles a crash before its own append:
+So the ACK follows two fsync rounds whatever the number of writers. A process crash keeps
+the page cache, so the derived files (`journal.idx` and the id indexes) stay exact. A power
+loss can drop their unsynced writes in any order, so `<root>/boot` records the kernel boot id
+of the last writer that verified them, and the first reader or writer of a new boot rebuilds
+all of them from the journal (`rebuilt_after_boot`). Reboot detection uses
+`/proc/sys/kernel/random/boot_id` (Linux).
 
-- bytes after the last committed frame are unacknowledged. A complete frame that verifies
-  (length, checksum, JSON, next id, this mission) is adopted with its id and its indexes
-  repaired; anything else is cut and reported as `torn_tail_at`;
+Writers reconcile before they append:
+
+- complete frames that verify (length, checksum, JSON, next id, this mission) after the
+  commit point are pending: posts in flight, or posts whose writer died before step 3. The
+  next commit adopts them with their ids; a retry with the same idempotency key finds a
+  pending frame too. Anything else is a torn tail (a writer that died inside step 1), cut
+  and reported as `torn_tail_at`;
 - more than one frame of unverifiable bytes is corruption, not a torn tail: refused, never
   guessed;
 - a frame of another mission is refused (`ForeignMission`);
@@ -100,10 +117,11 @@ that recovery.
 
 Defaults: 64 MiB journal, 65 536 events, 4 096-byte text, 16 addressees, 16 refs, 64
 subscriptions per tag, 1 024 events per read. A full board refuses posts with `BoardFull`;
-it never drops old events by itself. `compact --keep-since N` rewrites the journal and table
-keeping ids `N..` (at least one event) and refuses while any cursor still needs an older
-event (`CompactRefused`), unless `--expire-cursors` marks those cursors expired; an expired
-cursor reads `CursorExpired` until its agent accepts the gap with `ack --accept-gap`.
+it never drops old events by itself. `compact --keep-since N` commits any pending frame,
+then rewrites the journal and table keeping ids `N..` (at least one event) and refuses
+while any cursor still needs an older event (`CompactRefused`), unless `--expire-cursors`
+marks those cursors expired; an expired cursor reads `CursorExpired` until its agent
+accepts the gap with `ack --accept-gap`.
 
 ## Idempotency
 
@@ -154,3 +172,6 @@ Ref kinds: issue, commit, receipt, pr, path. Exit 0 ok, 1 usage or I/O, 2 named 
 - Authentication of tags: v0 relies on file permissions of the board root.
 - Targeted wakes (only to sockets of tags that can see the event): v0 wakes every watcher,
   which then reads; cheap at mission scale (bounded at 256 sockets).
+- Reboot detection off Linux: without a kernel boot id the derived files are trusted as
+  they are after a power loss (`board check` reports any disagreement; `board recover`
+  does not rebuild them).

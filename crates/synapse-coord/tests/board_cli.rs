@@ -548,7 +548,12 @@ fn foreign_mission_frame_refused() {
 
 #[test]
 fn planted_symlink_and_fifo_refused_promptly() {
-    for name in ["journal.log", "journal.idx", "cursors/beta.json"] {
+    for name in [
+        "journal.log",
+        "journal.idx",
+        "cursors/beta.json",
+        "cursors/beta.delivered",
+    ] {
         for kind in ["symlink", "fifo"] {
             let f = fx("plant");
             register(&f, "sa", "alpha");
@@ -575,4 +580,174 @@ fn planted_symlink_and_fifo_refused_promptly() {
             }
         }
     }
+}
+
+#[test]
+fn corrupt_delivered_hint_is_ignored() {
+    let f = fx("hint");
+    register(&f, "sa", "alpha");
+    register(&f, "sb", "beta");
+    post(&f, "sa", "e1", &["--to", "beta"]);
+    post(&f, "sa", "e2", &["--to", "beta"]);
+    assert_eq!(lines(&ok_run(&f, "sb", &["read"])).len(), 3);
+    // The hint is advisory: garbage or an id past the last event is ignored, never trusted.
+    for junk in ["not a number\n", "999999\n", ""] {
+        fs::write(f.root.join("cursors/beta.delivered"), junk).unwrap();
+        let o = ok_run(&f, "sb", &["read", "--from", "delivered"]);
+        let ids: Vec<u64> = lines(&o).iter().filter_map(|j| num(j, "id")).collect();
+        assert!(ids.iter().all(|i| *i <= 2), "{junk:?}: {ids:?}");
+    }
+    // A valid hint moves `--from delivered` past what was handed out.
+    fs::write(f.root.join("cursors/beta.delivered"), "2\n").unwrap();
+    let o = ok_run(&f, "sb", &["read", "--from", "delivered"]);
+    assert_eq!(lines(&o).len(), 1, "nothing after the hint");
+    // Acked is the durable resume point: the default read still returns both.
+    assert_eq!(lines(&ok_run(&f, "sb", &["read"])).len(), 3);
+}
+
+fn ok_run(f: &Fx, session: &str, args: &[&str]) -> Output {
+    let o = run(&f.root, Some(session), args, &[]);
+    ok(&o);
+    o
+}
+
+#[test]
+fn idempotent_retry_finds_a_pending_frame() {
+    let f = fx("idem-pending");
+    register(&f, "sa", "alpha");
+    let args = [
+        "post", "--thread", "t", "--topic", "lane/x", "--idem", "k1", "--text", "hello",
+    ];
+    // The first try dies after its frame is durable but before it is committed.
+    let o = run(
+        &f.root,
+        Some("sa"),
+        &args,
+        &[("SYNAPSE_COORD_FAULT", "after-journal-before-index")],
+    );
+    assert_eq!(o.status.code(), Some(86));
+    let r = ok(&run(&f.root, Some("sa"), &args, &[]));
+    assert_eq!(num(&r, "id"), Some(1));
+    assert_eq!(r.get("dedup"), Some(&J::True), "{r:?}");
+    assert_eq!(all(&f), vec![(1, "hello".to_string())]);
+    check_ok(&f);
+}
+
+#[test]
+fn compaction_commits_pending_frames_first() {
+    let f = fx("compact-pending");
+    register(&f, "sa", "alpha");
+    post(&f, "sa", "e1", &[]);
+    post(&f, "sa", "e2", &[]);
+    let o = run(
+        &f.root,
+        Some("sa"),
+        &["post", "--thread", "t", "--topic", "lane/x", "--text", "e3"],
+        &[("SYNAPSE_COORD_FAULT", "before-journal-fsync")],
+    );
+    assert_eq!(o.status.code(), Some(86));
+    ok(&run(&f.root, None, &["compact", "--keep-since", "2"], &[]));
+    assert_eq!(
+        all(&f),
+        vec![(2, "e2".to_string()), (3, "e3".to_string())],
+        "the pending frame survived the rewrite"
+    );
+    check_ok(&f);
+}
+
+/// A power loss keeps every synced journal frame but may lose unsynced writes to the
+/// derived files in any order. Simulate that, then start a "new boot" (the boot id is
+/// overridden for the test) and show the first reader rebuilds them all from the journal.
+#[test]
+fn new_boot_rebuilds_derived_files_from_the_journal() {
+    let f = fx("reboot");
+    let b1: &[(&str, &str)] = &[("SYNAPSE_BOARD_BOOT_ID", "test-boot-one")];
+    let b2: &[(&str, &str)] = &[("SYNAPSE_BOARD_BOOT_ID", "test-boot-two")];
+    register(&f, "sa", "alpha");
+    register(&f, "sb", "beta");
+    for i in 1..=3 {
+        let r = ok(&run(
+            &f.root,
+            Some("sa"),
+            &[
+                "post",
+                "--thread",
+                "t",
+                "--topic",
+                "lane/x",
+                "--to",
+                "beta",
+                "--text",
+                &format!("e{i}"),
+            ],
+            b1,
+        ));
+        assert_eq!(num(&r, "id"), Some(i));
+    }
+    let one = |d: &str| {
+        let mut v: Vec<_> = fs::read_dir(f.root.join(d))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|x| x == "idx"))
+            .collect();
+        assert_eq!(v.len(), 1, "{d}: {v:?}");
+        v.pop().unwrap()
+    };
+    let (inbox, topic) = (one("inbox"), one("topics"));
+    let table = f.root.join("journal.idx");
+    let cut = |p: &Path, by: u64| {
+        let fh = fs::OpenOptions::new().write(true).open(p).unwrap();
+        let len = fh.metadata().unwrap().len();
+        fh.set_len(len - by).unwrap();
+    };
+    cut(&table, 64); // the table lost its last entry
+    cut(&inbox, 8); // beta's inbox lost id 3
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&topic)
+        .unwrap()
+        .write_all(&9u64.to_le_bytes())
+        .unwrap(); // the topic index kept a stray id
+                   // Negative control: within the same boot the derived files are trusted as they are.
+    let o = run(
+        &f.root,
+        Some("sb"),
+        &["read", "--mine", "--peek", "--limit", "100"],
+        b1,
+    );
+    let ids: Vec<u64> = lines(&o).iter().filter_map(|j| num(j, "id")).collect();
+    assert_eq!(ids, vec![1, 2], "same boot: no rebuild");
+    let o = run(
+        &f.root,
+        Some("sb"),
+        &["read", "--mine", "--limit", "100"],
+        b2,
+    );
+    let mut v = lines(&o);
+    assert_eq!(v.pop().unwrap().get("ok"), Some(&J::True));
+    let ids: Vec<u64> = v.iter().filter_map(|j| num(j, "id")).collect();
+    assert_eq!(
+        ids,
+        vec![1, 2, 3],
+        "every event back through the rebuilt inbox"
+    );
+    check_ok(&f);
+    let r = ok(&run(
+        &f.root,
+        Some("sa"),
+        &["post", "--thread", "t", "--topic", "lane/x", "--text", "e4"],
+        b2,
+    ));
+    assert_eq!(num(&r, "id"), Some(4));
+    assert_eq!(r.get("rebuilt_after_boot"), None, "rebuilt once per boot");
+    // The writer path rebuilds too, and says so.
+    let r = ok(&run(
+        &f.root,
+        Some("sa"),
+        &["post", "--thread", "t", "--topic", "lane/x", "--text", "e5"],
+        &[("SYNAPSE_BOARD_BOOT_ID", "test-boot-three")],
+    ));
+    assert_eq!(num(&r, "id"), Some(5));
+    assert_eq!(r.get("rebuilt_after_boot"), Some(&J::True), "{r:?}");
+    check_ok(&f);
 }

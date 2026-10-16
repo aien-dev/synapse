@@ -8,8 +8,9 @@
 //! they did not follow unless it is addressed to them. A tag never receives its own posts.
 //! Nothing is found by scanning journal bodies.
 //!
-//! The cursor `cursors/<tag>.json` holds `delivered` (highest id handed out) and `acked`
-//! (highest id the agent confirmed it processed). Reading from `acked` after a crash
+//! The durable cursor `cursors/<tag>.json` holds `acked` (highest id the agent confirmed)
+//! and the advisory `cursors/<tag>.delivered` marker holds the highest id handed out
+//! (written without fsync: losing it only re-delivers). Reading from `acked` after a crash
 //! returns every unprocessed event again (at-least-once, stable ids); reading from
 //! `delivered` returns only what was never handed out.
 
@@ -141,7 +142,46 @@ impl Board {
         if c.delivered > last {
             return Err(bad("delivered is beyond the last committed event"));
         }
+        let mut c = c;
+        if let Some(h) = self.read_delivered_hint(tag, last)? {
+            c.delivered = c.delivered.max(h);
+        }
         Ok(c)
+    }
+
+    fn delivered_path(&self, tag: &str) -> PathBuf {
+        self.root().join("cursors").join(format!("{tag}.delivered"))
+    }
+
+    /// The advisory `delivered` marker (`cursors/<tag>.delivered`, decimal id). It is written
+    /// without fsync on every delivery: losing it on power loss only re-delivers events
+    /// after `acked` (at least once, as after any crash). Unparseable or out-of-range
+    /// contents are ignored; a planted link or FIFO is refused like every board file.
+    fn read_delivered_hint(&self, tag: &str, last: u64) -> Result<Option<u64>, BoardError> {
+        let p = self.delivered_path(tag);
+        crate::record::check_real_parents(self.root(), &p)?;
+        let Some(b) = crate::record::read_bounded(&p, 64)? else {
+            return Ok(None);
+        };
+        Ok(std::str::from_utf8(&b)
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .filter(|h| *h <= last))
+    }
+
+    fn write_delivered_hint(&self, tag: &str, id: u64) -> Result<(), BoardError> {
+        let p = self.delivered_path(tag);
+        crate::record::check_real_parents(self.root(), &p)?;
+        crate::record::check_replaceable(&p)?;
+        let mut tmp = p.as_os_str().to_owned();
+        tmp.push(format!(".tmp{}", std::process::id()));
+        let tmp = PathBuf::from(tmp);
+        let mut f = crate::record::create_temp(&tmp)?;
+        std::io::Write::write_all(&mut f, format!("{id}\n").as_bytes())
+            .map_err(super::io_err(&tmp))?;
+        drop(f);
+        std::fs::rename(&tmp, &p).map_err(super::io_err(&p))?;
+        Ok(())
     }
 
     fn write_cursor(&self, tag: &str, c: &Cursor) -> Result<(), BoardError> {
@@ -341,12 +381,13 @@ impl Board {
             });
         }
         if !c.exists {
+            // First read: create the durable cursor once.
             c.acked = after;
             c.delivered = after;
-        }
-        if b.through > c.delivered || !c.exists {
-            c.delivered = c.delivered.max(b.through);
             self.write_cursor(&me.tag, &c)?;
+        }
+        if b.through > c.delivered {
+            self.write_delivered_hint(&me.tag, b.through)?;
         }
         Ok(b)
     }
@@ -452,6 +493,11 @@ impl Board {
     }
 
     fn with_retry<T>(&self, mut f: impl FnMut() -> Result<T, BoardError>) -> Result<T, BoardError> {
+        // First reader of a new kernel boot before any writer: the derived files may have
+        // lost unsynced writes, so rebuild them (under the writer lock) before reading.
+        if super::journal::needs_boot_rebuild(self.root())? {
+            self.recover()?;
+        }
         let mut tries = 0;
         loop {
             match f() {

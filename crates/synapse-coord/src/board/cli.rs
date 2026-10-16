@@ -481,6 +481,14 @@ fn dispatch(ctx: &mut Ctx, verb: &str, mut a: Args) -> Result<(), Fail> {
                 "table_rebuilt",
                 if r.table_rebuilt { J::True } else { J::False },
             );
+            o.set(
+                "rebuilt_after_boot",
+                if r.rebuilt_after_boot {
+                    J::True
+                } else {
+                    J::False
+                },
+            );
             ctx.summary("recover", o);
         }
         _ => return Err(usage(format!("unknown verb {verb:?}"))),
@@ -564,6 +572,9 @@ fn post(ctx: &mut Ctx, mut a: Args) -> Result<(), Fail> {
             "adopted",
             J::Arr(r.recovery.adopted.iter().map(|i| num_u64(*i)).collect()),
         );
+    }
+    if r.recovery.rebuilt_after_boot {
+        o.set("rebuilt_after_boot", J::True);
     }
     let mut pointer_err = None;
     if let Some((store, top, dir)) = pointer {
