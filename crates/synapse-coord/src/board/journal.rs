@@ -41,9 +41,17 @@ pub(crate) const SUBDIRS: [&str; 6] = ["topics", "inbox", "agents", "subs", "cur
 /// tail (a torn tail is at most one partly written frame).
 const MAX_TORN: u64 = FRAME_HEADER + MAX_FRAME_BYTES as u64;
 
-/// Test-only fault injection, shared with the coordination store: `SYNAPSE_COORD_FAULT=<p>`.
+/// Exit status of a board process killed by an injected fault.
+pub const FAULT_EXIT: i32 = 86;
+
+/// Test-only fault injection (`SYNAPSE_COORD_FAULT=<point>`, the coordination store's
+/// variable): the process dies on the spot. It exits instead of aborting so a crash test
+/// does not wait on the system core-dump handler (about 1 s per abort here); the disk state
+/// is the same, because every board write is a direct syscall with no user-space buffer.
 fn fault(point: &str) {
-    crate::fault_point(point);
+    if fault_active(point) {
+        std::process::exit(FAULT_EXIT);
+    }
 }
 
 pub(crate) fn fault_active(point: &str) -> bool {
@@ -580,8 +588,25 @@ pub(crate) fn read_ids_after(
     Ok((out, false))
 }
 
-/// Append `id` to an id index unless it is already its last entry. A partly written final
-/// entry is dropped first.
+/// Binary search a sorted id list of `n` entries for `id`.
+fn index_contains(path: &Path, f: &File, n: u64, id: u64) -> Result<bool, BoardError> {
+    let (mut lo, mut hi) = (0u64, n);
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let mut b = [0u8; 8];
+        f.read_exact_at(&mut b, mid * ID_BYTES)
+            .map_err(io_err(path))?;
+        match u64::from_le_bytes(b).cmp(&id) {
+            std::cmp::Ordering::Equal => return Ok(true),
+            std::cmp::Ordering::Less => lo = mid + 1,
+            std::cmp::Ordering::Greater => hi = mid,
+        }
+    }
+    Ok(false)
+}
+
+/// Append `id` to an id index unless it is already listed. A partly written final entry is
+/// dropped first.
 fn append_id(path: &Path, f: &File, id: u64) -> Result<bool, BoardError> {
     let mut len = f.metadata().map_err(io_err(path))?.len();
     if len % ID_BYTES != 0 {
@@ -594,6 +619,11 @@ fn append_id(path: &Path, f: &File, id: u64) -> Result<bool, BoardError> {
             .map_err(io_err(path))?;
         let last = u64::from_le_bytes(b);
         if last == id {
+            return Ok(false);
+        }
+        // Rebuilding journal.idx after a cut compaction re-indexes events the id lists
+        // already hold: an id already present is not appended twice (lists are sorted).
+        if last > id && index_contains(path, f, len / ID_BYTES, id)? {
             return Ok(false);
         }
         if last > id {
@@ -1056,7 +1086,7 @@ impl Board {
         if fault_active("torn-journal-write") {
             let half = frame_bytes.len() / 2;
             let _ = w.j.write_all_at(&frame_bytes[..half], w.end);
-            std::process::abort();
+            std::process::exit(FAULT_EXIT);
         }
         w.j.write_all_at(&frame_bytes, w.end)
             .map_err(io_err(&w.jp))?;
