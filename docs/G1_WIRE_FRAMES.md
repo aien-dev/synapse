@@ -65,7 +65,7 @@ An accepted change is admitted through `SharedStore::submit` with group commit, 
 
 ## 3. Fuzzer: what kind it is
 
-`synapse_wire::fuzz` is an in-repository coverage-guided mutation fuzzer, written for this step (no libFuzzer, AFL or cargo-fuzz, no new external crates). The frame decoder is generic over a `Probe`; production passes `NoProbe` (empty, inlined away), the fuzzer passes `EdgeProbe`, which records an AFL-style edge map (64 Ki slots, edge = previous site xor current site) over 43 instrumented decoder states in `frame.rs` (one per branch; the site id is the source line) and the highest input offset read. An input that reaches a new edge or a new hit-count bucket joins the corpus. Mutations: bit flips, random and boundary bytes, boundary u32 values (0, cap - 1, cap, cap + 1, bytes remaining, u32::MAX and others), truncation, insertion, deletion, duplication, splicing two corpus entries, 32-byte block swaps, kind byte rewrites, and half the time a fix-up of `body_len` to the real body length so mutations reach the body decoder. The random generator is SplitMix64 with a fixed seed; the budget (executions or seconds) and seed are written to `spec.json` before the first execution.
+`synapse_wire::fuzz` is an in-repository coverage-guided mutation fuzzer, written for this step (no libFuzzer, AFL or cargo-fuzz, no new external crates). The frame decoder is generic over a `Probe`; production passes `NoProbe` (empty, inlined away), the fuzzer passes `EdgeProbe`, which records an AFL-style edge map (64 Ki slots, edge = previous site xor current site) over 44 instrumented decoder states in `frame.rs` (one per branch; the site id is the source line) and the highest input offset read. An input that reaches a new edge or a new hit-count bucket joins the corpus. Mutations: bit flips, random and boundary bytes, boundary u32 values (0, cap - 1, cap, cap + 1, bytes remaining, u32::MAX and others), truncation, insertion, deletion, duplication, splicing two corpus entries, 32-byte block swaps, kind byte rewrites, and half the time a fix-up of `body_len` to the real body length so mutations reach the body decoder. The random generator is SplitMix64 with a fixed seed; the budget (executions or seconds) and seed are written to `spec.json` before the first execution.
 
 Limits, stated plainly: coverage is only the instrumented states of `frame.rs`. The capability chain decoder (`synapse-auth`) and the envelope decoder (`synapse-store::codec`) run on every accepted `Submit` and their outputs are checked, but they are not instrumented, so the fuzzer does not steer toward their branches.
 
@@ -83,12 +83,25 @@ Seeds are one valid frame of every kind (14 frames, including empty lists, an em
 
 Negative controls (`negative_control_*` in `tests/g1_fuzz.rs`) plant one bug each in a copy of the target (a panic on a non-zero flags byte, a buffer sized from the declared length before the cap check, an answer that depends on the byte after the frame, a decoder that ignores the reserved byte) and require the same fuzzer and budget to report it. All four are found, so the detectors are live.
 
+### 3.1 Time-budgeted evidence runs
+
+Both runs: release build with panic unwinding, overflow checks and debug assertions on; 300 s budget, seed 1592615168 and a cap of 8,192 bytes, written to `spec.json` before the first execution.
+
+| Run | Rev | Executions | Edges | Sites reached | Violations | Largest single allocation |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| 1 (`fuzz-run1-71fa41e/`) | `71fa41e` | 703,411,456 | 99 | 42 of 43 | 1,307 allocation over cap | 8,760 bytes |
+| 2 (`fuzz/`) | `2e942f3` | 711,944,192 | 100 | 43 of 44 | 0 | 8,160 bytes |
+
+Run 1 found a real bug: a `Submit` whose scope lists many empty paths costs 4 wire bytes per path but 24 bytes of memory per decoded `String`, so the path list allocation passed the cap. The decoder now refuses a path count whose decoded size would pass the cap (the A1 codec already did this for its sequences), with the regression test `fuzz_regression_many_scope_paths_stay_under_allocation_cap` (red output in `red-green/red-addendum-fuzz-finding.txt`). Run 2, on the fixed code, found nothing; its corpus of 201 entries replays as 14 canonical accepts and 187 typed refusals of 14 kinds, with no violation.
+
+The one site neither run reached is line 638 of `frame.rs`: a capability chain that decodes but does not re-encode to its own bytes. The F1 chain decoder already refuses every non-canonical encoding itself, so this check is very likely unreachable; it stays as a guard.
+
 ## 4. Acceptance
 
 | Acceptance item (issue #44) | Test or evidence | Result |
 | :--- | :--- | :--- |
 | Every frame kind round-trips to identical bytes | `every_frame_kind_round_trips_to_identical_bytes` (all 7 kinds, singly, back to back in one buffer, and through the stream reader) | PASS |
-| Fuzzing for a budget fixed before the run finds no panic, no read past a frame, no allocation above the declared cap | `fuzzing_frame_decoder_finds_no_panic_no_read_past_frame_no_allocation_over_cap` (300,000 executions, seed fixed, in CI); time-budgeted run in `evidence/g1-wire-frames/fuzz/` (FUZZ_SUMMARY) | PASS |
+| Fuzzing for a budget fixed before the run finds no panic, no read past a frame, no allocation above the declared cap | `fuzzing_frame_decoder_finds_no_panic_no_read_past_frame_no_allocation_over_cap` (300,000 executions, seed fixed, in CI); time-budgeted run in `evidence/g1-wire-frames/fuzz/` (300 s, seed 1592615168, cap 8192 bytes: 711,944,192 executions, 100 edges, 43 of 44 sites, 0 violations, largest single allocation 8,160 bytes); see section 3.1 | PASS |
 | Every malformed frame in the fuzz corpus is refused with a typed refusal | `every_malformed_frame_in_fuzz_corpus_is_refused_with_typed_refusal` (replays the whole corpus: each entry is a canonical frame or a typed refusal, each hand-made malformed seed is refused); corpus replay in `evidence/g1-wire-frames/fuzz/result.json` | PASS |
 | Seconds and joules per accepted change across the transport against the bound | `evidence/g1-wire-frames/transport/` (section 5) | MEASURED (see section 5; this is a report, not a pass/fail gate) |
 
@@ -96,7 +109,31 @@ Supporting tests: `malformed_header_is_refused_with_typed_refusal`, `malformed_b
 
 Red before green: `evidence/g1-wire-frames/red-green/red.txt` (two stub sets: the body decoder unimplemented; the header, trailing-byte and negotiation checks switched off) and `green.txt`.
 
-TRANSPORT_SECTION
+## 5. Transport: seconds and joules per accepted change
+
+Tool: `crates/synapse-bench/src/bin/wire-transport.rs`, release build, rev `2e942f3`, run 2026-10-16. `spec.json` (arms, change count, repetitions, bound, sensor) was written before the first change; `result.json` holds every per-change latency in nanoseconds and every energy window.
+
+Setup: one agent submits one change at a time, 2,000 changes per arm, 3 repetitions with the arm order rotated, each arm on a fresh store directory (NVMe, ext4, `GROUP_COMMIT_DEFAULT`). Every change upserts one new 3,967-byte blob (the Gate 4 median new content per change) and one blob shared by every change (sent once, then skipped by negotiation). Arms:
+
+* `wire`: client and server threads joined by a Unix socket; per change Have, Want, Chunk (only missing blobs), Submit, and Accepted after the durable commit.
+* `direct_auth`: the same chain authorisation (depth 2) and store admission in process, with no transport.
+* `direct`: store admission only.
+
+Bound: ADR 0003 section 6 durable latency for one change, as derived in `docs/PHASE5_GROUP_COMMIT.md` section 5: `t_floor = 0.805 ms + 11,500 B x 0.138 s/GiB = 0.806 ms`, `E_floor = 22.731 W x t_floor + 0.2766 mJ = 18.6 mJ`. Fraction of bound is floor divided by measured (1.0 means at the floor).
+
+| Arm | Median s per change (of 3 reps) | Fraction of time bound | SoC package J per change | Fraction of energy bound | Above idle J per change |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| `wire` | 1.628 x 10^-3 | 0.495 | 40.6 x 10^-3 | 0.458 | 3.6 x 10^-3 |
+| `direct_auth` | 1.409 x 10^-3 | 0.572 | 34.8 x 10^-3 | 0.534 | 0.8 x 10^-3 |
+| `direct` | 1.395 x 10^-3 | 0.578 | 33.4 x 10^-3 | 0.557 | -0.3 x 10^-3 |
+
+Repetitions for `wire`: 1.354, 1.628 and 1.668 ms per change. The transport (framing, socket hops and negotiation) adds about 0.22 ms per change over the same work in process (`wire` minus `direct_auth`). For comparison, the Phase 5 S3 reference for one change was 2.048 ms and 51.7 mJ.
+
+Limits, stated plainly:
+
+* Joules are the `aien_spbm` SoC package meter only: uncalibrated, no published accuracy, not compared with an external meter, NVMe unmeasured. The idle window (30 s) read 24.1 W, but the machine was shared with other work (49 CPU-seconds of other activity during the idle window), so the above-idle column is noise at this size and goes negative for one arm. Package joules per change are the figure to use.
+* Repetitions spread by about 20 percent on the shared machine, and an earlier run of the same tool at rev `71fa41e` (kept in `evidence/g1-wire-frames/transport-run1-71fa41e/`) gave 1.807 ms and 64.6 mJ for `wire`. Treat the figures as the scale of the cost, not a tight value.
+* Client and server share one process over a Unix socket pair; TCP and a separate client process are not measured.
 
 ## 6. Limits and deviations
 

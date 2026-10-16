@@ -1,0 +1,25 @@
+# Green (2026-10-16, rev 2e942f3 + docs): cargo test --locked -p synapse-wire
+     Running unittests src/lib.rs (target/debug/deps/synapse_wire-b34ce9ceadd8b3f3)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/synapse-wire-fuzz.rs (target/debug/deps/synapse_wire_fuzz-22c11daf2773013b)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/g1_fuzz.rs (target/debug/deps/g1_fuzz-fa9c938a649af829)
+test fuzz_regression_many_scope_paths_stay_under_allocation_cap ... ok
+test negative_control_fuzzer_finds_planted_read_past_frame ... ok
+test negative_control_fuzzer_finds_planted_allocation_over_cap ... ok
+test negative_control_fuzzer_finds_planted_non_canonical_accept ... ok
+test negative_control_fuzzer_finds_planted_panic ... ok
+test every_malformed_frame_in_fuzz_corpus_is_refused_with_typed_refusal ... ok
+test fuzzing_frame_decoder_finds_no_panic_no_read_past_frame_no_allocation_over_cap ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.93s
+     Running tests/g1_wire.rs (target/debug/deps/g1_wire-87a4b6ca8665564d)
+test malformed_body_is_refused_with_typed_refusal ... ok
+test malformed_header_is_refused_with_typed_refusal ... ok
+test every_frame_kind_round_trips_to_identical_bytes ... ok
+test stream_reader_refuses_length_over_cap_before_reading_the_body ... ok
+test decoder_never_reads_past_a_frame ... ok
+test server_closes_connection_on_frame_before_hello_or_malformed_frame ... ok
+test server_refuses_protocol_violations_with_typed_refusals ... ok
+test have_want_sends_only_missing_chunks_and_acknowledges_durable_changes ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

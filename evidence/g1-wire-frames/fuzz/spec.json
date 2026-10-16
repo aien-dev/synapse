@@ -2,7 +2,7 @@
   "budget_kind": "seconds",
   "budget_value": 300.0,
   "declared_before_run": true,
-  "git_rev": "71fa41e7905c6a8feed8f406f8a2fc1aacac1ae9",
+  "git_rev": "2e942f30db474ac0c5f41e350db0f048cd3192d1",
   "kind": "in-repository coverage-guided mutation fuzzer (edge feedback from instrumented frame-decoder states)",
   "max_frame_body": 8192,
   "seed": 1592615168,

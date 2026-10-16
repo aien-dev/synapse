@@ -219,7 +219,7 @@ fn negative_control_fuzzer_finds_planted_non_canonical_accept() {
     control(planted_non_canonical, "non_canonical_accept");
 }
 
-/// Regression from the 300 s evidence run (`evidence/g1-wire-frames/fuzz/`): a `Submit`
+/// Regression from the first 300 s evidence run (`evidence/g1-wire-frames/fuzz-run1-71fa41e/`): a `Submit`
 /// whose scope lists many empty paths took 4 wire bytes per path but 24 bytes of memory per
 /// decoded `String`, so one allocation passed the cap. The decoder now refuses a path count
 /// whose decoded size would pass the cap.

@@ -1,2 +1,2 @@
 spec written; fuzzing (seconds 300, seed 1592615168, cap 8192)
-execs 703411456 in 300.0 s, edges 99, sites 42/43, corpus 200, violations 1307, replay violations 0
+execs 711944192 in 300.0 s, edges 100, sites 43/44, corpus 201, violations 0, replay violations 0
