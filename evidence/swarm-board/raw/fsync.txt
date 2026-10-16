@@ -1,0 +1,1 @@
+dd 500 x 512 B oflag=dsync: 256000 bytes (256 kB, 250 KiB) copied, 1.96715 s, 130 kB/s
