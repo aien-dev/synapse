@@ -98,8 +98,10 @@ impl ChunkParams {
         max_bytes: 64 * 1024,
     };
 
-    /// Parameters chosen by experiment X6 under its pre-registered rule.
-    pub const X6_DEFAULT: Self = Self::OFF;
+    /// Parameters chosen by experiment X6 under its pre-registered rule: candidate K1
+    /// (T = 16 KiB, min 1 KiB, avg 4 KiB, max 16 KiB), the only eligible candidate
+    /// (`evidence/g2-content-defined-chunking/x6/RESULTS.md`).
+    pub const X6_DEFAULT: Self = Self::candidate(16 * 1024, 4 * 1024);
 
     /// Candidate with `min = avg / 4` and `max = 4 * avg` (the X6 shape).
     pub const fn candidate(threshold_bytes: u64, avg_bytes: u32) -> Self {
