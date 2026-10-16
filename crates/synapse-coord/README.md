@@ -184,3 +184,15 @@ codes for scripts: `synapse-coord --store DIR --top WS [--synapse LANE REV BASE]
 - `scripts/crumb-coord-interop.sh [aien-architecture checkout]`: builds crumb.c at `29780e5`
   with `cc` only and runs both tools against one store (I1-I10), checks crumb.c ignores the
   identity marker (I11), and reproduces then catches the split-root case (I12).
+
+## Mission message board (issue #83)
+
+`synapse_coord::board` (CLI `synapse-coord board ...`) is a separate, durable per-mission
+board for agent findings, questions, answers and handoffs: one fsynced journal with a
+64-byte commit table, per-topic and per-addressee id indexes, tag registration
+(`board register <tag>`; addressing only, never authentication), subscriptions, per-tag
+cursors with at-least-once delivery, and best-effort wake datagrams so a waiting agent does
+not poll. It lives under its own root with its own `BOARD_ID` and changes nothing in the
+coordination store's records or verbs. Board content is untrusted data. Design, crash rules
+and CLI: [`docs/SWARM_BOARD.md`](../../docs/SWARM_BOARD.md). Tests:
+`tests/board_core.rs`, `tests/board_cli.rs`.
