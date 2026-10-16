@@ -658,3 +658,58 @@ fn a2_pre_a2_stores_replay_and_switch_to_segments() {
         let _ = fs::remove_dir_all(&dir);
     }
 }
+
+/// The segment index decoder is strict: it round-trips, and a flipped bit, a truncated
+/// file, an entry not before the replay position, or unsorted entries are refused as
+/// `CheckpointCorrupt` (recovery then refuses to open rather than guess blob locations).
+#[test]
+fn a2_segment_index_round_trips_and_refuses_damage() {
+    let loc = |segment, offset, len| segment::BlobLoc {
+        segment,
+        offset,
+        len,
+    };
+    let index = segment::SegmentIndex {
+        binding: [7u8; 32],
+        replay_segment: 3,
+        replay_offset: 8192,
+        entries: [
+            (BlobDigest([1u8; 32]), loc(1, 4096, 100)),
+            (BlobDigest([2u8; 32]), loc(3, 0, 8000)),
+        ]
+        .into_iter()
+        .collect(),
+    };
+    let bytes = index.encode();
+    assert_eq!(segment::SegmentIndex::decode(&bytes).unwrap(), index);
+    let refused = |b: &[u8]| {
+        assert_eq!(
+            segment::SegmentIndex::decode(b).unwrap_err().code,
+            RefusalCode::CheckpointCorrupt
+        )
+    };
+    for at in [0, 5, 45, bytes.len() / 2, bytes.len() - 1] {
+        let mut bad = bytes.clone();
+        bad[at] ^= 0x01;
+        refused(&bad);
+    }
+    refused(&bytes[..bytes.len() - 1]);
+    // An entry ending past the replay position (bytes recovery would also replay).
+    let mut past = index.clone();
+    past.entries
+        .insert(BlobDigest([3u8; 32]), loc(3, 4096, 4097));
+    refused(&past.encode());
+    // Entries out of order: swap the two encoded entries and fix the trailing digest.
+    let header = bytes.len() - 32 - 2 * 52;
+    let mut swapped = bytes[..bytes.len() - 32].to_vec();
+    let (a, b) = swapped[header..].split_at_mut(52);
+    a.swap_with_slice(b);
+    let digest: [u8; 32] = {
+        let mut h = Sha256::new();
+        h.update(segment::DOMAIN_SEGMENT_INDEX);
+        h.update(&swapped);
+        h.finalize().into()
+    };
+    swapped.extend_from_slice(&digest);
+    refused(&swapped);
+}

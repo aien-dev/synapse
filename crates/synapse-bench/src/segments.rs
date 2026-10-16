@@ -278,6 +278,8 @@ fn run_cell(
         })
         .collect();
     let accepted = AtomicUsize::new(0);
+    // Agents that finished every submission and any checkpoint they triggered.
+    let agents_done = AtomicUsize::new(0);
     let latencies = Mutex::new(Vec::with_capacity(cfg.changes));
     let checkpoints = Mutex::new(Vec::new());
     let errors = Mutex::new(Vec::<String>::new());
@@ -285,9 +287,10 @@ fn run_cell(
     let batches_before = shared.stats().batches;
     let (elapsed, energy) = std::thread::scope(|s| {
         for w in &work {
-            let (shared, accepted, latencies, checkpoints, errors, barrier) = (
+            let (shared, accepted, agents_done, latencies, checkpoints, errors, barrier) = (
                 &shared,
                 &accepted,
+                &agents_done,
                 &latencies,
                 &checkpoints,
                 &errors,
@@ -322,13 +325,15 @@ fn run_cell(
                         Err(e) => errors.lock().unwrap().push(format!("submit: {e:?}")),
                     }
                 }
+                agents_done.fetch_add(1, Ordering::SeqCst);
             });
         }
         let window = EnergyWindow::start();
         let t0 = Instant::now();
         barrier.wait();
-        // The scope joins the agents when this closure returns; time them here instead.
-        while accepted.load(Ordering::SeqCst) + errors.lock().unwrap().len() < agents * per_agent {
+        // The scope joins the agents when this closure returns; time them here instead,
+        // up to the end of the last checkpoint an agent ran.
+        while agents_done.load(Ordering::SeqCst) < agents {
             std::thread::sleep(Duration::from_micros(200));
         }
         (t0.elapsed(), window.finish())
