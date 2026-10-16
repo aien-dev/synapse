@@ -1,5 +1,6 @@
 [package]
 name = "synapse-bench"
+default-run = "synapse-bench"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
