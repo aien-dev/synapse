@@ -711,9 +711,11 @@ fn try_open(
     SynapseStore::open(dir, policy, recovery, StoreLimits::default())
 }
 
-/// Crash after `checkpoint.v1` is renamed into place but before the WAL files are
-/// emptied: the logs still hold frames the checkpoint covers. Reconstructed by putting
-/// the pre-checkpoint log files back next to the new checkpoint.
+/// Crash after the checkpoint is renamed into place but before `wal.log` is replaced by
+/// the marker. With the segment store (ADR 0003 A2) the checkpoint no longer empties the
+/// segments: replay starts at the position its segment index names, and the index
+/// vouches for the covered bytes before it. Reconstructed by putting the pre-checkpoint
+/// `wal.log` back next to the new checkpoint.
 #[test]
 fn test_v2_checkpoint_crash_window_reopens_and_skips_covered_frames() {
     let dir = temp_store_dir("gc-ckpt-window");
@@ -730,7 +732,7 @@ fn test_v2_checkpoint_crash_window_reopens_and_skips_covered_frames() {
             );
         }
     }
-    let (old_wal, old_v2, new_wal, root);
+    let (old_wal, old_v2, new_wal, root, covered_digest);
     {
         let mut store = reopen(&dir, gc, strict);
         for i in 3..=5u64 {
@@ -747,16 +749,21 @@ fn test_v2_checkpoint_crash_window_reopens_and_skips_covered_frames() {
         assert_eq!(report.checkpoint_seq, WalSeq(5));
         new_wal = read_file(&dir, "wal.log");
     }
+    // The checkpoint keeps the segment bytes (no reset, no blob files).
     let new_v2 = read_file(&dir, wal2::WAL_V2_FILE);
+    assert_eq!(
+        new_v2[..old_v2.len()],
+        old_v2[..],
+        "segment 1 is kept whole"
+    );
 
-    // Window 1: checkpoint renamed, wal.log not yet replaced, wal.v2.log not yet reset.
-    // Window 2: wal.log replaced by the marker, wal.v2.log not yet reset.
+    // Window 1: checkpoint renamed, wal.log not yet replaced by the marker.
+    // Window 2: wal.log replaced by the marker (the state after the checkpoint).
     for (label, wal_bytes) in [
         ("before marker replace", &old_wal),
-        ("before v2 reset", &new_wal),
+        ("after marker replace", &new_wal),
     ] {
         write_file(&dir, "wal.log", wal_bytes);
-        write_file(&dir, wal2::WAL_V2_FILE, &old_v2);
         let store = try_open(&dir, gc, strict).unwrap_or_else(|e| {
             panic!("{label}: store must reopen after a checkpoint crash: {e:?}")
         });
@@ -765,7 +772,7 @@ fn test_v2_checkpoint_crash_window_reopens_and_skips_covered_frames() {
         assert_all_readable(&store, 5);
     }
 
-    // New commits land after the covered batches; the next reopen skips, then applies.
+    // New commits land after the covered batches; the next reopen applies only them.
     {
         let mut store = reopen(&dir, gc, strict);
         let (env, blobs) = cs(&key, "cw-6", 300);
@@ -779,28 +786,41 @@ fn test_v2_checkpoint_crash_window_reopens_and_skips_covered_frames() {
     assert_all_readable(&store, 6);
     drop(store);
 
-    // Negative control: covered frames are verified, not trusted. Damage one byte of the
-    // first covered v2 batch and the store must refuse to open.
-    write_file(&dir, "wal.log", &old_wal);
-    let mut bad = old_v2.clone();
-    bad[wal2::WAL_V2_BATCH_HEADER_LEN + WAL_HEADER_LEN + 20] ^= 0x01;
+    // Negative control: covered bytes are not trusted on read. Damage one byte of the
+    // inline blob of the first covered batch: the store opens (replay starts after the
+    // checkpoint) but reading that blob is refused.
+    let good_v2 = read_file(&dir, wal2::WAL_V2_FILE);
+    let mut bad = good_v2.clone();
+    let p = wal2::WAL_V2_BATCH_HEADER_LEN + WAL_HEADER_LEN;
+    let meta_len = u32::from_le_bytes(bad[p..p + 4].try_into().unwrap()) as usize;
+    let d_at = p + 4 + meta_len + 4;
+    covered_digest = BlobDigest(bad[d_at..d_at + 32].try_into().unwrap());
+    bad[d_at + 36 + 7] ^= 0x01;
     write_file(&dir, wal2::WAL_V2_FILE, &bad);
-    assert!(
-        try_open(&dir, gc, strict).is_err(),
-        "damaged covered frame must be refused"
+    let store = try_open(&dir, gc, strict).unwrap();
+    assert_eq!(
+        store
+            .get_blob_visible(covered_digest, None, None)
+            .unwrap_err()
+            .code,
+        RefusalCode::BlobDigestMismatch,
+        "damaged covered blob must be refused on read"
     );
-    // Negative control: covered frames that do not end at the checkpoint anchor.
-    write_file(&dir, "wal.log", &old_wal);
-    write_file(&dir, wal2::WAL_V2_FILE, &new_v2);
+    drop(store);
+    write_file(&dir, wal2::WAL_V2_FILE, &good_v2);
+    // Negative control: without the segment index bound to the checkpoint on disk the
+    // store refuses to open (it cannot know where replay starts).
+    let index_name = segment::SegmentIndex::file_name(&segment::checkpoint_binding(&dir).unwrap());
+    let index = read_file(&dir, &index_name);
+    fs::remove_file(dir.join(&index_name)).unwrap();
     let err = try_open(&dir, gc, strict)
         .err()
-        .expect("chain short of the checkpoint must be refused");
-    assert!(
-        matches!(
-            err.code,
-            RefusalCode::WalSequenceGap | RefusalCode::WalChainMismatch
-        ),
-        "{err:?}"
+        .expect("missing segment index must be refused");
+    assert_eq!(err.code, RefusalCode::CheckpointCorrupt, "{err:?}");
+    write_file(&dir, &index_name, &index);
+    assert_eq!(
+        try_open(&dir, gc, strict).unwrap().committed_seq(),
+        WalSeq(6)
     );
     let _ = fs::remove_dir_all(&dir);
 }

@@ -3,8 +3,10 @@
 //! Provides:
 //! - Append-only WAL (`SWAL` v1, 88-byte header) with Castagnoli CRC-32C, SHA-256 hash chain,
 //!   monotonic `WalSeq` validation, and explicit `FsyncPolicy`.
-//! - Content-addressed immutable blob store (`blobs/<2-hex>/<64-hex>`) with atomic visibility
-//!   tied strictly to committed `WalSeq` watermarks (preventing phantom visibility after crashes).
+//! - Content-addressed immutable blobs with atomic visibility tied strictly to committed
+//!   `WalSeq` watermarks (preventing phantom visibility after crashes): one file each
+//!   (`blobs/<2-hex>/<64-hex>`) in v1 stores, inside the append-only segment files in
+//!   group-commit stores (ADR 0003 A2, [`segment`]).
 //! - Idempotent ingest (`IdempotencyKey`), snapshot reads (`snapshot_seq`), read-your-writes
 //!   enforcement (`min_visible_seq`), deterministic replay, and admission backpressure.
 //! - Atomic checkpointing, WAL compaction, and root-based garbage collection (`GarbageRoot`).
@@ -28,6 +30,9 @@ mod a1_tests;
 pub mod codec;
 #[cfg(test)]
 mod group_tests;
+pub mod segment;
+#[cfg(test)]
+mod segment_tests;
 mod shared;
 pub mod wal2;
 
@@ -173,6 +178,15 @@ pub struct StoreLimits {
     /// their blobs inline).
     #[serde(default = "default_max_wal_record_bytes")]
     pub max_wal_record_bytes: u64,
+    /// Segment store (ADR 0003 A2): a new segment file is started when the active one
+    /// holds data and the next batch would end past this many bytes. A larger batch
+    /// still goes into one segment on its own.
+    #[serde(default = "default_segment_bytes")]
+    pub segment_bytes: u64,
+}
+
+fn default_segment_bytes() -> u64 {
+    256 * 1024 * 1024
 }
 
 fn default_wal_prealloc_bytes() -> u64 {
@@ -193,6 +207,7 @@ impl Default for StoreLimits {
             default_retention_window_ms: 3_600_000, // 1 hour default speculative retention
             wal_prealloc_bytes: default_wal_prealloc_bytes(),
             max_wal_record_bytes: default_max_wal_record_bytes(),
+            segment_bytes: default_segment_bytes(),
         }
     }
 }
@@ -231,6 +246,21 @@ pub enum FaultInjection {
     /// WAL v2: write the whole next batch without syncing, then terminate the process with
     /// exit code [`FAULT_CRASH_EXIT_CODE`].
     CrashBeforeBatchSync,
+    /// Segment store: write and `fdatasync` the next batch, then terminate the process
+    /// with exit code [`FAULT_CRASH_EXIT_CODE`] before the blob index is updated or
+    /// anything is acknowledged (crash between payload and index).
+    CrashAfterBatchSyncBeforeIndex,
+    /// Segment store: if the next batch rotates to a new segment, create and pre-write
+    /// the new file, then terminate the process with exit code
+    /// [`FAULT_CRASH_EXIT_CODE`] before the directory flush.
+    CrashAfterSegmentCreateBeforeDirSync,
+    /// Segment store: if the next batch rotates to a new segment, report a failure of
+    /// the directory flush. Nothing is written into the log; nothing is acknowledged.
+    FailNextSegmentDirSync,
+    /// Segment store: in the next `checkpoint_and_compact`, write the segment index
+    /// file, then terminate the process with exit code [`FAULT_CRASH_EXIT_CODE`] before
+    /// the checkpoint replaces the previous one.
+    CrashAfterSegmentIndexBeforeCheckpoint,
 }
 
 /// Exit code used by the process-terminating fault injections.
@@ -374,14 +404,16 @@ pub struct SynapseStore {
     torn_frames_truncated_on_open: usize,
     /// True once `wal.log` ends with the WAL v2 marker: all new frames go to `wal.v2.log`.
     v2_mode: bool,
-    /// WAL v2 writer (taken out by the group-commit leader while it writes a batch).
-    wal_v2: Option<wal2::WalV2Writer>,
-    /// Read handle on `wal.v2.log` for inline blob reads.
-    wal_v2_reader: Option<File>,
-    /// End of the valid WAL v2 log found by recovery.
-    wal_v2_recovered_end: u64,
-    /// Inline blob locations in `wal.v2.log`: digest to (absolute offset, length).
-    blob_locations: BTreeMap<BlobDigest, (u64, u32)>,
+    /// Layout of the log after `wal.log`, from the marker recovery found.
+    log_layout: LogLayout,
+    /// Segment writer (taken out by the group-commit leader while it writes a batch).
+    wal_v2: Option<segment::SegmentLog>,
+    /// Read handles on the segment files, by segment id, for inline blob reads.
+    segment_readers: BTreeMap<u64, File>,
+    /// End of the valid log found by recovery: (segment, byte offset).
+    wal_v2_recovered_end: (u64, u64),
+    /// The blob index: digest to its location inside a segment.
+    blob_locations: BTreeMap<BlobDigest, segment::BlobLoc>,
     /// Set when a failed batch could not be rolled back: every write is refused until reopen.
     poisoned: Option<String>,
     /// Codec new WAL records are written with (ADR 0003 A1).
@@ -394,6 +426,19 @@ pub struct SynapseStore {
     binary_seen: bool,
     /// `checkpoint.v1` is not yet the tombstone although `checkpoint.v2` exists.
     tombstone_pending: bool,
+}
+
+/// What follows the v1 frames of `wal.log`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogLayout {
+    /// No marker: a v1 store (or a new one).
+    V1,
+    /// WAL v2 marker (version 2): `wal.v2.log` alone, checkpoints emptied it and moved
+    /// retained blobs to blob files (the layout before ADR 0003 A2).
+    SingleFileV2,
+    /// Segment marker (version 3): segments `wal.v2.log`, `wal.v2.000002.log`, ... with
+    /// a segment index bound to the checkpoint (ADR 0003 A2).
+    Segments,
 }
 
 /// One upsert check from ingest step 7, evaluated in mutation order.
@@ -471,7 +516,7 @@ enum Planned {
 /// A WAL v2 batch in flight: the writer and fault taken out of the store, plus the
 /// chain position the batch starts from.
 pub(crate) struct V2Ticket {
-    writer: wal2::WalV2Writer,
+    writer: segment::SegmentLog,
     fault: FaultInjection,
     base_seq: WalSeq,
     prev_sha: [u8; 32],
@@ -511,9 +556,10 @@ impl SynapseStore {
             canonical_heads: BTreeMap::new(),
             torn_frames_truncated_on_open: 0,
             v2_mode: false,
+            log_layout: LogLayout::V1,
             wal_v2: None,
-            wal_v2_reader: None,
-            wal_v2_recovered_end: 0,
+            segment_readers: BTreeMap::new(),
+            wal_v2_recovered_end: (1, 0),
             blob_locations: BTreeMap::new(),
             poisoned: None,
             codec: RecordCodec::BinaryV2,
@@ -528,17 +574,19 @@ impl SynapseStore {
             store.write_v1_tombstone()?;
         }
         if fsync_policy.is_group_commit() {
-            if !store.v2_mode {
-                store.write_v2_marker_append()?;
+            if store.log_layout != LogLayout::Segments {
+                store.upgrade_to_segments()?;
             }
-            let path = store.root_dir.join(wal2::WAL_V2_FILE);
-            let writer = wal2::WalV2Writer::open(
-                &path,
-                store.wal_v2_recovered_end,
+            let (active, end) = store.wal_v2_recovered_end;
+            let writer = segment::SegmentLog::open(
+                &store.root_dir,
+                active,
+                end,
+                store.limits.segment_bytes,
                 store.limits.wal_prealloc_bytes,
             )?;
-            store.wal_v2_reader = Some(File::open(&path).map_err(io_err)?);
             store.wal_v2 = Some(writer);
+            store.open_segment_readers()?;
         } else if store.v2_mode {
             return Err(SynapseError::new(
                 RefusalCode::WalVersionUnsupported,
@@ -986,8 +1034,16 @@ impl SynapseStore {
         ticket: &mut V2Ticket,
         records: &[&wal2::EncodedRecord],
     ) -> Result<Vec<wal2::PlacedFrame>, wal2::BatchFailure> {
+        use segment::RotationFault as Rot;
         use wal2::{BatchIoFault as Io, FrameFault as Fr};
         let first_len = records.first().map_or(0, |r| r.payload.len());
+        let rotation_fault = match ticket.fault {
+            FaultInjection::CrashAfterSegmentCreateBeforeDirSync => Rot::CrashBeforeDirSync {
+                code: FAULT_CRASH_EXIT_CODE,
+            },
+            FaultInjection::FailNextSegmentDirSync => Rot::FailDirSync,
+            _ => Rot::None,
+        };
         let (frame_fault, io_fault) = match ticket.fault {
             FaultInjection::None => (Fr::None, Io::None),
             FaultInjection::CrashAfterBlobWriteBeforeWalAppend => {
@@ -1033,13 +1089,25 @@ impl SynapseStore {
                     code: FAULT_CRASH_EXIT_CODE,
                 },
             ),
+            FaultInjection::CrashAfterBatchSyncBeforeIndex => (
+                Fr::None,
+                Io::CrashAfterSync {
+                    code: FAULT_CRASH_EXIT_CODE,
+                },
+            ),
+            FaultInjection::CrashAfterSegmentCreateBeforeDirSync
+            | FaultInjection::FailNextSegmentDirSync
+            | FaultInjection::CrashAfterSegmentIndexBeforeCheckpoint => (Fr::None, Io::None),
         };
         let capacity = wal2::WAL_V2_BATCH_HEADER_LEN
             + records
                 .iter()
                 .map(|r| WAL_HEADER_LEN + r.payload.len())
                 .sum::<usize>();
-        let mut builder = wal2::BatchBuilder::new(ticket.writer.write_offset, capacity);
+        // The finished batch is padded to the next 4 KiB after its 8-byte trailer.
+        let batch_len = wal2::align_up((capacity + wal2::WAL_V2_BATCH_TRAILER.len()) as u64);
+        let (segment, base) = ticket.writer.reserve(batch_len, rotation_fault)?;
+        let mut builder = wal2::BatchBuilder::new(segment, base, capacity);
         let mut seq = ticket.base_seq;
         let mut prev = ticket.prev_sha;
         let mut placed = Vec::with_capacity(records.len());
@@ -1062,7 +1130,22 @@ impl SynapseStore {
         ticket: V2Ticket,
         result: Result<Vec<wal2::PlacedFrame>, wal2::BatchFailure>,
     ) -> SynapseResult<Vec<wal2::PlacedFrame>> {
+        let active = ticket.writer.active();
         self.wal_v2 = Some(ticket.writer);
+        if !self.segment_readers.contains_key(&active) {
+            // A new segment (its directory entry is already flushed). Without a read
+            // handle its blobs could not be served, so a failure here poisons the store.
+            match File::open(self.root_dir.join(segment::segment_file_name(active))) {
+                Ok(f) => {
+                    self.segment_readers.insert(active, f);
+                }
+                Err(e) => {
+                    let msg = format!("open segment {active} for reads: {e}");
+                    self.poisoned = Some(msg.clone());
+                    return Err(SynapseError::new(RefusalCode::IoFailure, msg));
+                }
+            }
+        }
         match result {
             Ok(placed) => {
                 if let Some(last) = placed.last() {
@@ -1089,24 +1172,30 @@ impl SynapseStore {
         for &(digest, off, len) in inline {
             self.blob_locations
                 .entry(digest)
-                .or_insert((placed.payload_offset + u64::from(off), len));
+                .or_insert(segment::BlobLoc {
+                    segment: placed.segment,
+                    offset: placed.payload_offset + u64::from(off),
+                    len,
+                });
         }
         self.apply_record(placed.seq, record);
     }
 
-    fn read_inline_blob(&self, digest: BlobDigest, off: u64, len: u32) -> SynapseResult<Vec<u8>> {
-        use std::os::unix::fs::FileExt;
-        let f = self.wal_v2_reader.as_ref().ok_or_else(|| {
+    fn read_inline_blob(
+        &self,
+        digest: BlobDigest,
+        loc: segment::BlobLoc,
+    ) -> SynapseResult<Vec<u8>> {
+        let f = self.segment_readers.get(&loc.segment).ok_or_else(|| {
             SynapseError::new(
                 RefusalCode::BlobNotFound,
-                "WAL v2 log is not open for reads",
+                format!("segment {} is not open for reads", loc.segment),
             )
         })?;
-        let mut bytes = vec![0u8; len as usize];
-        f.read_exact_at(&mut bytes, off).map_err(|e| {
+        let bytes = segment::read_at(f, loc.offset, loc.len).map_err(|e| {
             SynapseError::new(
                 RefusalCode::BlobNotFound,
-                format!("read inline blob {digest} from wal.v2.log: {e}"),
+                format!("read blob {digest} from segment {}: {e}", loc.segment),
             )
         })?;
         let computed = BlobDigest::compute(&bytes);
@@ -1119,34 +1208,108 @@ impl SynapseStore {
         Ok(bytes)
     }
 
-    /// Append the WAL v2 marker to `wal.log` (switches the store to WAL v2 for good).
+    /// Switch the store to the segment layout for good (ADR 0003 A2). Runs on open with
+    /// `GroupCommit` for a v1 store, a new store, or a single-file WAL v2 store.
     ///
-    /// Atomic: the current log plus the marker is written to `wal.log.tmp`, synced, and
+    /// First the segment index for the checkpoint on disk is written (replay from the
+    /// start of segment 1, no entries: such checkpoints keep their blobs as files), then
+    /// `wal.log` gets the segment marker, atomically: the current log (without a WAL v2
+    /// marker at its end) plus the marker is written to `wal.log.tmp`, synced, and
     /// renamed over `wal.log`, then the directory is synced. A crash before the rename
-    /// leaves the v1 log untouched (the stray temp file is overwritten next time); after
+    /// leaves the old store untouched (the stray files are overwritten next time); after
     /// it, the complete marker is in place. An in-place append could leave a torn
     /// 88-byte tail that strict recovery refuses.
-    fn write_v2_marker_append(&mut self) -> SynapseResult<()> {
-        let header = v2_marker_header(self.committed_seq, self.last_frame_sha256);
+    fn upgrade_to_segments(&mut self) -> SynapseResult<()> {
+        for id in segment::list_segments(&self.root_dir)? {
+            if id >= 2 && self.segment_has_data(id)? {
+                return Err(SynapseError::new(
+                    RefusalCode::WalVersionUnsupported,
+                    format!("segment {id} holds data but wal.log has no segment marker"),
+                ));
+            }
+        }
+        let index = segment::SegmentIndex {
+            binding: segment::checkpoint_binding(&self.root_dir)?,
+            replay_segment: 1,
+            replay_offset: 0,
+            entries: BTreeMap::new(),
+        };
+        let keep = index.write(&self.root_dir)?;
+        let (keep_len, seq, prev) = match self.log_layout {
+            LogLayout::SingleFileV2 => {
+                // Replace the WAL v2 marker (the last 88 bytes) with the segment marker
+                // at the same chain position.
+                let old = fs::read(&self.wal_path).map_err(io_err)?;
+                let at = old.len() - WAL_HEADER_LEN;
+                let seq = WalSeq(u64::from_le_bytes(old[at + 8..at + 16].try_into().unwrap()));
+                let prev: [u8; 32] = old[at + 16..at + 48].try_into().unwrap();
+                (at as u64, seq, prev)
+            }
+            _ => {
+                let len = match fs::metadata(&self.wal_path) {
+                    Ok(m) => m.len(),
+                    Err(_) => 0,
+                };
+                (len, self.committed_seq, self.last_frame_sha256)
+            }
+        };
+        let header = marker_header(segment::WAL_SEGMENT_MARKER_VERSION, seq, prev);
         let tmp = self.root_dir.join("wal.log.tmp");
         {
             let mut f = File::create(&tmp).map_err(io_err)?;
-            if self.wal_path.exists() {
-                let mut src = File::open(&self.wal_path).map_err(io_err)?;
-                std::io::copy(&mut src, &mut f).map_err(io_err)?;
+            if keep_len > 0 {
+                let src = File::open(&self.wal_path).map_err(io_err)?;
+                std::io::copy(&mut src.take(keep_len), &mut f).map_err(io_err)?;
             }
             f.write_all(&header).map_err(io_err)?;
             f.sync_all().map_err(io_err)?;
         }
         fs::rename(&tmp, &self.wal_path).map_err(io_err)?;
         sync_dir(&self.root_dir)?;
+        segment::remove_other_indexes(&self.root_dir, &keep)?;
         self.v2_mode = true;
+        self.log_layout = LogLayout::Segments;
         Ok(())
     }
 
-    /// Atomically replace `wal.log` with a file holding only the WAL v2 marker.
-    fn replace_wal_log_with_v2_marker(&self) -> SynapseResult<()> {
-        let header = v2_marker_header(self.committed_seq, self.last_frame_sha256);
+    /// True when segment `id` exists and holds a non-zero byte.
+    fn segment_has_data(&self, id: u64) -> SynapseResult<bool> {
+        let path = self.root_dir.join(segment::segment_file_name(id));
+        match fs::read(&path) {
+            Ok(b) => Ok(b.iter().any(|x| *x != 0)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(io_err(e)),
+        }
+    }
+
+    /// Open a read handle on every segment file up to the active one.
+    fn open_segment_readers(&mut self) -> SynapseResult<()> {
+        let last = self.wal_v2.as_ref().map_or(0, |w| w.active());
+        for id in 1..=last {
+            if self.segment_readers.contains_key(&id) {
+                continue;
+            }
+            let path = self.root_dir.join(segment::segment_file_name(id));
+            match File::open(&path) {
+                Ok(f) => {
+                    self.segment_readers.insert(id, f);
+                }
+                // Segments before the replay start may hold no retained blob; a missing
+                // one only fails the reads that need it (BlobNotFound).
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(io_err(e)),
+            }
+        }
+        Ok(())
+    }
+
+    /// Atomically replace `wal.log` with a file holding only the segment marker.
+    fn replace_wal_log_with_segment_marker(&self) -> SynapseResult<()> {
+        let header = marker_header(
+            segment::WAL_SEGMENT_MARKER_VERSION,
+            self.committed_seq,
+            self.last_frame_sha256,
+        );
         let tmp = self.root_dir.join("wal.log.tmp");
         {
             let mut f = File::create(&tmp).map_err(io_err)?;
@@ -1315,8 +1478,8 @@ impl SynapseStore {
                 ),
             ));
         }
-        if let Some(&(off, len)) = self.blob_locations.get(&digest) {
-            return self.read_inline_blob(digest, off, len);
+        if let Some(&loc) = self.blob_locations.get(&digest) {
+            return self.read_inline_blob(digest, loc);
         }
         let path = self.blob_path(digest);
         let bytes = fs::read(&path).map_err(|_| {
@@ -1434,24 +1597,15 @@ impl SynapseStore {
         self.blob_first_visible_seq
             .retain(|digest, _| retained_blobs.contains(digest));
 
-        // 2b. WAL v2: retained blobs stored inline in `wal.v2.log` become blob files
-        //     (synced) before the checkpoint makes the log disposable.
-        if self.v2_mode {
-            let inline: Vec<(BlobDigest, (u64, u32))> = self
-                .blob_locations
-                .iter()
-                .filter(|(d, _)| retained_blobs.contains(d))
-                .map(|(d, l)| (*d, *l))
-                .collect();
-            for (digest, (off, len)) in inline {
-                let bytes = self.read_inline_blob(digest, off, len)?;
-                self.write_blob_file(digest, &bytes)?;
-            }
-        }
+        // 2b. Segment store (ADR 0003 A2): retained blobs stay where they are, inside
+        //     the segments; the segment index written below records their locations.
+        //     No blob file is written and no segment byte is removed (no garbage
+        //     collection of segment data before step K1).
 
         // 3. Persist the atomic binary checkpoint `checkpoint.v2`. Every logged frame is
         //    made durable first, so frames the checkpoint covers are never torn if the
-        //    process dies before the logs are emptied (recovery verifies and skips them).
+        //    process dies before `wal.log` is replaced (recovery verifies and skips them;
+        //    in the segment layout the segment index vouches for the covered prefix).
         //    The first binary checkpoint records the last v1 state root (or the empty
         //    root for a store that never wrote v1) and chains its own root to it; every
         //    later one chains to the previous checkpoint root.
@@ -1485,6 +1639,32 @@ impl SynapseStore {
                 "checkpoint.v2 does not decode back to the state it was written from",
             ));
         }
+        // Segment store: the index bound to this checkpoint's exact bytes goes first. A
+        // crash before the checkpoint rename leaves the previous checkpoint and its own
+        // index (removed only below, after this checkpoint is durable).
+        let segment_index = if self.v2_mode {
+            let log = self.wal_v2.as_ref().ok_or_else(|| {
+                SynapseError::new(RefusalCode::IoFailure, "WAL v2 writer is not available")
+            })?;
+            let index = segment::SegmentIndex {
+                binding: segment::binding_of(Some((codec::CHECKPOINT_V2_FILE, &bytes))),
+                replay_segment: log.active(),
+                replay_offset: log.write_offset(),
+                entries: self
+                    .blob_locations
+                    .iter()
+                    .filter(|(d, _)| retained_blobs.contains(d))
+                    .map(|(d, l)| (*d, *l))
+                    .collect(),
+            };
+            let name = index.write(&self.root_dir)?;
+            if self.fault_injection == FaultInjection::CrashAfterSegmentIndexBeforeCheckpoint {
+                std::process::exit(FAULT_CRASH_EXIT_CODE);
+            }
+            Some((name, index))
+        } else {
+            None
+        };
         write_file_atomic(
             &self.root_dir,
             &self.root_dir.join("checkpoint.v2.tmp"),
@@ -1498,17 +1678,13 @@ impl SynapseStore {
         self.write_v1_tombstone()?;
 
         // 4. Compact `wal.log` (truncate to empty since all state up to `checkpoint_seq` is in `checkpoint.v2`)
-        if self.v2_mode {
-            // WAL v2: `wal.log` keeps only the marker (so older binaries still refuse the
-            // store), then `wal.v2.log` is emptied and pre-written again.
-            self.replace_wal_log_with_v2_marker()?;
-            self.wal_v2
-                .as_mut()
-                .ok_or_else(|| {
-                    SynapseError::new(RefusalCode::IoFailure, "WAL v2 writer is not available")
-                })?
-                .reset()?;
-            self.blob_locations.clear();
+        if let Some((name, index)) = segment_index {
+            // Segment store: `wal.log` keeps only the segment marker (so older binaries
+            // still refuse the store); the segments are kept whole, replay starts at the
+            // index's position, and older index files are removed.
+            self.replace_wal_log_with_segment_marker()?;
+            segment::remove_other_indexes(&self.root_dir, &name)?;
+            self.blob_locations = index.entries;
         } else {
             let f = OpenOptions::new()
                 .create(true)
@@ -1940,7 +2116,8 @@ impl SynapseStore {
 
         // 2. Replay wal.log (v1 frames, possibly ending in the WAL v2 marker), then wal.v2.log.
         //    Frames the checkpoint already covers (a crash after the checkpoint rename and
-        //    before the logs were emptied) are verified and skipped.
+        //    before the logs were emptied) are verified and skipped. In the segment layout
+        //    (ADR 0003 A2) replay of the segments starts at the segment index position.
         let mut overlap = CheckpointOverlap::default();
         if self.wal_path.exists() {
             self.recover_v1(recovery_policy, &mut overlap)?;
@@ -2037,9 +2214,12 @@ impl SynapseStore {
                 ));
             }
             let version = u16::from_le_bytes(header[4..6].try_into().unwrap());
-            if version == wal2::WAL_V2_VERSION && header[6] == WAL_V2_MARKER_KIND {
-                // WAL v2 marker: the log continues in wal.v2.log. It must be the last
-                // frame, continue the chain without advancing it, and hash correctly.
+            let marker_version =
+                version == wal2::WAL_V2_VERSION || version == segment::WAL_SEGMENT_MARKER_VERSION;
+            if marker_version && header[6] == WAL_V2_MARKER_KIND {
+                // Log marker: the log continues in wal.v2.log (version 2) or in the
+                // segments (version 3). It must be the last frame, continue the chain
+                // without advancing it, and hash correctly.
                 if offset + WAL_HEADER_LEN as u64 != file_len {
                     return Err(SynapseError::new(
                         RefusalCode::WalMagicInvalid,
@@ -2063,7 +2243,7 @@ impl SynapseStore {
                         format!("WAL v2 marker at {seq} does not follow {expected_seq}"),
                     ));
                 }
-                if header != v2_marker_header(expected_seq, expected_prev) {
+                if header != marker_header(version, expected_seq, expected_prev) {
                     return Err(SynapseError::new(
                         RefusalCode::WalChainMismatch,
                         format!("WAL v2 marker at offset {offset} does not match the chain"),
@@ -2073,6 +2253,11 @@ impl SynapseStore {
                     overlap.cursor = Some((seq, marker_prev));
                 }
                 self.v2_mode = true;
+                self.log_layout = if version == wal2::WAL_V2_VERSION {
+                    LogLayout::SingleFileV2
+                } else {
+                    LogLayout::Segments
+                };
                 break;
             }
             if version != WAL_VERSION {
@@ -2224,34 +2409,137 @@ impl SynapseStore {
         Ok(())
     }
 
-    /// Replay `wal.v2.log`: whole batches only (all frames valid or none applied).
+    /// Replay the log after `wal.log`: segment 1 (`wal.v2.log`) and, in the segment
+    /// layout, the segments after it, whole batches only (all frames valid or none
+    /// applied). In the segment layout replay starts at the position the segment index
+    /// of the checkpoint names, and the index supplies the locations of the blobs the
+    /// checkpoint retains.
     fn recover_v2(
         &mut self,
         recovery_policy: RecoveryPolicy,
         overlap: &mut CheckpointOverlap,
     ) -> SynapseResult<()> {
-        let path = self.root_dir.join(wal2::WAL_V2_FILE);
-        if !path.exists() {
-            return Ok(());
-        }
-        let buf = fs::read(&path).map_err(io_err)?;
+        let ids = segment::list_segments(&self.root_dir)?;
         if !self.v2_mode {
-            if buf.iter().any(|b| *b != 0) {
-                return Err(SynapseError::new(
-                    RefusalCode::WalVersionUnsupported,
-                    "wal.v2.log holds data but wal.log does not end with the WAL v2 marker",
-                ));
+            for &id in &ids {
+                if self.segment_has_data(id)? {
+                    return Err(SynapseError::new(
+                        RefusalCode::WalVersionUnsupported,
+                        format!(
+                            "{} holds data but wal.log does not end with the WAL v2 marker",
+                            segment::segment_file_name(id)
+                        ),
+                    ));
+                }
             }
             return Ok(());
         }
+        let (start_seg, start_off) = if self.log_layout == LogLayout::Segments {
+            let binding = segment::checkpoint_binding(&self.root_dir)?;
+            let index = segment::SegmentIndex::load(&self.root_dir, &binding)?;
+            self.blob_locations = index.entries.clone();
+            if (index.replay_segment, index.replay_offset) != (1, 0) {
+                // The index vouches for every segment byte before its replay position:
+                // those frames are covered by the checkpoint it is bound to.
+                if overlap.cursor.is_some() {
+                    overlap.cursor = Some((self.committed_seq, self.last_frame_sha256));
+                }
+                overlap.close(self.committed_seq, self.last_frame_sha256)?;
+            }
+            (index.replay_segment, index.replay_offset)
+        } else {
+            // Single-file WAL v2: segment 1 only.
+            if let Some(&id) = ids.iter().find(|&&id| id >= 2) {
+                if self.segment_has_data(id)? {
+                    return Err(SynapseError::new(
+                        RefusalCode::WalVersionUnsupported,
+                        format!(
+                            "segment {id} holds data but wal.log has the single-file WAL v2 marker"
+                        ),
+                    ));
+                }
+            }
+            (1, 0)
+        };
+        let last = ids.last().copied().unwrap_or(0).max(start_seg);
+        let max = if self.log_layout == LogLayout::Segments {
+            // Segments are never removed (no garbage collection before K1), so every id
+            // up to the last must be present; only a store that crashed before creating
+            // its first segment has none.
+            let never_created = ids.is_empty() && (start_seg, start_off) == (1, 0);
+            if let Some(missing) = (1..=last).find(|id| !never_created && !ids.contains(id)) {
+                return Err(SynapseError::new(
+                    RefusalCode::WalSequenceGap,
+                    format!(
+                        "segment file {} is missing",
+                        segment::segment_file_name(missing)
+                    ),
+                ));
+            }
+            last
+        } else {
+            1
+        };
+        self.wal_v2_recovered_end = (start_seg, start_off);
+        for id in start_seg..=max {
+            let path = self.root_dir.join(segment::segment_file_name(id));
+            if !path.exists() {
+                break;
+            }
+            let base = if id == start_seg { start_off } else { 0 };
+            let buf = {
+                let mut f = File::open(&path).map_err(io_err)?;
+                f.seek(SeekFrom::Start(base)).map_err(io_err)?;
+                let mut b = Vec::new();
+                f.read_to_end(&mut b).map_err(io_err)?;
+                b
+            };
+            let (end, holds_data, truncated) =
+                self.replay_segment(id, &path, base, &buf, max, recovery_policy, overlap)?;
+            if holds_data || id == start_seg {
+                self.wal_v2_recovered_end = (id, end);
+            }
+            if truncated {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// True when every segment after `id` up to `max` is missing or all zero.
+    fn later_segments_zero(&self, id: u64, max: u64) -> SynapseResult<bool> {
+        for later in id + 1..=max {
+            if self.segment_has_data(later)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Replay the batches of segment `id` held in `buf` (the file from byte `base` on).
+    /// Returns the absolute end of the valid log in this segment, whether it holds a
+    /// batch (or a torn tail), and whether a torn tail was truncated.
+    #[allow(clippy::too_many_arguments)]
+    fn replay_segment(
+        &mut self,
+        id: u64,
+        path: &Path,
+        base: u64,
+        buf: &[u8],
+        max: u64,
+        recovery_policy: RecoveryPolicy,
+        overlap: &mut CheckpointOverlap,
+    ) -> SynapseResult<(u64, bool, bool)> {
         let hlen = wal2::WAL_V2_BATCH_HEADER_LEN;
         let mut off = 0usize;
+        let mut holds_data = false;
         while off < buf.len() {
             let header_end = (off + hlen).min(buf.len());
             let header_zero = buf[off..header_end].iter().all(|b| *b == 0);
             if header_zero && buf[off..].iter().all(|b| *b == 0) {
-                break; // clean end of the log
+                break; // clean end of this segment
             }
+            holds_data = true;
             // A batch the checkpoint covers: verify it whole (fail closed on any error, it
             // was acknowledged before the checkpoint) and skip it.
             if let Some((_, _, first)) = buf.get(off..off + hlen).and_then(wal2::parse_batch_header)
@@ -2261,10 +2549,10 @@ impl SynapseStore {
                         Some((s, h)) => (s.next(), h),
                         // Nothing skipped yet: take the chain link the batch states; the
                         // skipped chain must still end at the checkpoint anchor.
-                        None => (first, wal2::first_frame_prev(&buf, off)),
+                        None => (first, wal2::first_frame_prev(buf, off)),
                     };
                     let (frames, next) = wal2::validate_batch(
-                        &buf,
+                        buf,
                         off,
                         expected_seq,
                         expected_prev,
@@ -2294,7 +2582,7 @@ impl SynapseStore {
                 ))
             } else {
                 wal2::validate_batch(
-                    &buf,
+                    buf,
                     off,
                     self.committed_seq.next(),
                     self.last_frame_sha256,
@@ -2327,8 +2615,12 @@ impl SynapseStore {
                                 }
                             }
                         }
-                        for &(d, abs, len) in &fr.inline {
-                            self.blob_locations.entry(d).or_insert((abs, len));
+                        for &(d, rel, len) in &fr.inline {
+                            self.blob_locations.entry(d).or_insert(segment::BlobLoc {
+                                segment: id,
+                                offset: base + rel,
+                                len,
+                            });
                         }
                         self.committed_seq = fr.seq;
                         self.last_frame_sha256 = fr.frame_sha256;
@@ -2341,8 +2633,13 @@ impl SynapseStore {
                     if e.code == RefusalCode::QuotaPayloadTooLarge {
                         return Err(e);
                     }
-                    let torn =
-                        !wal2::valid_batch_after(&buf, off + 1) && wal2::torn_evidence(&buf, off);
+                    // A torn tail is only the last write: nothing valid after it in this
+                    // segment, its lost end reads back as zeros, and every later segment
+                    // is empty (a batch never goes to a new segment before the previous
+                    // one is durable).
+                    let torn = !wal2::valid_batch_after(buf, off + 1)
+                        && wal2::torn_evidence(buf, off)
+                        && self.later_segments_zero(id, max)?;
                     if !torn {
                         return Err(e);
                     }
@@ -2350,26 +2647,29 @@ impl SynapseStore {
                         RecoveryPolicy::StrictFailClosed => {
                             return Err(SynapseError::new(
                                 RefusalCode::WalTornFrame,
-                                format!("torn WAL v2 batch at byte offset {off}: {}", e.message),
+                                format!(
+                                    "torn WAL v2 batch in segment {id} at byte offset {}: {}",
+                                    base + off as u64,
+                                    e.message
+                                ),
                             ))
                         }
                         RecoveryPolicy::TruncateTornTail => {
                             use std::os::unix::fs::FileExt;
                             let last_nonzero = buf.iter().rposition(|b| *b != 0).unwrap_or(off);
                             let end = wal2::align_up(last_nonzero as u64 + 1) as usize;
-                            let f = OpenOptions::new().write(true).open(&path).map_err(io_err)?;
-                            f.write_all_at(&vec![0u8; end - off], off as u64)
+                            let f = OpenOptions::new().write(true).open(path).map_err(io_err)?;
+                            f.write_all_at(&vec![0u8; end - off], base + off as u64)
                                 .map_err(io_err)?;
                             f.sync_data().map_err(io_err)?;
                             self.torn_frames_truncated_on_open += 1;
-                            break;
+                            return Ok((base + off as u64, true, true));
                         }
                     }
                 }
             }
         }
-        self.wal_v2_recovered_end = off as u64;
-        Ok(())
+        Ok((base + off as u64, holds_data, false))
     }
 
     fn handle_torn_tail(
@@ -2396,8 +2696,8 @@ impl SynapseStore {
 
 /// Log frames that `checkpoint.v1` already covers, met at the start of replay.
 ///
-/// A crash after the checkpoint is renamed into place but before `wal.log` and
-/// `wal.v2.log` are emptied leaves frames with `seq <= checkpoint_seq` in front of the
+/// A crash after the checkpoint is renamed into place but before `wal.log` (and, in the
+/// single-file WAL v2 layout before ADR 0003 A2, `wal.v2.log`) is emptied leaves frames with `seq <= checkpoint_seq` in front of the
 /// log. Recovery verifies them (CRC, frame digest, and one unbroken hash chain among
 /// them) and skips them; the skipped chain must end exactly at the checkpoint's sequence
 /// and anchor digest. Skipping is allowed only before the first frame is applied.
@@ -2461,11 +2761,13 @@ impl CheckpointOverlap {
 /// Frame kind of the WAL v2 marker written at the end of `wal.log`.
 const WAL_V2_MARKER_KIND: u8 = 0xFF;
 
-/// The 88-byte WAL v2 marker: v1 header layout with version 2, kind `0xFF`, an empty
-/// payload, `seq` and `prev_frame_sha256` equal to the last committed frame. Binaries
-/// that only know v1 refuse it (`WalVersionUnsupported`) instead of missing v2 commits.
-fn v2_marker_header(seq: WalSeq, prev: [u8; 32]) -> [u8; WAL_HEADER_LEN] {
-    wal2::frame_header(
+/// The 88-byte log marker: v1 header layout with `version` (2: WAL v2 in `wal.v2.log`
+/// alone; 3: the segment layout of ADR 0003 A2), kind `0xFF`, an empty payload, `seq`
+/// and `prev_frame_sha256` equal to the last committed frame, and the v2 frame digest.
+/// Binaries that do not know the version refuse it (`WalVersionUnsupported`) instead of
+/// missing the commits that follow it.
+fn marker_header(version: u16, seq: WalSeq, prev: [u8; 32]) -> [u8; WAL_HEADER_LEN] {
+    let mut h = wal2::frame_header(
         seq,
         prev,
         WAL_V2_MARKER_KIND,
@@ -2474,7 +2776,11 @@ fn v2_marker_header(seq: WalSeq, prev: [u8; 32]) -> [u8; WAL_HEADER_LEN] {
         crc32c(&[]),
         &wal2::payload_digest(&[]),
     )
-    .0
+    .0;
+    h[4..6].copy_from_slice(&version.to_le_bytes());
+    let sha = wal2::frame_digest(&h[0..56], &wal2::payload_digest(&[]));
+    h[56..88].copy_from_slice(&sha);
+    h
 }
 
 fn compute_wal_frame_sha256(header_prefix_56: &[u8], payload: &[u8]) -> [u8; 32] {

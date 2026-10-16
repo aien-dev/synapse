@@ -1,4 +1,6 @@
-//! WAL v2 (`wal.v2.log`): pre-written log of 4 KiB-aligned batches with inline blobs.
+//! WAL v2: pre-written log of 4 KiB-aligned batches with inline blobs. Since ADR 0003 A2
+//! the log is a sequence of segment files (`wal.v2.log`, then `wal.v2.000002.log`, ...;
+//! see [`crate::segment`]), each in the format below.
 //!
 //! Why: on this host's ext4/NVMe, writing into space that is already written and synced
 //! and then calling `fdatasync` measured 0.81 to 1.11 ms median (4 KiB to 1 MiB), while
@@ -9,7 +11,7 @@
 //! instead of one file each, and commits a whole batch with one `pwrite` and one
 //! `fdatasync`.
 //!
-//! Layout:
+//! Layout (per segment file):
 //! * The file is zero-filled ahead of the write position in chunks (`sync_all` after
 //!   each extension, so size and blocks are durable before any batch lands there).
 //! * A batch starts at a 4 KiB-aligned offset with a 64-byte batch header
@@ -323,6 +325,7 @@ pub(crate) enum FrameFault {
 /// Builds one batch buffer: header, frames, zero padding to 4 KiB.
 pub(crate) struct BatchBuilder {
     buf: Vec<u8>,
+    segment: u64,
     base_offset: u64,
     count: u32,
     first_seq: Option<WalSeq>,
@@ -332,16 +335,19 @@ pub(crate) struct BatchBuilder {
 pub(crate) struct PlacedFrame {
     pub seq: WalSeq,
     pub frame_sha256: [u8; 32],
-    /// Absolute file offset of the frame payload.
+    /// Segment file holding the frame (ADR 0003 A2; segment 1 is `wal.v2.log`).
+    pub segment: u64,
+    /// Absolute offset of the frame payload inside its segment file.
     pub payload_offset: u64,
 }
 
 impl BatchBuilder {
-    pub fn new(base_offset: u64, capacity: usize) -> Self {
+    pub fn new(segment: u64, base_offset: u64, capacity: usize) -> Self {
         let mut buf = Vec::with_capacity(capacity + WAL_V2_ALIGN as usize);
         buf.resize(WAL_V2_BATCH_HEADER_LEN, 0);
         Self {
             buf,
+            segment,
             base_offset,
             count: 0,
             first_seq: None,
@@ -388,6 +394,7 @@ impl BatchBuilder {
         PlacedFrame {
             seq,
             frame_sha256: sha,
+            segment: self.segment,
             payload_offset,
         }
     }
@@ -425,6 +432,11 @@ pub(crate) enum BatchIoFault {
     CrashBeforeSync {
         code: i32,
     },
+    /// Write and `fdatasync` everything, then exit the process with `code` before the
+    /// caller updates its index or acknowledges anything (payload durable, index not).
+    CrashAfterSync {
+        code: i32,
+    },
     /// Write and sync the first `n` bytes, then stop as if the process had died: no
     /// rollback, and the store refuses further writes until reopened.
     TornThenStop {
@@ -448,6 +460,8 @@ pub(crate) struct WalV2Writer {
     pub write_offset: u64,
     pub prewritten_end: u64,
     chunk: u64,
+    /// Pre-writing ahead stops here (the segment size), unless a batch needs more.
+    prewrite_cap: u64,
 }
 
 fn injected(msg: &str) -> std::io::Error {
@@ -478,9 +492,26 @@ impl WalV2Writer {
             write_offset,
             prewritten_end: len.max(write_offset),
             chunk: chunk.max(WAL_V2_ALIGN),
+            prewrite_cap: u64::MAX,
         };
         w.ensure_space(WAL_V2_ALIGN).map_err(io_err)?;
         Ok(w)
+    }
+
+    /// A writer over a newly created, empty segment file (nothing pre-written yet).
+    pub fn new_empty(file: File, chunk: u64, prewrite_cap: u64) -> Self {
+        Self {
+            file,
+            write_offset: 0,
+            prewritten_end: 0,
+            chunk: chunk.max(WAL_V2_ALIGN),
+            prewrite_cap: prewrite_cap.max(WAL_V2_ALIGN),
+        }
+    }
+
+    /// Stop pre-writing ahead past `cap` bytes (a batch that needs more still gets it).
+    pub fn set_prewrite_cap(&mut self, cap: u64) {
+        self.prewrite_cap = cap.max(WAL_V2_ALIGN);
     }
 
     /// Zero-fill and `sync_all` ahead of the write position until `need` bytes fit.
@@ -488,7 +519,8 @@ impl WalV2Writer {
         if self.write_offset + need <= self.prewritten_end {
             return Ok(());
         }
-        let target = align_up((self.write_offset + need).max(self.prewritten_end + self.chunk));
+        let ahead = (self.prewritten_end + self.chunk).min(self.prewrite_cap);
+        let target = align_up((self.write_offset + need).max(ahead));
         let zeros = vec![0u8; 1 << 20];
         let mut at = self.prewritten_end;
         while at < target {
@@ -536,6 +568,13 @@ impl WalV2Writer {
                 let _ = self.file.write_all_at(buf, at);
                 std::process::exit(code);
             }
+            BatchIoFault::CrashAfterSync { code } => {
+                let _ = self
+                    .file
+                    .write_all_at(buf, at)
+                    .and_then(|_| self.file.sync_data());
+                std::process::exit(code);
+            }
             BatchIoFault::TornThenStop { bytes_written } => {
                 let n = bytes_written.min(buf.len().saturating_sub(1));
                 self.file
@@ -577,17 +616,13 @@ impl WalV2Writer {
         }
     }
 
-    /// Empty the log after a checkpoint and pre-write one chunk again.
-    pub fn reset(&mut self) -> SynapseResult<()> {
-        self.file.set_len(0).map_err(io_err)?;
-        self.file.sync_all().map_err(io_err)?;
-        self.write_offset = 0;
-        self.prewritten_end = 0;
-        self.ensure_space(WAL_V2_ALIGN).map_err(io_err)
-    }
-
     pub fn sync(&self) -> SynapseResult<()> {
         self.file.sync_data().map_err(io_err)
+    }
+
+    /// `fsync` data and metadata (size) of the file.
+    pub fn sync_all(&self) -> SynapseResult<()> {
+        self.file.sync_all().map_err(io_err)
     }
 }
 
