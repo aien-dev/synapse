@@ -282,10 +282,10 @@ impl Board {
 
     /// Operator view (`board read --all`): every event after `after`, ignoring
     /// subscriptions and audience. Exists for the human CLI only.
-    pub fn read_all(&self, after: u64, limit: usize) -> Result<ReadBatch, BoardError> {
+    pub fn read_all(&self, after: Option<u64>, limit: usize) -> Result<ReadBatch, BoardError> {
         self.with_retry(|| {
             let snap = Snapshot::take(self)?;
-            let after = check_after(&snap, after)?;
+            let after = check_after(&snap, after.unwrap_or(snap.base.saturating_sub(1)))?;
             let limit = limit.clamp(1, MAX_READ_LIMIT);
             let mut b = batch(&snap, after);
             let mut id = after + 1;
@@ -458,6 +458,13 @@ impl Board {
                 Err(BoardError::IndexMismatch { .. }) if tries < 3 => {
                     tries += 1;
                     std::thread::sleep(std::time::Duration::from_millis(5 << tries));
+                }
+                // Still mismatched after the backoff: no compaction is in flight, one died
+                // between its renames. Run writer recovery (it rebuilds journal.idx from the
+                // journal under the lock and never cuts a committed event), then read again.
+                Err(BoardError::IndexMismatch { .. }) if tries == 3 => {
+                    tries += 1;
+                    self.recover()?;
                 }
                 r => return r,
             }
