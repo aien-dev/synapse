@@ -38,7 +38,7 @@
     },
     {
       "name": "synapse-wire",
-      "role": "Binary wire frames with a fuzzed decoder, have-want chunk negotiation, and stream transports (ADR 0003 step G1)"
+      "role": "Binary wire frames with a fuzzed decoder, have-want chunk negotiation, stream transports (ADR 0003 step G1), and a hostile-peer-safe shared-memory ring for local agents (step G3, optional transport unless X5 adopts it)"
     }
   ],
   "extensions": {
