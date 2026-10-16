@@ -1,0 +1,151 @@
+spec written; idle window 30 s
+rep 0 ring: 1.541 ms/change, p50 1.300 ms, Some(0.051197) J/change
+rep 0 wire: 1.466 ms/change, p50 1.313 ms, Some(0.046119999999999994) J/change
+rep 0 direct_auth: 1.341 ms/change, p50 1.214 ms, Some(0.0422675) J/change
+rep 0 echo wire: p50 9.14 us per round trip
+rep 0 echo ring: p50 6.80 us per round trip
+rep 1 wire: 1.606 ms/change, p50 1.593 ms, Some(0.04708) J/change
+rep 1 direct_auth: 1.380 ms/change, p50 1.302 ms, Some(0.038975) J/change
+rep 1 ring: 1.863 ms/change, p50 1.604 ms, Some(0.0855495) J/change
+rep 1 echo ring: p50 8.27 us per round trip
+rep 1 echo wire: p50 8.53 us per round trip
+rep 2 direct_auth: 1.559 ms/change, p50 1.413 ms, Some(0.053667) J/change
+rep 2 ring: 1.471 ms/change, p50 1.400 ms, Some(0.046373) J/change
+rep 2 wire: 1.638 ms/change, p50 1.599 ms, Some(0.044003) J/change
+rep 2 echo wire: p50 9.09 us per round trip
+rep 2 echo ring: p50 6.77 us per round trip
+rep 3 ring: 1.558 ms/change, p50 1.501 ms, Some(0.0424045) J/change
+rep 3 wire: 1.597 ms/change, p50 1.507 ms, Some(0.045115999999999996) J/change
+rep 3 direct_auth: 1.521 ms/change, p50 1.401 ms, Some(0.0386085) J/change
+rep 3 echo ring: p50 6.05 us per round trip
+rep 3 echo wire: p50 12.30 us per round trip
+rep 4 wire: 1.682 ms/change, p50 1.606 ms, Some(0.048144) J/change
+rep 4 direct_auth: 1.531 ms/change, p50 1.399 ms, Some(0.040351) J/change
+rep 4 ring: 1.479 ms/change, p50 1.400 ms, Some(0.0437275) J/change
+rep 4 echo wire: p50 13.02 us per round trip
+rep 4 echo ring: p50 6.13 us per round trip
+{
+  "direct_auth": {
+    "fraction_of_energy_floor": 0.4611695279149208,
+    "fraction_of_time_floor": 0.5303634001216285,
+    "pkg_above_idle_j_per_change_median": -0.01425819338424474,
+    "pkg_j_per_change_median": 0.040351,
+    "pkg_j_per_change_reps": [
+      0.0422675,
+      0.038975,
+      0.053667,
+      0.0386085,
+      0.040351
+    ],
+    "s_per_change_median": 0.0015206139955,
+    "s_per_change_reps": [
+      0.0013413275565,
+      0.0013802634425,
+      0.001559245636,
+      0.0015206139955,
+      0.001530670456
+    ]
+  },
+  "echo_ring": {
+    "p50_s_median": 6.768e-6,
+    "p50_s_reps": [
+      6.801e-6,
+      8.272e-6,
+      6.768e-6,
+      6.048e-6,
+      6.128e-6
+    ],
+    "role": "supporting only, not in the X5 rule"
+  },
+  "echo_wire": {
+    "p50_s_median": 9.136e-6,
+    "p50_s_reps": [
+      9.136e-6,
+      8.528e-6,
+      9.088e-6,
+      0.000012304,
+      0.000013024
+    ],
+    "role": "supporting only, not in the X5 rule"
+  },
+  "ring": {
+    "fraction_of_energy_floor": 0.40128203094246584,
+    "fraction_of_time_floor": 0.523505636147961,
+    "pkg_above_idle_j_per_change_median": -0.010375457114891688,
+    "pkg_j_per_change_median": 0.046373,
+    "pkg_j_per_change_reps": [
+      0.051197,
+      0.0855495,
+      0.046373,
+      0.0424045,
+      0.0437275
+    ],
+    "s_per_change_median": 0.0015405335745,
+    "s_per_change_reps": [
+      0.0015405335745,
+      0.0018631269294999999,
+      0.001471389422,
+      0.0015582643705000002,
+      0.0014790615465
+    ]
+  },
+  "wire": {
+    "fraction_of_energy_floor": 0.4034833395684079,
+    "fraction_of_time_floor": 0.502183517623581,
+    "pkg_above_idle_j_per_change_median": -0.016493428381539395,
+    "pkg_j_per_change_median": 0.046119999999999994,
+    "pkg_j_per_change_reps": [
+      0.046119999999999994,
+      0.04708,
+      0.044003,
+      0.045115999999999996,
+      0.048144
+    ],
+    "s_per_change_median": 0.001605942809,
+    "s_per_change_reps": [
+      0.001465751948,
+      0.001605942809,
+      0.0016381890299999998,
+      0.0015974295095,
+      0.0016819022925
+    ]
+  }
+}
+X5 verdict: {
+  "joules": {
+    "lower_beyond_spread": false,
+    "ring_j_per_change_reps": [
+      0.0424045,
+      0.0437275,
+      0.046373,
+      0.051197,
+      0.0855495
+    ],
+    "wire_j_per_change_reps": [
+      0.044003,
+      0.045115999999999996,
+      0.046119999999999994,
+      0.04708,
+      0.048144
+    ]
+  },
+  "rule": "evidence/g3-shm-ring/x5/RULE.md",
+  "seconds": {
+    "lower_beyond_spread": false,
+    "ring_s_per_change_reps": [
+      0.001471389422,
+      0.0014790615465,
+      0.0015405335745,
+      0.0015582643705000002,
+      0.0018631269294999999
+    ],
+    "wire_s_per_change_reps": [
+      0.001465751948,
+      0.0015974295095,
+      0.001605942809,
+      0.0016381890299999998,
+      0.0016819022925
+    ]
+  },
+  "verdict": "NOT_ADOPTED"
+}
