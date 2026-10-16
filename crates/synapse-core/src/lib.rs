@@ -1,5 +1,6 @@
-//! Core domain identities, canonical changeset envelope v1, `did:key` Ed25519 codec,
-//! and deterministic refusal taxonomy for Synapse (ADR 0001).
+//! Core domain identities, canonical changeset envelopes v1 and v2 (v2 since ADR 0003 step B1,
+//! [`ChangesetEnvelopeV2`]), `did:key` Ed25519 codec, and deterministic refusal taxonomy for
+//! Synapse (ADR 0001).
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -7,7 +8,14 @@ use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+mod revision;
 mod tree;
+pub use revision::{
+    AdmissionWitness, AuthorshipAttestation, ChainPath, ChangesetEnvelopeV2, ObsolescenceKind,
+    ObsolescenceMarker, RevisionContent, WitnessSigner, DOMAIN_ADMISSION_WITNESS_V1,
+    DOMAIN_AUTHORSHIP_SIGN_V2, DOMAIN_CHANGESET_ID_V2, DOMAIN_OBSOLESCENCE_SIGN_V1,
+    ENVELOPE_V2_VERSION, MAX_CHAIN_PATH_DEPTH, MAX_OBSOLESCENCE_SUCCESSORS,
+};
 pub use tree::{
     tree_entry_order, validate_tree_entry_name, TreeDigest, TreeNodeEncoder, DOMAIN_TREE_V1,
     MAX_TREE_ENTRY_NAME_BYTES, TREE_TAG_DIRECTORY,
@@ -56,6 +64,9 @@ pub enum RefusalCode {
 
     // Schema, path, and consistency refusals
     EnvelopeVersionUnsupported,
+    /// A changeset envelope v2, authorship attestation, admission witness, or obsolescence
+    /// marker is not in its one canonical binary encoding (ADR 0003 section 5.1, step B1).
+    EnvelopeMalformed,
     RepoIdInvalid,
     PathInvalid,
     PathDuplicate,
@@ -101,8 +112,17 @@ pub enum RefusalCode {
     AuthPathOutOfScope,
     /// A request touches a reference kind outside the chain's reference scope (step F1).
     AuthReferenceOutOfScope,
-    /// A request joins a `ChangeId` outside the chain's change scope (step F1).
+    /// A request joins a `ChangeId` outside the chain's change scope (step F1), or adds a
+    /// revision under a `ChangeId` whose creating chain the key does not descend from while its
+    /// change scope does not name that `ChangeId` (ADR 0003 section 5.1, step B1).
     AuthChangeOutOfScope,
+    /// An obsolescence marker is recorded by a chain that neither is nor dominates the chain
+    /// it needs: the change's creating chain for a prune, or for a rewrite or split either the
+    /// creating chain or the chain that first admitted the replaced revision (step B1).
+    AuthChainNotDominant,
+    /// An obsolescence marker names an unknown revision, a revision of another change, itself
+    /// as its own successor, or would close a cycle of markers (step B1).
+    ObsolescenceMarkerInvalid,
 
     // Git and Radicle canonicality refusals
     GitObjectCorrupt,
@@ -361,9 +381,9 @@ impl fmt::Debug for IdempotencyKey {
 }
 
 /// One unit of intended work across all its rewrites and retries (ADR 0003 section 5.1):
-/// 16 random bytes, not content-derived. Step F1 uses it only to name the `ChangeId`s a
-/// capability link's change scope allows its holder to join; binding a `ChangeId` to its
-/// creating chain is step B1.
+/// 16 random bytes, not content-derived (content changes on rewrite). A capability link's
+/// change scope names the `ChangeId`s its holder may join (step F1); the first admission under
+/// a `ChangeId` binds it to its creating chain (step B1, [`ChainPath`]).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ChangeId(pub [u8; 16]);
 
@@ -371,11 +391,30 @@ impl ChangeId {
     pub fn to_hex(self) -> String {
         hex::encode(self.0)
     }
+
+    pub fn from_hex(s: &str) -> SynapseResult<Self> {
+        hex::decode(s)
+            .ok()
+            .and_then(|b| <[u8; 16]>::try_from(b).ok())
+            .map(Self)
+            .ok_or_else(|| {
+                SynapseError::new(
+                    RefusalCode::EnvelopeMalformed,
+                    "ChangeId must be 16 bytes (32 hex chars)",
+                )
+            })
+    }
 }
 
 impl fmt::Debug for ChangeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ChangeId({})", self.to_hex())
+    }
+}
+
+impl fmt::Display for ChangeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.to_hex())
     }
 }
 
@@ -434,6 +473,16 @@ impl FileMode {
             Self::Symlink120000 => 3,
         }
     }
+
+    /// The mode with tag byte `tag` (1, 2 or 3), if any.
+    pub fn from_tag_byte(tag: u8) -> Option<Self> {
+        match tag {
+            1 => Some(Self::Regular644),
+            2 => Some(Self::Executable755),
+            3 => Some(Self::Symlink120000),
+            _ => None,
+        }
+    }
 }
 
 /// Atomic mutation operation on a single normalized repository path.
@@ -488,49 +537,9 @@ impl ChangesetEnvelope {
                 format!("unsupported envelope version {}", self.version),
             ));
         }
-        if self.intent_summary.is_empty() || self.intent_summary.len() > 4096 {
-            return Err(SynapseError::new(
-                RefusalCode::QuotaPayloadTooLarge,
-                "intent_summary must be 1..=4096 bytes",
-            ));
-        }
-
-        // Verify parent_changesets are sorted and deduplicated
-        for pair in self.parent_changesets.windows(2) {
-            if pair[0] >= pair[1] {
-                return Err(SynapseError::new(
-                    RefusalCode::MutationsUnsorted,
-                    "parent_changesets must be strictly sorted and unique",
-                ));
-            }
-        }
-
-        // Verify mutations are non-empty, valid repo-relative paths, strictly sorted, and unique
-        if self.mutations.is_empty() {
-            return Err(SynapseError::new(
-                RefusalCode::PathInvalid,
-                "changeset must contain at least one path mutation",
-            ));
-        }
-        let mut prev_path: Option<&str> = None;
-        for m in &self.mutations {
-            validate_repo_relative_path(&m.path)?;
-            if let Some(prev) = prev_path {
-                if prev == m.path {
-                    return Err(SynapseError::new(
-                        RefusalCode::PathDuplicate,
-                        format!("duplicate path in changeset: {}", m.path),
-                    ));
-                }
-                if prev > m.path.as_str() {
-                    return Err(SynapseError::new(
-                        RefusalCode::MutationsUnsorted,
-                        format!("unsorted path in changeset: {} after {}", m.path, prev),
-                    ));
-                }
-            }
-            prev_path = Some(&m.path);
-        }
+        validate_intent_summary(&self.intent_summary)?;
+        validate_parent_changesets(&self.parent_changesets)?;
+        validate_mutations(&self.mutations)?;
 
         // Verify author_did and Ed25519 signature
         let pubkey_bytes = decode_did_key_ed25519(&self.author_did)?;
@@ -623,6 +632,63 @@ impl ChangesetEnvelope {
 fn put_str(buf: &mut Vec<u8>, s: &str) {
     buf.extend_from_slice(&(s.len() as u32).to_le_bytes());
     buf.extend_from_slice(s.as_bytes());
+}
+
+/// Longest `intent_summary` in either envelope version.
+pub const MAX_INTENT_SUMMARY_BYTES: usize = 4096;
+
+/// An intent summary must be 1..=`MAX_INTENT_SUMMARY_BYTES` bytes (envelopes v1 and v2).
+pub(crate) fn validate_intent_summary(intent_summary: &str) -> SynapseResult<()> {
+    if intent_summary.is_empty() || intent_summary.len() > MAX_INTENT_SUMMARY_BYTES {
+        return Err(SynapseError::new(
+            RefusalCode::QuotaPayloadTooLarge,
+            "intent_summary must be 1..=4096 bytes",
+        ));
+    }
+    Ok(())
+}
+
+/// Parent changesets must be strictly ascending (sorted and unique).
+pub(crate) fn validate_parent_changesets(parents: &[ChangesetId]) -> SynapseResult<()> {
+    for pair in parents.windows(2) {
+        if pair[0] >= pair[1] {
+            return Err(SynapseError::new(
+                RefusalCode::MutationsUnsorted,
+                "parent_changesets must be strictly sorted and unique",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Mutations must be non-empty, on valid repository-relative paths, strictly sorted by path.
+pub(crate) fn validate_mutations(mutations: &[PathMutation]) -> SynapseResult<()> {
+    if mutations.is_empty() {
+        return Err(SynapseError::new(
+            RefusalCode::PathInvalid,
+            "changeset must contain at least one path mutation",
+        ));
+    }
+    let mut prev_path: Option<&str> = None;
+    for m in mutations {
+        validate_repo_relative_path(&m.path)?;
+        if let Some(prev) = prev_path {
+            if prev == m.path {
+                return Err(SynapseError::new(
+                    RefusalCode::PathDuplicate,
+                    format!("duplicate path in changeset: {}", m.path),
+                ));
+            }
+            if prev > m.path.as_str() {
+                return Err(SynapseError::new(
+                    RefusalCode::MutationsUnsorted,
+                    format!("unsorted path in changeset: {} after {}", m.path, prev),
+                ));
+            }
+        }
+        prev_path = Some(&m.path);
+    }
+    Ok(())
 }
 
 /// Validate that a path is a clean, normalized repository-relative POSIX path.
