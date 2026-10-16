@@ -257,13 +257,28 @@ pub enum PmuMode {
 }
 
 /// Affinity of the measured thread (and every thread it creates) during a window.
+/// Serialized as `unpinned`, `a725` or `x925`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub enum AffinityPolicy {
     /// Scheduler's choice; a counter that ran part of the window cannot tell migration
     /// from multiplexing and is reported as `PartialResidency`.
     Unpinned,
     /// Pinned to every CPU of one core class.
     Pinned(CoreClass),
+}
+
+impl TryFrom<String> for AffinityPolicy {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, String> {
+        Self::parse(&s).ok_or_else(|| format!("affinity {s:?}: expected unpinned, a725 or x925"))
+    }
+}
+
+impl From<AffinityPolicy> for String {
+    fn from(a: AffinityPolicy) -> String {
+        a.code().to_string()
+    }
 }
 
 impl AffinityPolicy {

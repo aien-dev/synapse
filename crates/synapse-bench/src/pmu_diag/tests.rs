@@ -438,6 +438,14 @@ fn floor_protocol() -> Protocol {
 #[test]
 fn acceptance1_schema_protocol_refuses_bad_plans() {
     assert!(floor_protocol().validate().is_ok());
+    // Affinity is written in protocols as the same short codes the CLI and doc use.
+    let codes: Vec<crate::pmu::AffinityPolicy> =
+        serde_json::from_str(r#"["unpinned","a725","x925"]"#).unwrap();
+    assert_eq!(
+        serde_json::to_string(&codes).unwrap(),
+        r#"["unpinned","a725","x925"]"#
+    );
+    assert!(serde_json::from_str::<crate::pmu::AffinityPolicy>(r#""Unpinned""#).is_err());
     let mut p = floor_protocol();
     p.schema = "synapse-bench/pmu-diag-protocol/v0".into();
     assert!(p.validate().is_err());
