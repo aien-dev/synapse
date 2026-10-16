@@ -704,6 +704,7 @@ impl Board {
         journal::refuse_coord_root(&root)?;
         let lock = journal::BoardLock::acquire(&root)?;
         let id = journal::ensure_board_id_locked(&root)?;
+        journal::mark_boot_if_fresh(&root)?;
         drop(lock);
         Ok(Board {
             root,

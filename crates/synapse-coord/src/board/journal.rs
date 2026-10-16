@@ -1,24 +1,40 @@
 //! The journal: writer lock, `BOARD_ID`, append with fsync before ACK, the torn-tail rule,
 //! bounded storage, explicit compaction and the read-only consistency check.
 //!
-//! **Commit order of one post** (all under the `fcntl` writer lock on `<root>/.lock`):
+//! **Commit order of one post (group commit).** The `fcntl` writer lock on `<root>/.lock`
+//! is held only for short in-memory and page-cache steps, never across an fsync, so
+//! concurrent writers share their disk flushes:
 //!
-//! 1. append the frame to `journal.log`, `fdatasync` it;
-//! 2. append the id to `topics/<topic>.idx` and to `inbox/<tag>.idx` of every addressee,
-//!    `fdatasync` them together (one fsync group, issued in parallel);
-//! 3. write the 64-byte entry at `(id - base) * 64` of `journal.idx`, `fdatasync` it. This
-//!    entry is the commit point: readers only see ids up to the last valid entry, and every
-//!    index they consult was durable before it;
-//! 4. release the lock, return the receipt (the ACK), then send best-effort wake datagrams.
+//! 1. *lock*: reconcile, append the frame to `journal.log` at the next id, *unlock*;
+//! 2. `fdatasync(journal.log)`. This covers the writer's frame and every frame appended
+//!    before it;
+//! 3. *lock*: commit every pending frame up to its own id, in id order: append the id to
+//!    `topics/<topic>.idx` and to `inbox/<tag>.idx` of every addressee, then write the
+//!    64-byte entry at `(id - base) * 64` of `journal.idx`. That entry is the commit point:
+//!    readers only see ids up to the last valid entry. A frame is committed only after it
+//!    is durable, so `journal.idx` never names a frame a power loss could take. *unlock*;
+//! 4. `fdatasync` `journal.idx` and the touched index files together (one parallel group),
+//!    return the receipt (the ACK), then send best-effort wake datagrams.
 //!
-//! **Torn-tail rule.** Bytes in `journal.log` after the last frame named by `journal.idx`
-//! belong to a post that was never acknowledged. The next writer (and only a writer, under
-//! the lock) reconciles them: a complete frame that verifies (length, CRC-32C, JSON body,
-//! next id, this mission) is adopted with its id (so a retry with the same idempotency key
-//! finds it); anything else is the torn tail and is truncated, reported as
+//! The ACK therefore follows two fsync rounds, and a frame another writer committed for this
+//! one is synced again by this one before its ACK.
+//!
+//! **Pending frames and the torn-tail rule.** Bytes in `journal.log` after the last frame
+//! named by `journal.idx` belong to posts that were not acknowledged: in flight between steps
+//! 1 and 3, or from a writer that died there. A complete frame that verifies (length,
+//! CRC-32C, JSON body, next id, this mission) is pending: the next commit adopts it with its
+//! id (so a retry with the same idempotency key finds it). Anything else is the torn tail of
+//! a writer that died inside step 1 and is truncated, reported as
 //! [`Recovery::torn_tail_at`]. More than one frame's worth of unverifiable bytes is not a
 //! torn tail: it is refused as [`BoardError::Corrupt`], never guessed past. Readers never
 //! truncate; they stop at the commit point.
+//!
+//! **After a reboot.** `journal.idx` and the id indexes are derived from the journal. A
+//! process crash keeps the page cache, so they stay exact; a power loss can lose unsynced
+//! writes to them in any order. `<root>/boot` records the kernel boot id of the last writer
+//! that verified them; the first writer (or reader, through [`Board::recover`]) of a new boot
+//! rebuilds all of them from the journal before anything else
+//! ([`Recovery::rebuilt_after_boot`]).
 
 use super::frame::{
     self, corrupt, key_hash, Entry, ENTRY_BYTES, FRAME_HEADER, H_IDEM, H_THREAD, H_TOPIC, ID_BYTES,
@@ -35,6 +51,8 @@ use std::sync::{Mutex, MutexGuard};
 
 pub(crate) const JOURNAL: &str = "journal.log";
 pub(crate) const TABLE: &str = "journal.idx";
+/// Boot id of the last writer that verified the derived files (see "After a reboot").
+pub(crate) const BOOT: &str = "boot";
 pub(crate) const SUBDIRS: [&str; 6] = ["topics", "inbox", "agents", "subs", "cursors", "wake"];
 
 /// Unverifiable bytes after the commit point larger than this are corruption, not a torn
@@ -56,6 +74,52 @@ fn fault(point: &str) {
 
 pub(crate) fn fault_active(point: &str) -> bool {
     std::env::var("SYNAPSE_COORD_FAULT").as_deref() == Ok(point)
+}
+
+/// This kernel boot (`/proc/sys/kernel/random/boot_id`). `SYNAPSE_BOARD_BOOT_ID` overrides
+/// it so tests can simulate a reboot. None where neither is available: reboots are then not
+/// detected and the derived files are trusted as they are.
+fn boot_id() -> Option<String> {
+    let raw = match std::env::var("SYNAPSE_BOARD_BOOT_ID") {
+        Ok(v) => v,
+        Err(_) => fs::read_to_string("/proc/sys/kernel/random/boot_id").ok()?,
+    };
+    let s = raw.trim();
+    let ok =
+        !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
+    ok.then(|| s.to_string())
+}
+
+/// The boot id stored in `<root>/boot`, or None when missing or unreadable as one.
+fn stored_boot_id(root: &Path) -> Result<Option<String>, BoardError> {
+    let p = root.join(BOOT);
+    let Some(f) = open_ro(&p)? else {
+        return Ok(None);
+    };
+    let mut b = [0u8; 65];
+    let n = f.read_at(&mut b, 0).map_err(io_err(&p))?;
+    Ok(std::str::from_utf8(&b[..n.min(64)])
+        .ok()
+        .map(|s| s.trim().to_string()))
+}
+
+/// A board with no journal yet has nothing derived to verify: record this boot so its first
+/// writer does not report a rebuild. Called by `Board::init` under the lock.
+pub(crate) fn mark_boot_if_fresh(root: &Path) -> Result<(), BoardError> {
+    if fs::symlink_metadata(root.join(JOURNAL)).is_err() {
+        if let Some(b) = boot_id() {
+            crate::durable_write(root, &root.join(BOOT), format!("{b}\n").as_bytes())?;
+        }
+    }
+    Ok(())
+}
+
+/// True when this boot has not yet verified the board's derived files.
+pub(crate) fn needs_boot_rebuild(root: &Path) -> Result<bool, BoardError> {
+    Ok(match boot_id() {
+        Some(b) => stored_boot_id(root)?.as_deref() != Some(b.as_str()),
+        None => false,
+    })
 }
 
 fn refused(path: &Path, reason: RecordRefusal) -> BoardError {
@@ -639,6 +703,33 @@ fn append_id(path: &Path, f: &File, id: u64) -> Result<bool, BoardError> {
     Ok(true)
 }
 
+/// The id index files an event is listed in: its topic, then each distinct addressee.
+fn index_paths(root: &Path, topic: &str, to: &[String]) -> Vec<PathBuf> {
+    let mut paths = vec![topic_file(root, topic)];
+    for t in to {
+        let p = inbox_file(root, t);
+        if !paths.contains(&p) {
+            paths.push(p);
+        }
+    }
+    paths
+}
+
+/// Replace an id index with exactly `ids` (tmp + fsync + rename; the caller syncs the dir).
+fn rewrite_ids(p: &Path, ids: &[u64]) -> Result<(), BoardError> {
+    let mut data = Vec::with_capacity(ids.len() * ID_BYTES as usize);
+    for id in ids {
+        data.extend_from_slice(&id.to_le_bytes());
+    }
+    let mut tmp = p.as_os_str().to_owned();
+    tmp.push(format!(".tmp{}", std::process::id()));
+    let tmp = PathBuf::from(tmp);
+    let mut f = crate::record::create_temp(&tmp)?;
+    f.write_all(&data).map_err(io_err(&tmp))?;
+    f.sync_all().map_err(io_err(&tmp))?;
+    fs::rename(&tmp, p).map_err(io_err(p))
+}
+
 /// `fdatasync` a group of files, in parallel threads (one journal commit can cover them).
 fn sync_group(files: &[(&Path, &File)]) -> Result<(), BoardError> {
     if files.len() <= 1 {
@@ -672,14 +763,17 @@ pub struct Recovery {
     /// A torn (unacknowledged, unverifiable) tail was truncated at this journal offset.
     pub torn_tail_at: Option<u64>,
     pub torn_bytes: u64,
-    /// Complete frames after the commit point (posts that crashed before their ACK) were
-    /// adopted with these ids.
+    /// Complete frames after the commit point written by another writer (one in flight, or
+    /// one that died before its commit) were committed by this one with these ids.
     pub adopted: Vec<u64>,
     /// A partly written final `journal.idx` entry was dropped.
     pub dropped_table_entry: bool,
     /// `journal.idx` disagreed with `journal.log` (a compaction cut between its renames)
     /// and was rebuilt from the journal.
     pub table_rebuilt: bool,
+    /// First writer of this kernel boot: `journal.idx` and every id index were rebuilt from
+    /// the journal (a power loss can lose their unsynced writes).
+    pub rebuilt_after_boot: bool,
 }
 
 impl Recovery {
@@ -688,7 +782,7 @@ impl Recovery {
     }
 }
 
-/// The receipt of a post: returned only after the fsync group, so it is the ACK.
+/// The receipt of a post: returned only after both fsync rounds, so it is the ACK.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PostReceipt {
     pub id: u64,
@@ -700,9 +794,23 @@ pub struct PostReceipt {
     pub woke: usize,
 }
 
+/// A complete, verifying frame after the commit point (see "Pending frames").
+struct Pending {
+    e: Entry,
+    topic: String,
+    to: Vec<String>,
+}
+
+/// Index files written by a commit, to be synced (outside the lock) before the ACK.
+#[derive(Default)]
+struct Touched {
+    files: Vec<(PathBuf, File)>,
+    created: bool,
+}
+
 struct Writer<'a> {
     board: &'a Board,
-    _lock: BoardLock,
+    lock: Option<BoardLock>,
     j: File,
     jp: PathBuf,
     idx: File,
@@ -710,6 +818,9 @@ struct Writer<'a> {
     base: u64,
     last: u64,
     end: u64,
+    pending: Vec<Pending>,
+    /// End of the last pending frame (`end` when there is none).
+    tail_end: u64,
     rec: Recovery,
 }
 
@@ -730,7 +841,7 @@ impl<'a> Writer<'a> {
         }
         let mut w = Writer {
             board,
-            _lock: lock,
+            lock: Some(lock),
             j,
             jp,
             idx,
@@ -738,10 +849,40 @@ impl<'a> Writer<'a> {
             base: 0,
             last: 0,
             end: 0,
+            pending: Vec::new(),
+            tail_end: 0,
             rec: Recovery::default(),
         };
-        w.recover()?;
+        if needs_boot_rebuild(root)? {
+            w.rebuild_after_boot()?;
+        } else {
+            w.recover()?;
+        }
         Ok(w)
+    }
+
+    /// Release the writer lock; the open files stay usable for syncing.
+    fn unlock(&mut self) {
+        self.lock = None;
+    }
+
+    /// The id the next appended frame gets.
+    fn next_id(&self) -> u64 {
+        self.pending.last().map_or(self.last, |p| p.e.id) + 1
+    }
+
+    /// Events committed or pending (the count bounded by `max_events`).
+    fn count(&self) -> u64 {
+        let first = if self.last == 0 {
+            self.pending.first().map_or(0, |p| p.e.id)
+        } else {
+            self.base
+        };
+        if first == 0 {
+            0
+        } else {
+            self.next_id() - first
+        }
     }
 
     fn jlen(&self) -> Result<u64, BoardError> {
@@ -822,7 +963,7 @@ impl<'a> Writer<'a> {
 
     /// Reconcile bytes after the commit point (see the torn-tail rule above).
     fn scan_tail(&mut self, jlen: u64) -> Result<(), BoardError> {
-        let mut adopted: Vec<(Event, Entry)> = Vec::new();
+        self.pending.clear();
         let mut pos = self.end;
         let mut expect = if self.last == 0 {
             None
@@ -842,7 +983,11 @@ impl<'a> Writer<'a> {
                         let e = entry_for(&ev, pos, len, crc);
                         expect = Some(ev.id + 1);
                         pos = e.frame_end();
-                        adopted.push((ev, e));
+                        self.pending.push(Pending {
+                            e,
+                            topic: ev.topic,
+                            to: ev.to,
+                        });
                         None
                     }
                     Ok(ev) => Some(format!("frame id {} out of sequence", ev.id)),
@@ -875,21 +1020,12 @@ impl<'a> Writer<'a> {
                 break;
             }
         }
-        if !adopted.is_empty() {
-            self.j.sync_data().map_err(io_err(&self.jp))?;
-            for (ev, e) in &adopted {
-                self.index_event(ev)?;
-                if self.last == 0 {
-                    self.base = ev.id;
-                }
-                self.write_entry(e)?;
-                self.last = ev.id;
-                self.end = e.frame_end();
-                self.rec.adopted.push(ev.id);
-            }
-        }
+        self.tail_end = pos;
         if self.rec.torn_tail_at.is_some() {
             self.clean_index_tails()?;
+        }
+        if self.rec.table_rebuilt {
+            self.commit_all()?;
         }
         Ok(())
     }
@@ -898,35 +1034,126 @@ impl<'a> Writer<'a> {
         let off = (e.id - if self.last == 0 { e.id } else { self.base }) * ENTRY_BYTES;
         self.idx
             .write_all_at(&e.encode(), off)
-            .map_err(io_err(&self.ip))?;
-        self.idx.sync_data().map_err(io_err(&self.ip))
+            .map_err(io_err(&self.ip))
     }
 
-    /// Append (and fsync) the topic and inbox index entries of one event.
-    fn index_event(&self, ev: &Event) -> Result<(), BoardError> {
-        let files = self.open_indexes(ev)?;
-        for (p, f, _) in &files {
-            append_id(p, f, ev.id)?;
+    /// Commit the pending frames with ids up to `upto`, in id order: index ids first, then
+    /// the table entry. The caller made them durable first (its journal fdatasync covered
+    /// every frame appended before its own). Nothing is synced here; the caller syncs the
+    /// returned files and `journal.idx` before it acknowledges.
+    fn commit_through(&mut self, upto: u64, own: Option<u64>) -> Result<Touched, BoardError> {
+        let n = self.pending.iter().take_while(|p| p.e.id <= upto).count();
+        let batch: Vec<Pending> = self.pending.drain(..n).collect();
+        let mut t = Touched::default();
+        for p in &batch {
+            for (path, f, c) in self.open_indexes(&p.topic, &p.to)? {
+                append_id(&path, &f, p.e.id)?;
+                t.created |= c;
+                if !t.files.iter().any(|(q, _)| *q == path) {
+                    t.files.push((path, f));
+                }
+            }
+            fault("before-table-entry");
+            if self.last == 0 {
+                self.base = p.e.id;
+            }
+            self.write_entry(&p.e)?;
+            self.last = p.e.id;
+            self.end = p.e.frame_end();
+            if Some(p.e.id) != own {
+                self.rec.adopted.push(p.e.id);
+            }
         }
-        let group: Vec<(&Path, &File)> = files.iter().map(|(p, f, _)| (p.as_path(), f)).collect();
+        Ok(t)
+    }
+
+    /// `fdatasync` `journal.idx` and the index files of a commit (one parallel group).
+    fn sync_touched(&self, t: &Touched) -> Result<(), BoardError> {
+        let mut group: Vec<(&Path, &File)> = vec![(self.ip.as_path(), &self.idx)];
+        group.extend(t.files.iter().map(|(p, f)| (p.as_path(), f)));
         sync_group(&group)?;
-        if files.iter().any(|(_, _, c)| *c) {
+        if t.created {
             fsync_dir(&self.board.root().join("topics"));
             fsync_dir(&self.board.root().join("inbox"));
         }
         Ok(())
     }
 
-    fn open_indexes(&self, ev: &Event) -> Result<Vec<(PathBuf, File, bool)>, BoardError> {
-        let root = self.board.root();
-        let mut paths = vec![topic_file(root, &ev.topic)];
-        for t in &ev.to {
-            let p = inbox_file(root, t);
-            if !paths.contains(&p) {
-                paths.push(p);
+    /// Commit every pending frame now, durably (under the lock: recovery and compaction).
+    fn commit_all(&mut self) -> Result<(), BoardError> {
+        let Some(upto) = self.pending.last().map(|p| p.e.id) else {
+            return Ok(());
+        };
+        self.j.sync_data().map_err(io_err(&self.jp))?;
+        let t = self.commit_through(upto, None)?;
+        self.sync_touched(&t)
+    }
+
+    /// First writer of a new kernel boot: the page cache is gone, so only what was synced
+    /// is known to be on disk. Every acknowledged frame was synced; `journal.idx` and the id
+    /// indexes may have lost writes in any order. Rebuild them all from the journal (the
+    /// usual tail rule applies to bytes after the last verifying frame), then record the
+    /// boot id.
+    fn rebuild_after_boot(&mut self) -> Result<(), BoardError> {
+        let root = self.board.root().to_path_buf();
+        let jlen = self.jlen()?;
+        self.idx.set_len(0).map_err(io_err(&self.ip))?;
+        self.base = 0;
+        self.last = 0;
+        self.end = 0;
+        self.scan_tail(jlen)?;
+        self.j.sync_data().map_err(io_err(&self.jp))?;
+        let mut want: std::collections::BTreeMap<PathBuf, Vec<u64>> = Default::default();
+        for d in ["topics", "inbox"] {
+            let Ok(rd) = fs::read_dir(root.join(d)) else {
+                continue;
+            };
+            for ent in rd.filter_map(|e| e.ok()) {
+                let p = ent.path();
+                if p.extension().and_then(|x| x.to_str()) == Some("idx") {
+                    want.entry(p).or_default();
+                }
             }
         }
-        paths
+        for p in &self.pending {
+            for path in index_paths(&root, &p.topic, &p.to) {
+                want.entry(path).or_default().push(p.e.id);
+            }
+        }
+        for (p, ids) in &want {
+            // Vet the existing file first: a planted link or FIFO is refused, not replaced.
+            open_rw(&root, p)?;
+            rewrite_ids(p, ids)?;
+        }
+        fsync_dir(&root.join("topics"));
+        fsync_dir(&root.join("inbox"));
+        let mut table = Vec::with_capacity(self.pending.len() * ENTRY_BYTES as usize);
+        for p in &self.pending {
+            table.extend_from_slice(&p.e.encode());
+        }
+        self.idx.write_all_at(&table, 0).map_err(io_err(&self.ip))?;
+        self.idx.sync_data().map_err(io_err(&self.ip))?;
+        if let (Some(f), Some(l)) = (self.pending.first(), self.pending.last()) {
+            self.base = f.e.id;
+            self.last = l.e.id;
+            self.end = l.e.frame_end();
+        }
+        self.pending.clear();
+        self.tail_end = self.end;
+        self.rec.rebuilt_after_boot = true;
+        if let Some(b) = boot_id() {
+            crate::durable_write(&root, &root.join(BOOT), format!("{b}\n").as_bytes())?;
+        }
+        Ok(())
+    }
+
+    fn open_indexes(
+        &self,
+        topic: &str,
+        to: &[String],
+    ) -> Result<Vec<(PathBuf, File, bool)>, BoardError> {
+        let root = self.board.root();
+        index_paths(root, topic, to)
             .into_iter()
             .map(|p| open_rw(root, &p).map(|(f, c)| (p, f, c)))
             .collect()
@@ -969,6 +1196,50 @@ impl<'a> Writer<'a> {
     fn snapshot(&self) -> Result<Snapshot, BoardError> {
         Snapshot::take(self.board)
     }
+
+    /// The event with idempotency key `k`, committed or pending: `Ok(id)` when its content
+    /// equals `p`, `Err(id)` when it differs.
+    fn find_idem(&self, k: &str, p: &Post) -> Result<Option<Result<u64, u64>>, BoardError> {
+        let h = key_hash(H_IDEM, k.as_bytes());
+        let judge = |ev: &Event| {
+            if same_content(ev, p) {
+                Ok(ev.id)
+            } else {
+                Err(ev.id)
+            }
+        };
+        let snap = self.snapshot()?;
+        let mut hit = None;
+        snap.scan(snap.base, |e| {
+            if e.idem_h == h {
+                let ev = snap.event(e)?;
+                if ev.idem.as_deref() == Some(k) {
+                    hit = Some(judge(&ev));
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        })?;
+        if hit.is_some() {
+            return Ok(hit);
+        }
+        let jlen = self.jlen()?;
+        for pe in &self.pending {
+            if pe.e.idem_h != h {
+                continue;
+            }
+            let ev = match read_frame(&self.j, &self.jp, pe.e.offset, jlen)? {
+                Ok((_, _, body)) => {
+                    Event::from_body(&body).map_err(|r| corrupt(&self.jp, pe.e.offset, r))?
+                }
+                Err(b) => return Err(corrupt(&self.jp, pe.e.offset, b.reason())),
+            };
+            if ev.idem.as_deref() == Some(k) {
+                return Ok(Some(judge(&ev)));
+            }
+        }
+        Ok(None)
+    }
 }
 
 fn same_content(ev: &Event, p: &Post) -> bool {
@@ -982,7 +1253,8 @@ fn same_content(ev: &Event, p: &Post) -> bool {
 }
 
 impl Board {
-    /// Append one event. Returns only after the fsync group (the ACK). With an idempotency
+    /// Append one event (group commit, see the module docs). Returns only after both fsync
+    /// rounds (the ACK). With an idempotency
     /// key already used for the same body, returns that event's id (`dedup`); with a
     /// different body, refuses with [`BoardError::IdempotencyConflict`]. The body comparison
     /// covers thread, topic, to, kind, parent, text and refs, not the sender: two agents
@@ -993,44 +1265,32 @@ impl Board {
             tag: p.from_tag.clone(),
             session: p.from.clone(),
         };
-        let mut w = Writer::open(self)?;
+        // Step 1, under the lock: reconcile, check, append.
+        let w = Writer::open(self)?;
         let binding = self.check_binding(me)?;
         self.touch_locked(me, &binding)?;
+        let newest = w.next_id() - 1;
         if let Some(parent) = p.parent {
-            if parent > w.last {
+            if parent > newest {
                 return Err(BoardError::BadParent {
                     parent,
-                    last: w.last,
+                    last: newest,
                 });
             }
         }
         if let Some(k) = &p.idem {
-            let h = key_hash(H_IDEM, k.as_bytes());
-            let snap = w.snapshot()?;
-            let mut hit: Option<Result<u64, u64>> = None;
-            snap.scan(snap.base, |e| {
-                if e.idem_h == h {
-                    let ev = snap.event(e)?;
-                    if ev.idem.as_deref() == Some(k.as_str()) {
-                        hit = Some(if same_content(&ev, p) {
-                            Ok(ev.id)
-                        } else {
-                            Err(ev.id)
-                        });
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            })?;
-            match hit {
+            match w.find_idem(k, p)? {
                 Some(Ok(id)) => {
+                    // The first event may still be pending: make it durable and committed
+                    // before answering, exactly as its own writer does.
+                    let recovery = self.finish_commit(w, id, None)?;
                     return Ok(PostReceipt {
                         id,
                         mission: self.id(),
                         dedup: true,
-                        recovery: w.rec.clone(),
+                        recovery,
                         woke: 0,
-                    })
+                    });
                 }
                 Some(Err(existing)) => {
                     return Err(BoardError::IdempotencyConflict {
@@ -1042,15 +1302,14 @@ impl Board {
             }
         }
         let lim = self.limits();
-        let count = if w.last == 0 { 0 } else { w.last - w.base + 1 };
-        if count >= lim.max_events {
+        if w.count() >= lim.max_events {
             return Err(BoardError::BoardFull {
                 what: "events",
                 limit: lim.max_events,
             });
         }
         let ev = Event {
-            id: w.last + 1,
+            id: w.next_id(),
             from_tag: me.tag.clone(),
             from: me.session.clone(),
             mission: self.id(),
@@ -1073,7 +1332,7 @@ impl Board {
             });
         }
         let frame_bytes = frame::encode_frame(&body);
-        if w.end + frame_bytes.len() as u64 > lim.max_journal_bytes {
+        if w.tail_end + frame_bytes.len() as u64 > lim.max_journal_bytes {
             return Err(BoardError::BoardFull {
                 what: "journal bytes",
                 limit: lim.max_journal_bytes,
@@ -1081,32 +1340,16 @@ impl Board {
         }
         // Open (and so vet) every index file before the journal is touched: a FIFO or link
         // planted under topics/ or inbox/ refuses the post with nothing written.
-        let files = w.open_indexes(&ev)?;
-        let entry = entry_for(&ev, w.end, body.len() as u32, frame::crc32c(&body));
+        w.open_indexes(&ev.topic, &ev.to)?;
         if fault_active("torn-journal-write") {
             let half = frame_bytes.len() / 2;
-            let _ = w.j.write_all_at(&frame_bytes[..half], w.end);
+            let _ = w.j.write_all_at(&frame_bytes[..half], w.tail_end);
             std::process::exit(FAULT_EXIT);
         }
-        w.j.write_all_at(&frame_bytes, w.end)
+        w.j.write_all_at(&frame_bytes, w.tail_end)
             .map_err(io_err(&w.jp))?;
-        fault("before-journal-fsync");
-        w.j.sync_data().map_err(io_err(&w.jp))?;
-        fault("after-journal-before-index");
-        for (pth, f, _) in &files {
-            append_id(pth, f, ev.id)?;
-        }
-        let group: Vec<(&Path, &File)> = files.iter().map(|(p, f, _)| (p.as_path(), f)).collect();
-        sync_group(&group)?;
-        if files.iter().any(|(_, _, c)| *c) {
-            fsync_dir(&self.root().join("topics"));
-            fsync_dir(&self.root().join("inbox"));
-        }
-        fault("before-table-entry");
-        w.write_entry(&entry)?;
+        let recovery = self.finish_commit(w, ev.id, Some(frame::crc32c(&body)))?;
         fault("before-ack");
-        let recovery = w.rec.clone();
-        drop(w);
         let woke = if fault_active("drop-wake") {
             0
         } else {
@@ -1121,9 +1364,75 @@ impl Board {
         })
     }
 
-    /// Run writer recovery now (what the next post would do first) and report it.
+    /// Steps 2 to 4 of a post for event `id`, appended or pending in `w` (which holds the
+    /// lock): unlock, `fdatasync` the journal, commit every pending frame up to `id` under
+    /// the lock, unlock, then sync `journal.idx` and the event's index files. With `crc`,
+    /// the committed entry must be that frame. Returns both steps' recovery, merged.
+    fn finish_commit(
+        &self,
+        mut w: Writer<'_>,
+        id: u64,
+        crc: Option<u32>,
+    ) -> Result<Recovery, BoardError> {
+        let mut rec = std::mem::take(&mut w.rec);
+        w.unlock();
+        fault("before-journal-fsync");
+        w.j.sync_data().map_err(io_err(&w.jp))?;
+        fault("after-journal-before-index");
+        drop(w);
+        let mut w = Writer::open(self)?;
+        let mut t = if id > w.last {
+            w.commit_through(id, Some(id))?
+        } else {
+            Touched::default()
+        };
+        if id > w.last {
+            return Err(BoardError::Io {
+                path: w.jp.clone(),
+                source: std::io::Error::other(format!(
+                    "event {id} vanished from the journal before its commit"
+                )),
+            });
+        }
+        if id >= w.base {
+            // Sync the event's own index files too when another writer committed it.
+            let snap = w.snapshot()?;
+            let e = snap.entry(id)?;
+            if crc.is_some_and(|c| c != e.crc) {
+                return Err(corrupt(
+                    &w.jp,
+                    e.offset,
+                    format!("event {id} committed with another frame than this post wrote"),
+                ));
+            }
+            let ev = snap.event(&e)?;
+            for (path, f, c) in w.open_indexes(&ev.topic, &ev.to)? {
+                t.created |= c;
+                if !t.files.iter().any(|(q, _)| *q == path) {
+                    t.files.push((path, f));
+                }
+            }
+        }
+        w.unlock();
+        w.sync_touched(&t)?;
+        let r = std::mem::take(&mut w.rec);
+        if rec.torn_tail_at.is_none() {
+            rec.torn_tail_at = r.torn_tail_at;
+        }
+        rec.torn_bytes += r.torn_bytes;
+        rec.adopted.extend(r.adopted);
+        rec.dropped_table_entry |= r.dropped_table_entry;
+        rec.table_rebuilt |= r.table_rebuilt;
+        rec.rebuilt_after_boot |= r.rebuilt_after_boot;
+        Ok(rec)
+    }
+
+    /// Run writer recovery now and report it: reconcile the tail, rebuild after a reboot,
+    /// and commit (durably) every pending frame.
     pub fn recover(&self) -> Result<Recovery, BoardError> {
-        Ok(Writer::open(self)?.rec)
+        let mut w = Writer::open(self)?;
+        w.commit_all()?;
+        Ok(w.rec)
     }
 
     /// Last committed id (0 when empty) and the oldest kept id (0 when empty).
@@ -1140,7 +1449,9 @@ impl Board {
         keep_since: u64,
         expire_cursors: bool,
     ) -> Result<CompactReport, BoardError> {
-        let w = Writer::open(self)?;
+        let mut w = Writer::open(self)?;
+        // Pending frames would be lost by the rewrite: commit them first.
+        w.commit_all()?;
         if w.last == 0 || keep_since <= w.base || keep_since > w.last {
             return Err(BoardError::BadKeepSince {
                 keep_since,
@@ -1225,17 +1536,7 @@ impl Board {
                 }
                 let (ids, _) =
                     read_ids_after(&p, base - 1, u64::MAX, usize::MAX, self.limits().max_events)?;
-                let mut data = Vec::with_capacity(ids.len() * 8);
-                for id in ids {
-                    data.extend_from_slice(&id.to_le_bytes());
-                }
-                let mut tmp = p.as_os_str().to_owned();
-                tmp.push(format!(".tmp{}", std::process::id()));
-                let tmp = PathBuf::from(tmp);
-                let mut f = crate::record::create_temp(&tmp)?;
-                f.write_all(&data).map_err(io_err(&tmp))?;
-                f.sync_all().map_err(io_err(&tmp))?;
-                fs::rename(&tmp, &p).map_err(io_err(&p))?;
+                rewrite_ids(&p, &ids)?;
             }
             fsync_dir(&dir);
         }
