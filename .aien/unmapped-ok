@@ -1,0 +1,8 @@
+# Changed paths matching these globs need only the always-run set (.aien/always).
+# Everything else must be covered by a manifest's inputs or the commit is NOT_RUN.
+# Conservative: the hosted portable workflow has no path filter, so only pure
+# documentation is listed. Read from the base ref.
+docs/**
+*.md
+LICENSE
+.gitignore

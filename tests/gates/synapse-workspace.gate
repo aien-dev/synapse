@@ -1,0 +1,25 @@
+# tests/gates/synapse-workspace.gate
+# Mirrors hosted: portable.yml matrix gate 'workspace' (bash scripts/ci/portable.sh workspace, Rust 1.98.1)
+# .crumb is an input: crates/synapse-crumb/tests/repo_root.rs parses the root crumb.
+gate: SYNAPSE-WORKSPACE
+manifest_version: 2
+owner: synapse
+requires:
+  - host
+inputs:
+  - .crumb
+  - Cargo.toml
+  - Cargo.lock
+  - crates/
+  - scripts/
+  - evidence/
+  - tests/gates/
+run:
+  exec: tests/gates/run.sh
+  args: ["workspace"]
+expects:
+  exit: 0
+  verdict: PASS
+timeout: 30m
+exactness: EXACT
+cache_scope: machine
