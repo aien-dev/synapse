@@ -1,0 +1,34 @@
+{
+  "agents": 1,
+  "arms": [
+    "wire",
+    "direct_auth",
+    "direct"
+  ],
+  "bound": {
+    "e_floor_formula": "22.731 W x t_floor + 0.2766 mJ",
+    "e_floor_j": 0.018608651620894968,
+    "fraction": "floor / measured (1.0 = at the floor)",
+    "source": "docs/PHASE5_GROUP_COMMIT.md section 5 (ADR 0003 section 6 durable latency for one change)",
+    "t_floor_formula": "0.805 ms + 11500 B x 0.138 s/GiB",
+    "t_floor_s": 0.0008064780089259148
+  },
+  "chain_depth": 2,
+  "changes_per_arm": 2000,
+  "declared_before_run": true,
+  "energy_sensor": "aien_spbm hwmon: SoC package only, uncalibrated; NVMe UNMEASURED",
+  "fsync_policy": "GROUP_COMMIT_DEFAULT",
+  "git_rev": "2e942f30db474ac0c5f41e350db0f048cd3192d1",
+  "idle_window_s": 30,
+  "order": "rotated per repetition",
+  "per_change": {
+    "new_blob_bytes": 3967,
+    "paths": 2,
+    "shared_blob_bytes": 3967
+  },
+  "reps": 3,
+  "step": "G1",
+  "store_root": "target/wire-transport-stores",
+  "tool": "wire-transport",
+  "transport": "std::os::unix::net::UnixStream pair, client and server threads in one process"
+}

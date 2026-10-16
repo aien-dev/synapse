@@ -1,0 +1,74 @@
+# Red (2026-10-16, G1 working tree on base e863c87, before the first commit)
+# Command: cargo test --no-fail-fast -p synapse-wire --test g1_wire --test g1_fuzz
+# Every failure below is an assertion on the behaviour under test (no compile error).
+#
+# Red 1 stub: the frame body decoder is unimplemented (frame.rs body_probed: every body
+#   is refused as Truncated). Header checks, transport and server code unchanged.
+test negative_control_fuzzer_finds_planted_allocation_over_cap ... ok
+test negative_control_fuzzer_finds_planted_panic ... ok
+test negative_control_fuzzer_finds_planted_read_past_frame ... FAILED
+test negative_control_fuzzer_finds_planted_non_canonical_accept ... FAILED
+test every_malformed_frame_in_fuzz_corpus_is_refused_with_typed_refusal ... FAILED
+test fuzzing_frame_decoder_finds_no_panic_no_read_past_frame_no_allocation_over_cap ... FAILED
+thread 'negative_control_fuzzer_finds_planted_read_past_frame' (365422) panicked at crates/synapse-wire/tests/g1_fuzz.rs:148:5:
+planted read_past_frame bug not found; counts {}
+thread 'negative_control_fuzzer_finds_planted_non_canonical_accept' (365420) panicked at crates/synapse-wire/tests/g1_fuzz.rs:148:5:
+planted non_canonical_accept bug not found; counts {}
+thread 'every_malformed_frame_in_fuzz_corpus_is_refused_with_typed_refusal' (365417) panicked at crates/synapse-wire/tests/g1_fuzz.rs:110:5:
+accepted 0 of 14 valid seeds
+thread 'fuzzing_frame_decoder_finds_no_panic_no_read_past_frame_no_allocation_over_cap' (365418) panicked at crates/synapse-wire/tests/g1_fuzz.rs:92:9:
+no accepted Hello
+test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+test malformed_body_is_refused_with_typed_refusal ... ok
+test malformed_header_is_refused_with_typed_refusal ... ok
+test every_frame_kind_round_trips_to_identical_bytes ... FAILED
+test decoder_never_reads_past_a_frame ... FAILED
+test stream_reader_refuses_length_over_cap_before_reading_the_body ... ok
+test server_closes_connection_on_frame_before_hello_or_malformed_frame ... FAILED
+test server_refuses_protocol_violations_with_typed_refusals ... FAILED
+test have_want_sends_only_missing_chunks_and_acknowledges_durable_changes ... FAILED
+thread 'every_frame_kind_round_trips_to_identical_bytes' (365505) panicked at crates/synapse-wire/tests/g1_wire.rs:36:58:
+called `Result::unwrap()` on an `Err` value: Truncated { at: 16, need: 0 }
+thread 'decoder_never_reads_past_a_frame' (365504) panicked at crates/synapse-wire/tests/g1_wire.rs:206:60:
+called `Result::unwrap()` on an `Err` value: Truncated { at: 16, need: 0 }
+thread 'server_closes_connection_on_frame_before_hello_or_malformed_frame' (365509) panicked at crates/synapse-wire/tests/g1_wire.rs:530:50:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: WireFrameMalformed, message: "wire frame: Truncated (Truncated { at: 16, need: 0 })" }
+thread 'server_refuses_protocol_violations_with_typed_refusals' (365510) panicked at crates/synapse-wire/tests/g1_wire.rs:245:59:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: WireFrameMalformed, message: "wire frame: Truncated (Truncated { at: 16, need: 0 })" }
+thread 'have_want_sends_only_missing_chunks_and_acknowledges_durable_changes' (365506) panicked at crates/synapse-wire/tests/g1_wire.rs:245:59:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: WireFrameMalformed, message: "wire frame: Truncated (Truncated { at: 16, need: 0 })" }
+test result: FAILED. 3 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+# Red 2 stubs (body decoder intact): the header checks for magic, flags and reserved
+#   bytes are off, the trailing-bytes check is off (frame.rs), the server wants every
+#   offered digest instead of only the missing ones, and accepts chunks it did not ask for
+#   or whose bytes do not match their digest (session.rs). The read timeout turns the
+#   missing refusal into a failure instead of a hang.
+test negative_control_fuzzer_finds_planted_read_past_frame ... ok
+test negative_control_fuzzer_finds_planted_panic ... ok
+test negative_control_fuzzer_finds_planted_allocation_over_cap ... ok
+test negative_control_fuzzer_finds_planted_non_canonical_accept ... ok
+test every_malformed_frame_in_fuzz_corpus_is_refused_with_typed_refusal ... FAILED
+test fuzzing_frame_decoder_finds_no_panic_no_read_past_frame_no_allocation_over_cap ... FAILED
+thread 'every_malformed_frame_in_fuzz_corpus_is_refused_with_typed_refusal' (366021) panicked at crates/synapse-wire/tests/g1_fuzz.rs:106:5:
+[(14, "[(\"non_canonical_accept\", \"re-encoded 28 bytes differ from 28\")]"), (18, "[(\"non_canonical_accept\", \"re-encoded 28 bytes differ from 28\")]"), (19, "[(\"non_canonical_accept\", \"re-encoded 28 bytes differ from 28\")]"), (22, 
+thread 'fuzzing_frame_decoder_finds_no_panic_no_read_past_frame_no_allocation_over_cap' (366022) panicked at crates/synapse-wire/tests/g1_fuzz.rs:66:5:
+assertion `left == right` failed: violations: [("non_canonical_accept", "re-encoded 28 bytes differ from 28"), ("non_canonical_accept", "re-encoded 28 bytes differ from 28"), ("non_canonical_accept", "re-encoded 28 bytes differ from 28"), (
+  left: 27218
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s
+test malformed_body_is_refused_with_typed_refusal ... ok
+test malformed_header_is_refused_with_typed_refusal ... FAILED
+test every_frame_kind_round_trips_to_identical_bytes ... ok
+test stream_reader_refuses_length_over_cap_before_reading_the_body ... ok
+test decoder_never_reads_past_a_frame ... ok
+test server_closes_connection_on_frame_before_hello_or_malformed_frame ... ok
+test have_want_sends_only_missing_chunks_and_acknowledges_durable_changes ... FAILED
+test server_refuses_protocol_violations_with_typed_refusals ... FAILED
+thread 'malformed_header_is_refused_with_typed_refusal' (366472) panicked at crates/synapse-wire/tests/g1_wire.rs:78:54:
+called `Result::unwrap_err()` on an `Ok` value: (Frame { request_id: 0, body: Hello(Hello { max_frame_body: 4096, max_pending_chunk_bytes: 1048576 }) }, 28)
+thread 'have_want_sends_only_missing_chunks_and_acknowledges_durable_changes' (366470) panicked at crates/synapse-wire/tests/g1_wire.rs:288:9:
+assertion `left == right` failed
+  left: (2, 2)
+thread 'server_refuses_protocol_violations_with_typed_refusals' (366474) panicked at crates/synapse-wire/tests/g1_wire.rs:369:64:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: IoFailure, message: "wire transport: Resource temporarily unavailable (os error 11)" }
+test result: FAILED. 5 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.30s

@@ -93,7 +93,7 @@ During `checkpoint_and_compact(now_ms)`:
 ## 5. Deterministic Failure and Refusal Codes (`RefusalCode`)
 
 Every error path returns a typed `RefusalCode`:
-* Storage & Integrity: `BlobDigestMismatch`, `BlobImmutableConflict`, `WalMagicInvalid`, `WalVersionUnsupported`, `WalCrcMismatch`, `WalChainMismatch`, `WalSequenceGap`, `WalTornFrame`, `WalRecordMalformed` (a binary v2 record that fails canonical decoding), `CheckpointCorrupt`, `IoFailure`
+* Storage & Integrity: `BlobDigestMismatch`, `BlobImmutableConflict`, `WalMagicInvalid`, `WalVersionUnsupported`, `WalCrcMismatch`, `WalChainMismatch`, `WalSequenceGap`, `WalTornFrame`, `WalRecordMalformed` (a binary v2 record that fails canonical decoding), `WireFrameMalformed` (a binary wire frame that fails canonical decoding, step G1), `WireProtocolViolation` (a well-formed wire frame out of have-want order, step G1), `CheckpointCorrupt`, `IoFailure`
 * Capacity & Backpressure: `BackpressureOverCapacity`, `QuotaPayloadTooLarge`, `QuotaTooManyPaths`, `QuotaRateLimitExceeded`, `PaginationLimitExceeded`
 * Schema & Path Validation: `EnvelopeVersionUnsupported`, `PathInvalid`, `PathDuplicate`, `MutationsUnsorted`, `BaseTreeNotFound`, `ParentChangesetNotFound`, `ChangesetNotFound`, `VisibilitySeqAhead`, `IdempotencyKeyConflict`
 * Auth & Security: `AuthSignatureInvalid`, `AuthGrantSignatureInvalid`, `AuthGrantExpired`, `AuthCapabilityDenied`, `AuthCrossRepoDenied`, `AuthReplayDetected`, `AuthSelfReviewRefused`

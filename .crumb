@@ -39,6 +39,10 @@
     {
       "name": "synapse-coord",
       "role": "Shared agent coordination plane (claims, presence, whispers) byte-compatible with the crumb.c RFC-0002 store; never history, evidence, or authority (ADR 0004)"
+    },
+    {
+      "name": "synapse-wire",
+      "role": "Binary wire frames with a fuzzed decoder, have-want chunk negotiation, and stream transports (ADR 0003 step G1)"
     }
   ],
   "invariants": [],
@@ -55,7 +59,8 @@
         "synapse-radicle": "crates/synapse-radicle",
         "synapse-bench": "crates/synapse-bench",
         "synapse-crumb": "crates/synapse-crumb",
-        "synapse-coord": "crates/synapse-coord"
+        "synapse-coord": "crates/synapse-coord",
+        "synapse-wire": "crates/synapse-wire"
       },
       "migrated_from": {
         "dialect": "D3 (schema: \"crumb/v1\", ADR 0004)",
