@@ -14,13 +14,13 @@ use synapse_core::{FileMode, GitOid, PathMutation, SYNAPSE_ENVELOPE_VERSION};
 
 const STRICT: RecoveryPolicy = RecoveryPolicy::StrictFailClosed;
 
-fn fixture_dir(name: &str) -> PathBuf {
+pub(super) fn fixture_dir(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/a1-v1")
         .join(name)
 }
 
-fn copy_tree(src: &Path, dst: &Path) {
+pub(super) fn copy_tree(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).unwrap();
     for e in fs::read_dir(src).unwrap() {
         let e = e.unwrap();
@@ -34,19 +34,19 @@ fn copy_tree(src: &Path, dst: &Path) {
 }
 
 /// Copy a fixture store into a fresh temporary directory (opening a store writes to it).
-fn copy_fixture(name: &str) -> PathBuf {
+pub(super) fn copy_fixture(name: &str) -> PathBuf {
     let dir = temp_store_dir(&format!("a1-{name}"));
     copy_tree(&fixture_dir(name), &dir);
     let _ = fs::remove_file(dir.join("EXPECT"));
     dir
 }
 
-struct Expect {
-    committed_seq: u64,
-    state_root: [u8; 32],
+pub(super) struct Expect {
+    pub(super) committed_seq: u64,
+    pub(super) state_root: [u8; 32],
 }
 
-fn expect(name: &str) -> Expect {
+pub(super) fn expect(name: &str) -> Expect {
     let text = fs::read_to_string(fixture_dir(name).join("EXPECT")).unwrap();
     let field = |k: &str| {
         text.lines()
@@ -112,11 +112,26 @@ fn v1_flags(dir: &Path) -> Vec<u8> {
         .collect()
 }
 
+/// Flags of the frames written after the current checkpoint. With the segment store
+/// (ADR 0003 A2) a checkpoint keeps the segments whole, so these are the frames from the
+/// replay position of the checkpoint's segment index on.
 fn v2_flags(dir: &Path) -> Vec<u8> {
-    v2_log_frames(&fs::read(dir.join(wal2::WAL_V2_FILE)).unwrap())
-        .into_iter()
-        .map(|(_, f, _)| f)
-        .collect()
+    let binding = segment::checkpoint_binding(dir).unwrap();
+    let (first, off) = segment::SegmentIndex::load(dir, &binding)
+        .map(|i| (i.replay_segment, i.replay_offset as usize))
+        .unwrap_or((1, 0));
+    let last = segment::list_segments(dir)
+        .unwrap()
+        .last()
+        .copied()
+        .unwrap_or(1);
+    let mut out = Vec::new();
+    for id in first..=last {
+        let bytes = fs::read(dir.join(segment::segment_file_name(id))).unwrap();
+        let from = if id == first { off } else { 0 };
+        out.extend(v2_log_frames(&bytes[from..]).into_iter().map(|(_, f, _)| f));
+    }
+    out
 }
 
 /// Every v1 JSON record payload in both fixtures.

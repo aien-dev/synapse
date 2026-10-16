@@ -1,0 +1,12 @@
+agents 1 rep 0: 4000 accepted in 5.201 s, 4000 batches, 4 segment files
+agents 4 rep 0: 4000 accepted in 2.380 s, 1841 batches, 4 segment files
+agents 8 rep 0: 4000 accepted in 1.339 s, 974 batches, 4 segment files
+agents 32 rep 0: 4000 accepted in 0.514 s, 256 batches, 4 segment files
+agents 1 rep 1: 4000 accepted in 5.206 s, 4000 batches, 4 segment files
+agents 4 rep 1: 4000 accepted in 2.400 s, 1841 batches, 4 segment files
+agents 8 rep 1: 4000 accepted in 1.338 s, 1011 batches, 4 segment files
+agents 32 rep 1: 4000 accepted in 0.497 s, 254 batches, 4 segment files
+agents 1 rep 2: 4000 accepted in 5.146 s, 4000 batches, 4 segment files
+agents 4 rep 2: 4000 accepted in 2.430 s, 1871 batches, 4 segment files
+agents 8 rep 2: 4000 accepted in 1.359 s, 998 batches, 4 segment files
+agents 32 rep 2: 4000 accepted in 0.745 s, 257 batches, 4 segment files

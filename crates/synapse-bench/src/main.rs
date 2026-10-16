@@ -15,6 +15,9 @@
 //! synapse-bench pmu-diag --evidence <dir with protocol.json> --work-dir <dir> [--fixture-repo <path>]
 //!     [--source-rev R] [--sibling name=rev]...   (opt-in CPU PMU diagnostics; see docs/BENCH_PMU_DIAGNOSTICS.md)
 //! synapse-bench pmu-verify --evidence <dir>
+//! synapse-bench segments --dir <dir on the store filesystem> --out <raw.json> [--agents 1,4,8,32]
+//!     [--changes N] [--reps N] [--blob-bytes N] [--segment-mib N] [--checkpoint-every N] [--idle-window-s S]
+//! synapse-bench segments-report --raw <raw.json> --floor <floor.json>   (prints the A2 report)
 //! ```
 
 use std::path::PathBuf;
@@ -460,6 +463,68 @@ fn c1(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// `segments`: ADR 0003 A2 segment store measurement (raw samples to `--out`).
+fn segments(args: &[String]) -> Result<(), String> {
+    let opts = parse_pairs(
+        args,
+        &[
+            "--dir",
+            "--out",
+            "--agents",
+            "--changes",
+            "--reps",
+            "--blob-bytes",
+            "--segment-mib",
+            "--checkpoint-every",
+            "--idle-window-s",
+        ],
+    )?;
+    let get = |k: &str| {
+        opts.iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.clone())
+    };
+    let num = |k: &str, d: u64| -> Result<u64, String> {
+        get(k).map_or(Ok(d), |v| v.parse().map_err(|_| format!("invalid {k}")))
+    };
+    let cfg = synapse_bench::segments::SegmentsConfig {
+        agents: parse_list(&get("--agents").unwrap_or_else(|| "1,4,8,32".into()), |x| {
+            x.parse().ok().filter(|n| *n > 0)
+        })?,
+        changes: num("--changes", 4000)? as usize,
+        reps: num("--reps", 3)? as usize,
+        blob_bytes: num("--blob-bytes", 11_949)? as usize,
+        segment_bytes: num("--segment-mib", 16)? * 1024 * 1024,
+        checkpoint_every: num("--checkpoint-every", 1000)? as usize,
+        idle_window_s: num("--idle-window-s", 30)?,
+    };
+    let dir = PathBuf::from(get("--dir").ok_or("missing --dir")?);
+    let out = PathBuf::from(get("--out").ok_or("missing --out")?);
+    let raw = synapse_bench::segments::run_segments(&dir, &cfg)?;
+    synapse_bench::write_json(&out, &raw)
+}
+
+/// `segments-report`: recompute the A2 report from `--raw` and a `--floor` report.
+fn segments_report(args: &[String]) -> Result<(), String> {
+    use std::io::Write;
+    let opts = parse_pairs(args, &["--raw", "--floor"])?;
+    let get = |k: &str| {
+        opts.iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| PathBuf::from(v))
+            .ok_or(format!("missing {k}"))
+    };
+    let raw: synapse_bench::segments::SegmentsRaw = synapse_bench::read_json(&get("--raw")?)?;
+    let floor: synapse_bench::floor::FloorReport = synapse_bench::read_json(&get("--floor")?)?;
+    let report = synapse_bench::segments::segments_report(&raw, &floor)?;
+    let bytes = serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?;
+    std::io::stdout()
+        .write_all(&bytes)
+        .map_err(|e| format!("write stdout: {e}"))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
@@ -474,6 +539,8 @@ fn main() -> ExitCode {
         Some("pmu-verify") => pmu_verify(&args[1..]),
         Some("crypto-vectors-write") => crypto_vectors_write(&args[1..]),
         Some("crypto-vectors-verify") => crypto_vectors_verify(&args[1..]),
+        Some("segments") => segments(&args[1..]),
+        Some("segments-report") => segments_report(&args[1..]),
         _ => Err("usage: synapse-bench run ... | synapse-bench child ... (see crate docs)".into()),
     };
     match outcome {

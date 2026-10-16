@@ -32,6 +32,7 @@ pub mod query;
 pub mod recovery;
 pub mod rng;
 pub mod rusage;
+pub mod segments;
 pub mod stats;
 pub mod synapse_arm;
 pub mod tree_parity;

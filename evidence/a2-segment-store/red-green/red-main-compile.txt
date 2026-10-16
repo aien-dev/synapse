@@ -1,0 +1,17 @@
+# Red 1: the A2 crash suite (crates/synapse-store/src/segment_tests.rs) compiled against main e863c87
+# (the suite file plus 'mod segment_tests;' added to a main checkout). It cannot build: main has no
+# segment store, no segment size limit, and none of the four A2 fault injections.
+# cargo test -p synapse-store --lib segment_tests 2>&1 | grep '^error' | sort | uniq -c
+      7 error[E0433]: cannot find module or crate `segment` in this scope
+      5 error[E0609]: no field `trace` on type `&WalV2Writer`
+      2 error[E0599]: no variant, associated function, or constant named `FailNextSegmentDirSync` found for enum `FaultInjection` in the current scope
+      2 error[E0599]: no method named `write_offset` found for reference `&WalV2Writer` in the current scope
+      2 error[E0599]: no method named `active` found for reference `&WalV2Writer` in the current scope
+      1 error[E0609]: no field `log_layout` on type `SynapseStore`
+      1 error[E0599]: no variant, associated function, or constant named `CrashAfterSegmentIndexBeforeCheckpoint` found for enum `FaultInjection` in the current scope
+      1 error[E0599]: no variant, associated function, or constant named `CrashAfterSegmentCreateBeforeDirSync` found for enum `FaultInjection` in the current scope
+      1 error[E0599]: no variant, associated function, or constant named `CrashAfterBatchSyncBeforeIndex` found for enum `FaultInjection` in the current scope
+      1 error[E0560]: struct `StoreLimits` has no field named `segment_bytes`
+      1 error[E0433]: cannot find type `LogLayout` in this scope
+      1 error[E0432]: unresolved import `segment`
+      1 error: could not compile `synapse-store` (lib test) due to 25 previous errors
