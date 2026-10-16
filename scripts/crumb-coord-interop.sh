@@ -14,7 +14,7 @@
 # needs: bash, git, cc, cargo, sha256sum, grep. No Python.
 set -u
 PIN=29780e5
-HARD_PIN=${CRUMB_HARD_REV:-bb45e3d20294d2a3d4d7a910a273129f4c45c2f4}
+HARD_PIN=${CRUMB_HARD_REV:-dbc688c826a9443dbdc46a36d3677a11a60ce140}
 ARCH=${1:-${AIEN_ARCH:-$HOME/workspace/aien-architecture}}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
