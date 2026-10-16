@@ -35,6 +35,13 @@ pub enum RefusalCode {
     WalTornFrame,
     /// A WAL record payload passed its checksums but does not decode (binary codec v2).
     WalRecordMalformed,
+    /// A binary wire frame is not in its one canonical encoding: bad magic, version, flags,
+    /// kind, length over the negotiated cap, truncated, or a malformed body (step G1).
+    WireFrameMalformed,
+    /// A well-formed wire frame arrived out of protocol order: no hello first, a want that is
+    /// not a subset of the have, an unsolicited or repeated chunk, or a submit before every
+    /// wanted chunk arrived (step G1).
+    WireProtocolViolation,
     CheckpointCorrupt,
     IoFailure,
 

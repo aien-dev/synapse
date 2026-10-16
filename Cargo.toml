@@ -11,6 +11,7 @@ members = [
     "crates/synapse-crumb",
     "crates/synapse-coord",
     "crates/synapse-evidence",
+    "crates/synapse-wire",
 ]
 
 [workspace.package]
@@ -43,6 +44,7 @@ synapse-evidence = { path = "crates/synapse-evidence" }
 synapse-git = { path = "crates/synapse-git" }
 synapse-radicle = { path = "crates/synapse-radicle" }
 synapse-store = { path = "crates/synapse-store" }
+synapse-wire = { path = "crates/synapse-wire" }
 zeroize = "1.9"
 
 [profile.release]

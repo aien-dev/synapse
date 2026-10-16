@@ -671,6 +671,25 @@ pub fn decode_record(bytes: &[u8], cap: u64) -> Result<WalRecord, CodecRefusal> 
     Ok(record)
 }
 
+/// Encode one changeset envelope alone: `CODEC_V2 | envelope body`, the same field layout a
+/// `ChangesetIngest` record uses. The wire (`synapse-wire`, step G1) carries proposals in it.
+pub fn encode_envelope(envelope: &ChangesetEnvelope) -> SynapseResult<Vec<u8>> {
+    let mut w = Writer(Vec::with_capacity(256));
+    w.u8(CODEC_V2);
+    put_envelope(&mut w, envelope)?;
+    Ok(w.0)
+}
+
+/// Decode exactly one envelope written by [`encode_envelope`]. `cap` bounds every declared
+/// length and reservation; trailing bytes and every non-canonical form are refused.
+pub fn decode_envelope(bytes: &[u8], cap: u64) -> Result<ChangesetEnvelope, CodecRefusal> {
+    let mut r = Reader::new(bytes, cap);
+    get_version(&mut r)?;
+    let envelope = get_envelope(&mut r)?;
+    r.finish()?;
+    Ok(envelope)
+}
+
 /// Encode `record` with `codec`.
 pub fn encode_record_with(record: &WalRecord, codec: RecordCodec) -> SynapseResult<Vec<u8>> {
     match codec {
