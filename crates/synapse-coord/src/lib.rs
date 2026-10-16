@@ -10,6 +10,7 @@
 //! Coordination state is ephemeral. It is never written into Synapse history, is never an
 //! evidence receipt, and is never an authority for publication.
 
+pub mod board;
 pub mod identity;
 pub mod json;
 pub mod record;
