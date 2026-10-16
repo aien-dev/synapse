@@ -1,0 +1,8 @@
+# Red addendum (2026-10-16): the 300 s fuzz run at 71fa41e (evidence/g1-wire-frames/fuzz-run1-71fa41e)
+# found 1307 inputs whose decode made one allocation over the 8192-byte cap: a Submit scope
+# with many empty paths (4 wire bytes, 24 bytes of memory each). Regression test, before the fix:
+# cargo test -p synapse-wire --test g1_fuzz fuzz_regression
+thread 'fuzz_regression_many_scope_paths_stay_under_allocation_cap' (494543) panicked at crates/synapse-wire/tests/g1_fuzz.rs:247:5:
+largest allocation 9600 over cap 8192
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--

@@ -218,3 +218,38 @@ fn negative_control_fuzzer_finds_planted_read_past_frame() {
 fn negative_control_fuzzer_finds_planted_non_canonical_accept() {
     control(planted_non_canonical, "non_canonical_accept");
 }
+
+/// Regression from the 300 s evidence run (`evidence/g1-wire-frames/fuzz/`): a `Submit`
+/// whose scope lists many empty paths took 4 wire bytes per path but 24 bytes of memory per
+/// decoded `String`, so one allocation passed the cap. The decoder now refuses a path count
+/// whose decoded size would pass the cap.
+#[test]
+fn fuzz_regression_many_scope_paths_stay_under_allocation_cap() {
+    use synapse_wire::frame::{decode_frame, encode_frame, Frame, FrameBody};
+    use synapse_wire::fuzz::measured;
+    use synapse_wire::testkit::{envelope, ChainFixture};
+    let fx = ChainFixture::new(1, None);
+    let (env, _) = envelope(&fx.agent, "many", &[], &["x"], 1);
+    let mut req =
+        synapse_wire::session::submit_request(&fx.agent, fx.chain.clone(), &env, [5; 32], 1)
+            .unwrap();
+    req.scope.paths = vec![String::new(); 400];
+    let bytes = encode_frame(&Frame {
+        request_id: 1,
+        body: FrameBody::Submit(Box::new(req)),
+    })
+    .unwrap();
+    let limits = WireLimits {
+        max_frame_body: CAP,
+    };
+    assert!(bytes.len() - FRAME_HEADER_LEN <= CAP as usize);
+    let (res, peak, _) = measured(|| decode_frame(&bytes, &limits));
+    assert!(
+        peak as u64 <= u64::from(CAP),
+        "largest allocation {peak} over cap {CAP}"
+    );
+    assert!(
+        matches!(res.unwrap(), Err(WireRefusal::LengthOverCap { .. })),
+        "refused as over the cap"
+    );
+}

@@ -1,0 +1,48 @@
+spec written; idle window 30 s
+rep 0 wire: 1.634 ms/change, p50 1.493 ms, Some(0.056232500000000005) J/change
+rep 0 direct_auth: 1.686 ms/change, p50 1.635 ms, Some(0.056211) J/change
+rep 0 direct: 1.333 ms/change, p50 1.200 ms, Some(0.0483865) J/change
+rep 1 direct_auth: 1.539 ms/change, p50 1.402 ms, Some(0.051088999999999996) J/change
+rep 1 direct: 1.345 ms/change, p50 1.267 ms, Some(0.0452555) J/change
+rep 1 wire: 1.807 ms/change, p50 1.730 ms, Some(0.0646145) J/change
+rep 2 direct: 1.432 ms/change, p50 1.385 ms, Some(0.048805) J/change
+rep 2 wire: 1.924 ms/change, p50 1.812 ms, Some(0.0676135) J/change
+rep 2 direct_auth: 1.532 ms/change, p50 1.489 ms, Some(0.053731) J/change
+{
+  "direct": {
+    "fraction_of_energy_floor": 0.38458354336219747,
+    "fraction_of_time_floor": 0.5994619659670445,
+    "pkg_above_idle_j_per_change_median": -0.0009505471537752115,
+    "pkg_j_per_change_median": 0.0483865,
+    "s_per_change_median": 0.0013453364095,
+    "s_per_change_reps": [
+      0.001333227548,
+      0.0013453364095,
+      0.0014324259320000002
+    ]
+  },
+  "direct_auth": {
+    "fraction_of_energy_floor": 0.34632989560765604,
+    "fraction_of_time_floor": 0.5239601341938286,
+    "pkg_above_idle_j_per_change_median": -0.0023700036279699576,
+    "pkg_j_per_change_median": 0.053731,
+    "s_per_change_median": 0.0015391972715,
+    "s_per_change_reps": [
+      0.00168649767,
+      0.0015391972715,
+      0.0015323664595
+    ]
+  },
+  "wire": {
+    "fraction_of_energy_floor": 0.2879949797784548,
+    "fraction_of_time_floor": 0.44629614170909393,
+    "pkg_above_idle_j_per_change_median": 0.0007810366367801293,
+    "pkg_j_per_change_median": 0.0646145,
+    "s_per_change_median": 0.001807046787,
+    "s_per_change_reps": [
+      0.0016343228675,
+      0.001807046787,
+      0.0019240681505000002
+    ]
+  }
+}

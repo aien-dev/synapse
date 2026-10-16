@@ -655,7 +655,19 @@ fn get_submit<P: Probe>(r: &mut Reader<'_, '_, P>) -> Decoded<ChainedRequest> {
         });
     };
     cov!(r);
+    let paths_at = r.at();
     let n = r.count(4)?;
+    // Each path costs 4 wire bytes at least but a whole `String` in memory: bound the
+    // decoded size, not only the wire size, by the cap (found by the fuzzer).
+    let decoded = n as u64 * std::mem::size_of::<String>() as u64;
+    if decoded > r.cap {
+        cov!(r);
+        return Err(WireRefusal::LengthOverCap {
+            at: paths_at,
+            declared: decoded,
+            cap: r.cap,
+        });
+    }
     let mut paths = Vec::with_capacity(n);
     for _ in 0..n {
         paths.push(r.str()?);
