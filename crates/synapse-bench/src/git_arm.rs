@@ -263,6 +263,7 @@ mod tests {
         for p in &work[0] {
             let g1_wt = g1_op(&clone, &commit, &wt_root, p).unwrap();
             let g1_tree = git_line(&g1_wt, &["rev-parse", "HEAD^{tree}"]).unwrap();
+            remove_worktrees(&clone, &wt_root).unwrap();
             g2_op(&g2_wt, &commit, p).unwrap();
             let g2_tree = git_line(&g2_wt, &["rev-parse", "HEAD^{tree}"]).unwrap();
             let g3_commit = g3_op(&clone, &commit, &plumbing, p, &[]).unwrap();
