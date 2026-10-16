@@ -1,0 +1,10 @@
+# Changed paths matching these globs need only the always-run set (.aien/always).
+# Everything else must be covered by a manifest's inputs or the commit is NOT_RUN.
+# The always-run set already holds both hosted gates, so this list only stops pure
+# documentation and metadata from being reported as unmapped. Read from the base ref.
+docs/**
+*.md
+LICENSE
+.gitignore
+.goals.json
+assets/**

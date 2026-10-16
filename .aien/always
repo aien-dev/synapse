@@ -1,0 +1,8 @@
+# Gates that run on every commit regardless of changed paths (ADR 0033 Decision 12
+# allow-list; inventory contract C6). One gate name per line. Read from the base ref.
+# The hosted portable workflow runs both of its gates on every pull request (no path
+# filter), so both are always-run here too. This repository's crumb is not compiled
+# by any hosted check, so there is no CRUMB-VERIFY gate.
+SYNAPSE-WORKSPACE
+SYNAPSE-CONFORMANCE
+SYNAPSE-ZERO-DISK-SECRETS
