@@ -6,14 +6,14 @@
 use ed25519_dalek::SigningKey;
 use std::path::{Path, PathBuf};
 use synapse_core::{
-    BlobDigest, ChainPath, ChangeId, ChangesetEnvelopeV2, ChangesetId, FileMode, IdempotencyKey,
-    MutationOp, ObsolescenceMarker, PathMutation, RefusalCode, RepoId, RevisionContent, TreeDigest,
-    WalSeq,
+    encode_did_key_ed25519, BlobDigest, ChainPath, ChangeId, ChangesetEnvelope,
+    ChangesetEnvelopeV2, ChangesetId, FileMode, GitOid, IdempotencyKey, MutationOp,
+    ObsolescenceMarker, PathMutation, RefusalCode, RepoId, RevisionContent, TreeDigest, WalSeq,
 };
 use synapse_store::codec::{decode_record, encode_record};
 use synapse_store::{
-    AdmissionAuthority, FsyncPolicy, RecordCodec, RecoveryPolicy, RevisionOutcome, StoreLimits,
-    SynapseStore, WalRecord,
+    AdmissionAuthority, FsyncPolicy, IngestOutcome, RecordCodec, RecoveryPolicy, RevisionOutcome,
+    StoreLimits, SynapseStore, WalRecord,
 };
 
 const STRICT: RecoveryPolicy = RecoveryPolicy::StrictFailClosed;
@@ -481,8 +481,65 @@ fn v1_case(name: &str, policy: FsyncPolicy) {
     );
 }
 
+/// A v1 changeset far outside the retention window, with no other root, stays because a
+/// revision names it as parent; without that root compaction evicts it.
+fn v1_parent_outside_retention_case(policy: FsyncPolicy, name: &str) {
+    let c = chains();
+    let dir = temp_dir(name);
+    let mut s = open(&dir, policy);
+    let author = key(2);
+    let mut v1 = |body: &[u8], idem: u8| {
+        let mut env = ChangesetEnvelope {
+            version: 1,
+            repo_id: repo(),
+            base_git_oid: GitOid([0x0B; 20]),
+            parent_changesets: vec![],
+            author_did: encode_did_key_ed25519(&author.verifying_key().to_bytes()),
+            idempotency_key: IdempotencyKey([idem; 32]),
+            created_at_ms: 1,
+            intent_summary: "v1 work".into(),
+            mutations: vec![PathMutation {
+                path: "src/v1.rs".into(),
+                op: MutationOp::Upsert {
+                    mode: FileMode::Regular644,
+                    blob_digest: BlobDigest::compute(body),
+                    size_bytes: body.len() as u64,
+                },
+            }],
+            evidence_receipts: vec![],
+            signature: vec![],
+        };
+        env.sign(&author);
+        let blobs = vec![(BlobDigest::compute(body), body.to_vec())];
+        match s.ingest_changeset(env, &blobs).unwrap() {
+            IngestOutcome::Committed { changeset_id, .. } => changeset_id,
+            other => panic!("{other:?}"),
+        }
+    };
+    let named = v1(b"named by a revision", 1);
+    let unnamed = v1(b"named by nothing", 2);
+    let (env, blobs) = revision(&key(2), b"on v1", 1, vec![named]);
+    admitted(s.admit_revision(env, &blobs, auth(&c.o), 0).unwrap());
+    s.checkpoint_and_compact(u64::MAX).unwrap();
+    assert!(
+        s.get_changeset(unnamed, None, None).is_err(),
+        "control: evicted"
+    );
+    assert_v1_ids_resolve(&s, &[named]);
+    drop(s);
+    let s = open(&dir, policy);
+    assert_v1_ids_resolve(&s, &[named]);
+    assert_eq!(
+        s.get_blob_visible(BlobDigest::compute(b"named by a revision"), None, None)
+            .unwrap(),
+        b"named by a revision"
+    );
+}
+
 #[test]
 fn b1_every_v1_changeset_id_still_resolves_to_its_record() {
+    v1_parent_outside_retention_case(FsyncPolicy::EveryCommit, "v1-parent-wal-log");
+    v1_parent_outside_retention_case(FsyncPolicy::GROUP_COMMIT_DEFAULT, "v1-parent-segments");
     v1_case("v1-wal-log", FsyncPolicy::EveryCommit);
     v1_case("v1-wal-v2-log", FsyncPolicy::GROUP_COMMIT_DEFAULT);
 }
