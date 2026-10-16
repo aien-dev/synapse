@@ -38,6 +38,7 @@ pub mod synapse_arm;
 pub mod tree_parity;
 pub mod workload;
 pub mod write_phase;
+pub mod x6;
 
 use std::path::Path;
 
