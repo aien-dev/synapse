@@ -1,0 +1,30 @@
+## mutation M5: replay does not rebuild blob locations from the segments
+test segment_tests::a2_flush_failure_directory_flush_of_new_segment_acks_nothing ... FAILED
+test segment_tests::a2_crash_after_new_segment_file_before_directory_flush_keeps_every_ack ... FAILED
+test segment_tests::a2_torn_segment_crash_mid_batch_keeps_every_ack ... FAILED
+test segment_tests::a2_flush_failure_batch_sync_in_new_segment_acks_nothing ... FAILED
+test segment_tests::a2_torn_segment_with_data_after_it_fails_closed_under_both_policies ... FAILED
+test segment_tests::a2_crash_between_payload_and_index_keeps_every_ack ... FAILED
+test segment_tests::a2_crash_after_segment_index_before_checkpoint_keeps_every_ack ... FAILED
+test segment_tests::a2_directory_flush_precedes_every_batch_in_a_new_segment ... ok
+test segment_tests::a2_pre_a2_stores_replay_and_switch_to_segments ... FAILED
+test segment_tests::a2_checkpoint_keeps_blobs_in_segments_across_reopen ... ok
+
+thread 'segment_tests::a2_flush_failure_directory_flush_of_new_segment_acks_nothing' panicked at crates/synapse-store/src/segment_tests.rs:119:78:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: BlobNotFound, message: "blob file missing on disk for a2683561d2fabc0cb0676caccd9a6726cd3a15d6c43af1521d5667e206bf3bcf" }
+thread 'segment_tests::a2_crash_after_new_segment_file_before_directory_flush_keeps_every_ack' panicked at crates/synapse-store/src/segment_tests.rs:119:78:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: BlobNotFound, message: "blob file missing on disk for d97ba317237f7a04bb37ddf612cce58579b775ece29345b269399236f213632c" }
+thread 'segment_tests::a2_torn_segment_crash_mid_batch_keeps_every_ack' panicked at crates/synapse-store/src/segment_tests.rs:119:78:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: BlobNotFound, message: "blob file missing on disk for 1949a16c5ba768dfbbbc79a1706cd5fd7b59be137fa6946db4e8b950fa024851" }
+thread 'segment_tests::a2_flush_failure_batch_sync_in_new_segment_acks_nothing' panicked at crates/synapse-store/src/segment_tests.rs:119:78:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: BlobNotFound, message: "blob file missing on disk for 5d39e6c514d7d5cf7bdb2653f7f97c9ad6dbdff255ef9fc4d6ab95cd6da26369" }
+thread 'segment_tests::a2_torn_segment_with_data_after_it_fails_closed_under_both_policies' panicked at crates/synapse-store/src/segment_tests.rs:119:78:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: BlobNotFound, message: "blob file missing on disk for 6e034ecf3f4abe0a15e63807d7e8fab88a6006c54c7c39a06c2e7ea3b2dc767a" }
+thread 'segment_tests::a2_crash_between_payload_and_index_keeps_every_ack' panicked at crates/synapse-store/src/segment_tests.rs:119:78:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: BlobNotFound, message: "blob file missing on disk for 306274d9670a6f81eb8adbcee0425d1118ba76eb9fcaf7d5aee44e2590a86c57" }
+thread 'segment_tests::a2_crash_after_segment_index_before_checkpoint_keeps_every_ack' panicked at crates/synapse-store/src/segment_tests.rs:119:78:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: BlobNotFound, message: "blob file missing on disk for 12e99ebf3f2f170d81b1cd9422d9eb6c08cf83a231ad73f4c44109cb298aef00" }
+thread 'segment_tests::a2_pre_a2_stores_replay_and_switch_to_segments' panicked at crates/synapse-store/src/segment_tests.rs:119:78:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: BlobNotFound, message: "blob file missing on disk for 103aaf1f8caf0e8f31176d28f47842959ce5b352b4efcc92e82dd9db79e674e6" }
+test result: FAILED. 2 passed; 8 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.34s
+

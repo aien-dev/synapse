@@ -1,0 +1,46 @@
+# Red 2: behaviour of main e863c87. A probe with the same name and core assertion as
+# a2_checkpoint_keeps_blobs_in_segments_across_reopen, written against main's API (20 changesets of
+# 6000 bytes, GROUP_COMMIT_DEFAULT, one checkpoint), run in a main checkout (not committed):
+# main's checkpoint turns every retained inline blob back into a blob file and empties wal.v2.log.
+# cargo test -p synapse-store --lib segment_tests
+test segment_tests::a2_checkpoint_keeps_blobs_in_segments_across_reopen ... FAILED
+thread 'segment_tests::a2_checkpoint_keeps_blobs_in_segments_across_reopen' panicked at crates/synapse-store/src/segment_tests.rs:34:5:
+assertion `left == right` failed: no file per blob (main wrote 20 blob files; log kept whole: false)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.34s
+
+# Probe source (main API):
+//! Probe of main-branch behaviour for the A2 red/green record (not committed).
+use super::tests::{make_signed_changeset, temp_store_dir};
+use super::*;
+use ed25519_dalek::SigningKey;
+
+fn blob_files(dir: &Path) -> usize {
+    fn walk(p: &Path) -> usize {
+        let Ok(rd) = fs::read_dir(p) else { return 0 };
+        rd.map(|e| {
+            let e = e.unwrap();
+            if e.file_type().unwrap().is_dir() { walk(&e.path()) } else { 1 }
+        })
+        .sum()
+    }
+    walk(&dir.join("blobs"))
+}
+
+#[test]
+fn a2_checkpoint_keeps_blobs_in_segments_across_reopen() {
+    let dir = temp_store_dir("a2-main-probe");
+    let key = SigningKey::from_bytes(&[90; 32]);
+    let mut s = SynapseStore::open(&dir, FsyncPolicy::GROUP_COMMIT_DEFAULT,
+        RecoveryPolicy::StrictFailClosed, StoreLimits::default()).unwrap();
+    for i in 0..20 {
+        let label = format!("ck-{i}");
+        let (env, blobs) = make_signed_changeset(&key, &label, &format!("src/{label}.rs"),
+            &vec![b'a' + (i as u8 % 26); 6000], vec![], 1000);
+        s.ingest_changeset(env, &blobs).unwrap();
+    }
+    let v2_before = fs::read(dir.join(wal2::WAL_V2_FILE)).unwrap();
+    s.checkpoint_and_compact(1000).unwrap();
+    let v2_after = fs::read(dir.join(wal2::WAL_V2_FILE)).unwrap();
+    let kept = v2_after.len() >= v2_before.len() && v2_after[..v2_before.len()] == v2_before[..];
+    assert_eq!(blob_files(&dir), 0, "no file per blob (main wrote {} blob files; log kept whole: {kept})", blob_files(&dir));
+}

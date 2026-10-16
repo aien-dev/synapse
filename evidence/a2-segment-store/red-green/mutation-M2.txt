@@ -1,0 +1,16 @@
+## mutation M2: reopen does not flush the directory before writing into the active segment
+test segment_tests::a2_flush_failure_directory_flush_of_new_segment_acks_nothing ... ok
+test segment_tests::a2_flush_failure_batch_sync_in_new_segment_acks_nothing ... ok
+test segment_tests::a2_torn_segment_crash_mid_batch_keeps_every_ack ... ok
+test segment_tests::a2_directory_flush_precedes_every_batch_in_a_new_segment ... FAILED
+test segment_tests::a2_crash_after_new_segment_file_before_directory_flush_keeps_every_ack ... ok
+test segment_tests::a2_torn_segment_with_data_after_it_fails_closed_under_both_policies ... ok
+test segment_tests::a2_crash_between_payload_and_index_keeps_every_ack ... ok
+test segment_tests::a2_crash_after_segment_index_before_checkpoint_keeps_every_ack ... ok
+test segment_tests::a2_pre_a2_stores_replay_and_switch_to_segments ... ok
+test segment_tests::a2_checkpoint_keeps_blobs_in_segments_across_reopen ... ok
+
+thread 'segment_tests::a2_directory_flush_precedes_every_batch_in_a_new_segment' panicked at crates/synapse-store/src/segment_tests.rs:561:5:
+assertion `left == right` failed: [FileSynced(3), BatchWrite(3), BatchDurable(3)]
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.32s
+

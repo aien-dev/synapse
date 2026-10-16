@@ -1,0 +1,17 @@
+{
+  "step": "ADR 0003 A2 (issue #23): seconds and joules per accepted change against the flush bound",
+  "host": "spark-b87b, 20 CPUs, kernel 7.0.0-1019-nvidia, store on /dev/nvme0n1p2 ext4",
+  "a2_binary": {"commit": "0da8183", "sha256": "5be8ce2b44add8554436d731d1ed6531b43dad8deccdbff461be537fe8524369", "build": "cargo build --release -p synapse-bench"},
+  "main_binary": {"commit": "e863c87 (main) plus main-comparison.patch (the segments subcommand; StoreLimits::default(), no segment size)", "sha256": "ddb4fa95edd00d6b895bc61ff1a91d532c1db18cbd16504f35da254e26f14282"},
+  "commands": [
+    "synapse-bench floor --dir <dir> --out floor.json --iterations 300",
+    "synapse-bench segments --dir <dir> --out raw-a2.json   (defaults: --agents 1,4,8,32 --changes 4000 --reps 3 --blob-bytes 11949 --segment-mib 16 --checkpoint-every 1000 --idle-window-s 30)",
+    "main build: synapse-bench segments --dir <dir> --out raw-main.json   (same defaults; no segments on main)",
+    "synapse-bench segments-report --raw raw-<arm>.json --floor floor.json > report-<arm>.json"
+  ],
+  "run_start_utc": "2026-10-16T08:13:12Z", "loadavg_start": "2.22 3.66 4.28",
+  "run_end_utc": "2026-10-16T08:21:08Z", "loadavg_end": "5.79 4.59 4.36",
+  "clock": "std::time::Instant (CLOCK_MONOTONIC), ns",
+  "energy": "aien_spbm hwmon, SoC package only, 1 mJ step, 10 Hz sampling, uncalibrated; NVMe UNMEASURED",
+  "note": "Shared host: other agent sessions were running (load average 2 to 6)."
+}
