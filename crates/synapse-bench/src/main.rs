@@ -12,6 +12,9 @@
 //!     [--repo-root <path>] [--source-rev R] [--hwmon-root <path>]
 //! synapse-bench bounds-verify --evidence <dir>
 //! synapse-bench bounds-report --evidence <dir>   (prints report.json recomputed from protocol.json and raw.json)
+//! synapse-bench pmu-diag --evidence <dir with protocol.json> --work-dir <dir> [--fixture-repo <path>]
+//!     [--source-rev R] [--sibling name=rev]...   (opt-in CPU PMU diagnostics; see docs/BENCH_PMU_DIAGNOSTICS.md)
+//! synapse-bench pmu-verify --evidence <dir>
 //! ```
 
 use std::path::PathBuf;
@@ -263,6 +266,86 @@ fn bounds_verify(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Opt-in CPU PMU diagnostics (issue #64). Separate from `run`, `floor` and `bounds`,
+/// whose behaviour and output this subcommand never changes.
+fn pmu_diag(args: &[String]) -> Result<(), String> {
+    use synapse_bench::pmu_diag::{run_diag, DiagConfig, SiblingRev};
+    let opts = parse_pairs(
+        args,
+        &[
+            "--evidence",
+            "--work-dir",
+            "--fixture-repo",
+            "--source-rev",
+            "--sibling",
+        ],
+    )?;
+    let get = |k: &str| {
+        opts.iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.clone())
+    };
+    let siblings = opts
+        .iter()
+        .filter(|(k, _)| k == "--sibling")
+        .map(|(_, v)| {
+            v.split_once('=')
+                .filter(|(n, r)| !n.is_empty() && !r.is_empty())
+                .map(|(n, r)| SiblingRev {
+                    name: n.into(),
+                    rev: r.into(),
+                })
+                .ok_or(format!("--sibling needs name=rev, got {v:?}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let cfg = DiagConfig {
+        evidence_dir: PathBuf::from(get("--evidence").ok_or("missing --evidence")?),
+        work_dir: PathBuf::from(get("--work-dir").ok_or("missing --work-dir")?),
+        fixture_repo: get("--fixture-repo").map(PathBuf::from),
+        source_rev: get("--source-rev").unwrap_or_else(|| "unknown".into()),
+        siblings,
+        invocation: std::env::args().collect(),
+        discovery: synapse_bench::pmu::discover_host(),
+    };
+    let report = run_diag(&cfg)?;
+    for leg in &report.legs {
+        let p50 = |t: &synapse_bench::pmu_diag::TimingSummary| {
+            t.wall_ns_per_op
+                .as_ref()
+                .map_or("-".to_string(), |d| d.p50.to_string())
+        };
+        println!(
+            "{} [{}]: ns/op p50 control {} instrumented {}; PMU counted {}/{} windows, unavailable {:?}",
+            leg.leg,
+            leg.affinity.code(),
+            p50(&leg.control),
+            p50(&leg.instrumented),
+            leg.pmu.counted_windows,
+            leg.pmu.windows,
+            leg.pmu.unavailable
+        );
+    }
+    for n in &report.not_run {
+        println!("{} [{}]: NOT_RUN: {}", n.leg, n.affinity.code(), n.reason);
+    }
+    Ok(())
+}
+
+fn pmu_verify(args: &[String]) -> Result<(), String> {
+    let opts = parse_pairs(args, &["--evidence"])?;
+    let dir = opts
+        .last()
+        .map(|(_, v)| PathBuf::from(v))
+        .ok_or("missing --evidence")?;
+    let report = synapse_bench::pmu_diag::verify_evidence(&dir).map_err(|e| e.to_string())?;
+    println!(
+        "verified: report.json recomputed byte for byte from protocol.json ({}) and raw.json ({}); every PMU reading matches the recorded discovery and counter contract; every file in SHA256SUMS matches. Consistency only: authenticity comes from git history and review.",
+        report.protocol_sha256, report.raw_sha256
+    );
+    Ok(())
+}
+
 /// Write the J3 vector corpus from the Rust crates; refuses to overwrite.
 fn crypto_vectors_write(args: &[String]) -> Result<(), String> {
     use std::io::Write;
@@ -314,6 +397,8 @@ fn main() -> ExitCode {
         Some("bounds") => bounds(&args[1..]),
         Some("bounds-verify") => bounds_verify(&args[1..]),
         Some("bounds-report") => bounds_report(&args[1..]),
+        Some("pmu-diag") => pmu_diag(&args[1..]),
+        Some("pmu-verify") => pmu_verify(&args[1..]),
         Some("crypto-vectors-write") => crypto_vectors_write(&args[1..]),
         Some("crypto-vectors-verify") => crypto_vectors_verify(&args[1..]),
         _ => Err("usage: synapse-bench run ... | synapse-bench child ... (see crate docs)".into()),

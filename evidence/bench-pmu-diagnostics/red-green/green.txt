@@ -1,0 +1,19 @@
+# green: cargo test --locked -p synapse-bench pmu at 601b598, 2026-10-16T07:58:06Z
+test pmu_diag::tests::acceptance1_event_attr_is_user_only_inherited_counting ... ok
+test pmu_diag::tests::acceptance1_schema_protocol_refuses_bad_plans ... ok
+test pmu_diag::tests::acceptance1_real_host_sample_is_counted_or_typed_unavailable ... ok
+test pmu_diag::tests::acceptance1_multiplexed_and_partial_residency_are_labelled_not_scaled ... ok
+test pmu_diag::tests::acceptance1_malformed_reads_are_refused_never_repaired ... ok
+test pmu_diag::tests::acceptance1_counted_reads_are_raw_and_attributed_per_core_class ... ok
+test pmu_diag::tests::acceptance1_disabled_mode_makes_no_system_call ... ok
+test pmu_diag::tests::acceptance1_permission_denied_is_instrument_unavailable_without_counts ... ok
+test pmu_diag::tests::acceptance1_discovery_verifies_encodings_and_core_classes ... ok
+test pmu_diag::tests::acceptance1_unsupported_or_missing_pmu_refuses_before_any_open ... ok
+test pmu_diag::tests::acceptance1_crumb_leg_without_crumb_fixture_is_not_run ... ok
+test pmu_diag::tests::acceptance1_verify_refuses_mismatched_pmu_output ... ok
+test pmu_diag::tests::acceptance3_report_recomputes_from_raw_and_digests_verify ... ok
+test pmu_diag::tests::acceptance1_manifest_attribution_and_every_leg_kind_runs ... ok
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.37s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s

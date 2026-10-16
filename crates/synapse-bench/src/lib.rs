@@ -25,6 +25,8 @@ pub mod git_arm;
 pub mod gitcmd;
 pub mod host;
 pub mod orchestrator;
+pub mod pmu;
+pub mod pmu_diag;
 pub mod query;
 pub mod recovery;
 pub mod rng;
