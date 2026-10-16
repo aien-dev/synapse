@@ -1,0 +1,25 @@
+# Green (2026-10-16, B1 commit b928eb9 on C1 + A2; workspace 295 passed, 0 failed; clippy -D warnings and fmt clean)
+
+# Command: cargo test --locked -p synapse-core --lib b1_ -- --test-threads=1
+test revision::tests::b1_chain_path_dominance_is_prefix_order ... ok
+test revision::tests::b1_envelope_v2_round_trips_and_refuses_malformed_bytes ... ok
+test revision::tests::b1_envelope_v2_signature_binds_repo_key_and_time ... ok
+test revision::tests::b1_v2_changeset_id_covers_content_only_not_author_or_time ... ok
+test revision::tests::b1_witness_and_marker_round_trip ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+# Command: cargo test --locked -p synapse-store --test b1_change_identity -- --test-threads=1
+test b1_divergence_two_live_successors_is_detected ... ok
+test b1_every_v1_changeset_id_still_resolves_to_its_record ... ok
+test b1_identical_content_two_agents_one_chain_one_change_is_one_revision_two_attestations_two_witnesses ... ok
+test b1_join_from_key_outside_creating_chain_without_change_scope_is_refused ... ok
+test b1_prune_by_chain_not_dominating_creating_chain_is_refused ... ok
+test b1_repeat_same_repo_did_idempotency_key_returns_first_wal_seq ... ok
+test b1_revision_records_round_trip_and_malformed_bytes_are_refused_typed ... ok
+test b1_rewrite_keeps_change_id_and_gets_new_changeset_id ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+
+# Command: cargo test --locked -p synapse-api --test b1_chained_revisions -- --test-threads=1
+test b1_api_join_and_prune_follow_the_creating_chain_of_real_f1_chains ... ok
+test b1_api_refuses_paths_outside_scope_foreign_authors_and_unknown_bases ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s

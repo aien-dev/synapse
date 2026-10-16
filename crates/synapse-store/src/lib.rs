@@ -20,9 +20,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use synapse_core::{
-    BlobDigest, ChangesetEnvelope, ChangesetId, EvidenceAttachment, GitHubPullRequestProjection,
-    IdempotencyKey, MutationOp, RadicleCanonicalHead, RefusalCode, RepoId, SynapseError,
-    SynapseResult, WalSeq,
+    BlobDigest, ChainPath, ChangesetEnvelope, ChangesetEnvelopeV2, ChangesetId, EvidenceAttachment,
+    GitHubPullRequestProjection, IdempotencyKey, MutationOp, ObsolescenceMarker,
+    RadicleCanonicalHead, RefusalCode, RepoId, SynapseError, SynapseResult, WalSeq,
 };
 
 #[cfg(test)]
@@ -30,6 +30,7 @@ mod a1_tests;
 pub mod codec;
 #[cfg(test)]
 mod group_tests;
+mod revision;
 pub mod segment;
 #[cfg(test)]
 mod segment_tests;
@@ -37,6 +38,10 @@ mod shared;
 pub mod wal2;
 
 pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
+pub use revision::{
+    AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome, StoredRevision,
+    DOMAIN_STATE_ROOT_REVISIONS_V1,
+};
 pub use shared::{GroupCommitStats, SharedStore};
 
 /// Magic bytes for a Synapse WAL frame (`b"SWAL"`).
@@ -301,6 +306,23 @@ pub enum WalRecord {
         changeset_id: ChangesetId,
         lease_expires_at_ms: u64,
     },
+    /// Admission of an envelope v2 revision under `chain` at server time `admitted_at_ms`
+    /// (ADR 0003 B1). Binary codec only: it has no v1 JSON form.
+    #[serde(skip)]
+    RevisionAdmitted {
+        envelope: ChangesetEnvelopeV2,
+        chain: ChainPath,
+        admitted_at_ms: u64,
+        new_blobs: Vec<BlobDigest>,
+    },
+    /// An obsolescence marker recorded under `chain` at server time `recorded_at_ms`
+    /// (ADR 0003 B1). Binary codec only.
+    #[serde(skip)]
+    ObsolescenceRecorded {
+        marker: ObsolescenceMarker,
+        chain: ChainPath,
+        recorded_at_ms: u64,
+    },
 }
 
 impl WalRecord {
@@ -312,7 +334,25 @@ impl WalRecord {
             Self::GitProjected { .. } => 4,
             Self::CanonicalPromoted { .. } => 5,
             Self::LeaseUpdated { .. } => 6,
+            Self::RevisionAdmitted { .. } => 7,
+            Self::ObsolescenceRecorded { .. } => 8,
         }
+    }
+
+    /// Blob digests the upserts of this record reference (ingest and revision records).
+    pub fn upsert_blobs(&self) -> Vec<BlobDigest> {
+        let mutations = match self {
+            Self::ChangesetIngest { envelope, .. } => &envelope.mutations,
+            Self::RevisionAdmitted { envelope, .. } => &envelope.content.mutations,
+            _ => return Vec::new(),
+        };
+        mutations
+            .iter()
+            .filter_map(|m| match &m.op {
+                MutationOp::Upsert { blob_digest, .. } => Some(*blob_digest),
+                MutationOp::Delete => None,
+            })
+            .collect()
     }
 }
 
@@ -425,6 +465,8 @@ pub struct SynapseStore {
     /// A binary checkpoint or a binary frame was replayed: v1 JSON frames are refused.
     binary_seen: bool,
     /// `checkpoint.v1` is not yet the tombstone although `checkpoint.v2` exists.
+    /// Envelope v2 revisions, changes, witnesses, and markers (ADR 0003 B1).
+    revisions: revision::RevisionLedger,
     tombstone_pending: bool,
 }
 
@@ -567,6 +609,7 @@ impl SynapseStore {
             v1_history: false,
             binary_seen: false,
             tombstone_pending: false,
+            revisions: revision::RevisionLedger::default(),
         };
 
         store.recover(recovery_policy)?;
@@ -1532,7 +1575,11 @@ impl SynapseStore {
     /// Compute a deterministic SHA-256 digest of all visible state up to `snapshot_seq`.
     pub fn state_root_digest(&self, snapshot_seq: Option<WalSeq>) -> SynapseResult<[u8; 32]> {
         let snap = self.resolve_snapshot_seq(None, snapshot_seq)?;
-        Ok(codec::state_root_of(&self.changesets, snap))
+        Ok(codec::state_root_of(
+            &self.changesets,
+            self.revisions.log(),
+            snap,
+        ))
     }
 
     /// Write an atomic checkpoint, compact `wal.log`, and sweep unreferenced speculative blobs
@@ -1567,6 +1614,11 @@ impl SynapseStore {
             }
         }
 
+        // Revisions are never evicted (no sweep before K1), so their v1 parents stay too.
+        for rev in self.revisions.revisions() {
+            worklist.extend(rev.content.parents.iter().copied());
+        }
+
         // Compute transitive ancestor closure over `parent_changesets`
         while let Some(cs_id) = worklist.pop() {
             if retained_cs.insert(cs_id) {
@@ -1587,6 +1639,13 @@ impl SynapseStore {
 
         // 2. Compute retained blob closure from retained changesets
         let mut retained_blobs: BTreeSet<BlobDigest> = BTreeSet::new();
+        for rev in self.revisions.revisions() {
+            for m in &rev.content.mutations {
+                if let MutationOp::Upsert { blob_digest, .. } = &m.op {
+                    retained_blobs.insert(*blob_digest);
+                }
+            }
+        }
         for stored in self.changesets.values() {
             for m in &stored.envelope.mutations {
                 if let MutationOp::Upsert { blob_digest, .. } = &m.op {
@@ -1623,6 +1682,7 @@ impl SynapseStore {
             blob_first_visible_seq: std::mem::take(&mut self.blob_first_visible_seq),
             github_projections: std::mem::take(&mut self.github_projections),
             canonical_heads: std::mem::take(&mut self.canonical_heads),
+            revision_log: self.revisions.log().to_vec(),
         };
         let encoded = codec::encode_checkpoint_v2(&state, v1_state_root, prev_checkpoint_root);
         self.changesets = state.changesets;
@@ -2060,6 +2120,18 @@ impl SynapseStore {
                     cs.lease_expires_at_ms = lease_expires_at_ms;
                 }
             }
+            record @ WalRecord::RevisionAdmitted { .. } => {
+                if let WalRecord::RevisionAdmitted { new_blobs, .. } = &record {
+                    for digest in new_blobs {
+                        self.blob_first_visible_seq.entry(*digest).or_insert(seq);
+                    }
+                }
+                for digest in record.upsert_blobs() {
+                    self.blob_first_visible_seq.entry(digest).or_insert(seq);
+                }
+                self.revisions.apply(seq, record);
+            }
+            record @ WalRecord::ObsolescenceRecorded { .. } => self.revisions.apply(seq, record),
         }
     }
 
@@ -2143,6 +2215,7 @@ impl SynapseStore {
         self.blob_first_visible_seq = s.blob_first_visible_seq;
         self.github_projections = s.github_projections;
         self.canonical_heads = s.canonical_heads;
+        self.revisions = revision::RevisionLedger::from_log(s.revision_log);
     }
 
     /// Admit a replayed (not checkpoint-covered) frame written with `codec`: the codec
@@ -2378,10 +2451,10 @@ impl SynapseStore {
                 ));
             }
 
-            // Verify that all blobs referenced by a committed ChangesetIngest exist and match digest
-            if let WalRecord::ChangesetIngest { ref envelope, .. } = record {
-                for m in &envelope.mutations {
-                    if let MutationOp::Upsert { blob_digest, .. } = &m.op {
+            // Verify that all blobs referenced by a committed ingest or revision exist and match digest
+            for blob_digest in &record.upsert_blobs() {
+                {
+                    {
                         let bpath = self.blob_path(*blob_digest);
                         let raw = fs::read(&bpath).map_err(|_| {
                             SynapseError::new(
@@ -2593,9 +2666,9 @@ impl SynapseStore {
                 Ok((frames, next)) => {
                     for fr in frames {
                         self.admit_replayed_codec(fr.codec, fr.seq)?;
-                        if let WalRecord::ChangesetIngest { envelope, .. } = &fr.record {
-                            for m in &envelope.mutations {
-                                if let MutationOp::Upsert { blob_digest, .. } = &m.op {
+                        {
+                            for blob_digest in &fr.record.upsert_blobs() {
+                                {
                                     let inline = fr.inline.iter().any(|(d, _, _)| d == blob_digest);
                                     if inline || self.blob_locations.contains_key(blob_digest) {
                                         continue;

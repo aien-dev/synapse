@@ -1,0 +1,64 @@
+# Red (2026-10-16): each acceptance test run against the B1 commit b928eb9 with one mutation
+# that removes the behaviour it proves; every mutation is reverted after its run.
+# Command per case: cargo test --locked -p synapse-store --test b1_change_identity <test> -- --exact
+
+## v2 ChangesetId covers only the ChangeId
+# mutation in crates/synapse-core/src/revision.rs:
+#   -        h.update(&bytes);
+#   +        h.update(self.change_id.0);
+#   +        let _ = bytes;
+thread 'b1_rewrite_keeps_change_id_and_gets_new_changeset_id' (1237437) panicked at crates/synapse-store/tests/b1_change_identity.rs:140:5:
+assertion `left != right` failed: a rewrite gets a new ChangesetId
+  left: ChangesetId(db05f57d3ad100ca1ba547b38dff63baca741eda9096ecf6db3bb9f75119bd71)
+ right: ChangesetId(db05f57d3ad100ca1ba547b38dff63baca741eda9096ecf6db3bb9f75119bd71)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.03s
+
+## divergence never reported
+# mutation in crates/synapse-store/src/revision.rs:
+#   -            divergent: live.len() > 1,
+#   +            divergent: false,
+thread 'b1_divergence_two_live_successors_is_detected' (1240534) panicked at crates/synapse-store/tests/b1_change_identity.rs:176:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.08s
+
+## identical content from a second agent collapsed into the first (no second attestation)
+# mutation in crates/synapse-store/src/revision.rs:
+#   +        if joined_existing_revision {
+#   +            return Ok(RevisionOutcome::IdempotentDuplicate { wal_seq: WalSeq(0), changeset_id: id });
+#   +        }
+thread 'b1_identical_content_two_agents_one_chain_one_change_is_one_revision_two_attestations_two_witnesses' (1241525) panicked at crates/synapse-store/tests/b1_change_identity.rs:204:9:
+expected a join of the existing revision, got IdempotentDuplicate { wal_seq: WalSeq(0), changeset_id: ChangesetId(40ee121239e23f3e82cef0d3d3b9c49234c7da99883ff0d4303c5cea42c5107c) }
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.02s
+
+## join rule disabled
+# mutation in crates/synapse-store/src/revision.rs:
+#   -        if authority.chain.descends_from(creating) || authority.change_scope.contains(&change_id) {
+#   +        if true || authority.chain.descends_from(creating) || authority.change_scope.contains(&change_id) {
+thread 'b1_join_from_key_outside_creating_chain_without_change_scope_is_refused' (1245135) panicked at crates/synapse-store/tests/b1_change_identity.rs:276:10:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.03s
+
+## dominance check on markers disabled
+# mutation in crates/synapse-store/src/revision.rs:
+#   -        if !allowed {
+#   +        if false && !allowed {
+thread 'b1_prune_by_chain_not_dominating_creating_chain_is_refused' (1245944) panicked at crates/synapse-store/tests/b1_change_identity.rs:318:14:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.03s
+
+## idempotency index ignored
+# mutation in crates/synapse-store/src/revision.rs:
+#   -        self.idempotency.get(&(repo.clone(), *key, idem)).copied()
+#   +        {
+#   +            let _ = (repo, key, idem, &self.idempotency);
+#   +            None
+#   +        }
+thread 'b1_repeat_same_repo_did_idempotency_key_returns_first_wal_seq' (1246790) panicked at crates/synapse-store/tests/b1_change_identity.rs:371:5:
+assertion `left == right` failed
+  left: Admitted { wal_seq: WalSeq(3), changeset_id: ChangesetId(b50c897316d03e965090c33d390da275d275a6a6710b41e0e1130de7f3658cc2), joined_existing_revision: true }
+ right: IdempotentDuplicate { wal_seq: WalSeq(1), changeset_id: ChangesetId(b50c897316d03e965090c33d390da275d275a6a6710b41e0e1130de7f3658cc2) }
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.05s
+
+## compaction drops v1 parents of revisions
+# mutation in crates/synapse-store/src/lib.rs:
+#   -            worklist.extend(rev.content.parents.iter().copied());
+#   +            let _ = rev;
+thread 'b1_every_v1_changeset_id_still_resolves_to_its_record' (1247169) panicked at crates/synapse-store/tests/b1_change_identity.rs:433:51:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.07s

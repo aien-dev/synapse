@@ -8,15 +8,18 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use synapse_auth::{AuditEntry, AuthenticatedRequest, BoundaryKind, Capability, PolicyEnforcer};
+use synapse_auth::{
+    AuditEntry, AuthenticatedRequest, BoundaryKind, Capability, ChainedRequest, PolicyEnforcer,
+};
 use synapse_core::{
     validate_repo_relative_path, BlobDigest, ChangesetEnvelope, ChangesetId, EvidenceAttachment,
     FileMode, GitHubPullRequestProjection, GitOid, IdempotencyKey, MutationOp,
     RadicleCanonicalHead, RefusalCode, RepoId, SynapseError, SynapseResult, TreeDigest, WalSeq,
 };
+use synapse_core::{ChainPath, ChangeId, ChangesetEnvelopeV2, ObsolescenceMarker};
 use synapse_store::{
-    CompactionReport, FsyncPolicy, IngestOutcome, RecoveryPolicy, ReviewRecord, StoreLimits,
-    StoredChangeset, SynapseStore,
+    AdmissionAuthority, CompactionReport, FsyncPolicy, IngestOutcome, RecoveryPolicy, ReviewRecord,
+    RevisionOutcome, StoreLimits, StoredChangeset, SynapseStore,
 };
 
 mod advisory;
@@ -532,6 +535,99 @@ impl SynapseService {
         }
 
         Ok(())
+    }
+
+    /// Submit an envelope v2 revision (ADR 0003 B1) under an F1 delegation chain.
+    /// `req.payload` is the canonical envelope encoding; `req.scope` must name the
+    /// revision's `ChangeId` as `join_change` and exactly its mutation paths, so the chain's
+    /// change and path scopes are enforced (`AuthChangeOutOfScope`, `AuthPathOutOfScope`).
+    /// The chain must grant `Propose`; the attestation must be signed by the request's agent
+    /// for this repository; the base `TreeDigest` must be a registered base root or a tree
+    /// the tree store holds (`BaseTreeNotFound`). The store then applies the join rule
+    /// against the change's creating chain.
+    pub fn submit_revision(
+        &mut self,
+        req: &ChainedRequest,
+        blobs: &[(BlobDigest, Vec<u8>)],
+        now_ms: u64,
+    ) -> SynapseResult<RevisionOutcome> {
+        let envelope = ChangesetEnvelopeV2::decode(&req.payload)?;
+        let content = &envelope.content;
+        check_join_scope(req, content.change_id)?;
+        let paths: Vec<String> = content.mutations.iter().map(|m| m.path.clone()).collect();
+        if req.scope.paths != paths {
+            return Err(SynapseError::new(
+                RefusalCode::AuthPathOutOfScope,
+                "request scope paths must be exactly the revision's mutation paths",
+            ));
+        }
+        self.auth.authorize_chain(
+            BoundaryKind::Api,
+            "submit_revision",
+            &self.repo_id,
+            Capability::Propose,
+            req,
+            self.store.committed_seq().next(),
+            now_ms,
+        )?;
+        if envelope.attestation.repo_id != self.repo_id {
+            return Err(SynapseError::new(
+                RefusalCode::AuthCrossRepoDenied,
+                "attestation repo_id does not match service repo_id",
+            ));
+        }
+        if envelope.attestation.author_key != req.agent_key {
+            return Err(SynapseError::new(
+                RefusalCode::AuthSignatureInvalid,
+                "attestation author is not the agent that presented the chain",
+            ));
+        }
+        let base = content.base_tree;
+        if !self.base_roots.values().any(|r| *r == base) && !self.tree_store().contains(base) {
+            return Err(SynapseError::new(
+                RefusalCode::BaseTreeNotFound,
+                format!("base tree {base} is not known to the service"),
+            ));
+        }
+        let authority = admission_authority(req)?;
+        self.store
+            .admit_revision(envelope, blobs, authority, now_ms)
+    }
+
+    /// Record an obsolescence marker (ADR 0003 B1) under an F1 delegation chain granting
+    /// `Propose`. `req.payload` is the canonical marker encoding and `req.scope.join_change`
+    /// must name its `ChangeId`; the marker must be signed by the request's agent. The store
+    /// applies the dominance rules (`AuthChainNotDominant`).
+    pub fn record_obsolescence(
+        &mut self,
+        req: &ChainedRequest,
+        now_ms: u64,
+    ) -> SynapseResult<WalSeq> {
+        let marker = ObsolescenceMarker::decode(&req.payload)?;
+        check_join_scope(req, marker.change_id)?;
+        self.auth.authorize_chain(
+            BoundaryKind::Api,
+            "record_obsolescence",
+            &self.repo_id,
+            Capability::Propose,
+            req,
+            self.store.committed_seq().next(),
+            now_ms,
+        )?;
+        if marker.repo_id != self.repo_id {
+            return Err(SynapseError::new(
+                RefusalCode::AuthCrossRepoDenied,
+                "marker repo_id does not match service repo_id",
+            ));
+        }
+        if marker.signer_key != req.agent_key {
+            return Err(SynapseError::new(
+                RefusalCode::AuthSignatureInvalid,
+                "marker signer is not the agent that presented the chain",
+            ));
+        }
+        let chain = admission_authority(req)?.chain;
+        self.store.record_obsolescence(marker, chain, now_ms)
     }
 
     /// Index a committed (or duplicate) submission in the path index.
@@ -1459,6 +1555,34 @@ fn validate_subscriber_id(id: &str) -> SynapseResult<()> {
         ));
     }
     Ok(())
+}
+
+/// The request must name `change_id` as the change it joins, so F1 checks it against the
+/// chain's change scope.
+fn check_join_scope(req: &ChainedRequest, change_id: ChangeId) -> SynapseResult<()> {
+    if req.scope.join_change != Some(change_id) {
+        return Err(SynapseError::new(
+            RefusalCode::AuthChangeOutOfScope,
+            format!("request scope must name change {change_id} as join_change"),
+        ));
+    }
+    Ok(())
+}
+
+/// The store-side authority of a verified chain: its link digests, and the `ChangeId`s its
+/// leaf grant names explicitly (a grant for any change names none).
+fn admission_authority(req: &ChainedRequest) -> SynapseResult<AdmissionAuthority> {
+    let chain = ChainPath::new(req.chain.link_digests().iter().map(|d| d.0).collect())?;
+    let change_scope = req
+        .chain
+        .leaf()
+        .and_then(|l| l.caveats.changes.ids())
+        .map(<[ChangeId]>::to_vec)
+        .unwrap_or_default();
+    Ok(AdmissionAuthority {
+        chain,
+        change_scope,
+    })
 }
 
 #[cfg(test)]

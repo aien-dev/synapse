@@ -93,6 +93,13 @@ pub enum CodecRefusal {
     NotCanonical { at: usize, field: &'static str },
     /// A repository id fails `RepoId::new`.
     InvalidRepoId { at: usize },
+    /// An embedded `synapse-core` encoding (envelope v2, chain path, marker) is refused
+    /// by its own decoder with `code`.
+    EmbeddedMalformed {
+        at: usize,
+        field: &'static str,
+        code: RefusalCode,
+    },
 }
 
 impl CodecRefusal {
@@ -107,6 +114,7 @@ impl CodecRefusal {
             Self::VersionUnsupported { .. } => "VersionUnsupported",
             Self::NotCanonical { .. } => "NotCanonical",
             Self::InvalidRepoId { .. } => "InvalidRepoId",
+            Self::EmbeddedMalformed { .. } => "EmbeddedMalformed",
         }
     }
 
@@ -309,8 +317,37 @@ pub fn encode_record(record: &WalRecord) -> SynapseResult<Vec<u8>> {
             w.raw(&changeset_id.0);
             w.u64(*lease_expires_at_ms);
         }
+        WalRecord::RevisionAdmitted {
+            envelope,
+            chain,
+            admitted_at_ms,
+            new_blobs,
+        } => {
+            w.bytes(&envelope.encode(), "envelope v2")?;
+            put_chain(&mut w, chain)?;
+            w.u64(*admitted_at_ms);
+            w.len(new_blobs.len(), "new blob count")?;
+            for b in new_blobs {
+                w.raw(&b.0);
+            }
+        }
+        WalRecord::ObsolescenceRecorded {
+            marker,
+            chain,
+            recorded_at_ms,
+        } => {
+            w.bytes(&marker.encode(), "obsolescence marker")?;
+            put_chain(&mut w, chain)?;
+            w.u64(*recorded_at_ms);
+        }
     }
     Ok(w.0)
+}
+
+fn put_chain(w: &mut Writer, chain: &ChainPath) -> SynapseResult<()> {
+    let mut buf = Vec::with_capacity(1 + 32 * chain.links().len());
+    chain.encode_into(&mut buf);
+    w.bytes(&buf, "chain path")
 }
 
 // ---------------------------------------------------------------------------------------
@@ -442,6 +479,21 @@ impl<'a> Reader<'a> {
             });
         }
         Ok((n as usize, Vec::with_capacity(n as usize)))
+    }
+
+    /// A length-prefixed value in a `synapse-core` canonical encoding, decoded by `decode`.
+    fn embedded<T>(
+        &mut self,
+        field: &'static str,
+        decode: impl FnOnce(&[u8]) -> SynapseResult<T>,
+    ) -> Decoded<T> {
+        let at = self.pos;
+        let n = self.byte_len()?;
+        decode(self.take(n)?).map_err(|e| CodecRefusal::EmbeddedMalformed {
+            at,
+            field,
+            code: e.code,
+        })
     }
 
     fn finish(&self) -> Decoded<()> {
@@ -659,6 +711,26 @@ pub fn decode_record(bytes: &[u8], cap: u64) -> Result<WalRecord, CodecRefusal> 
             changeset_id: ChangesetId(r.array()?),
             lease_expires_at_ms: r.u64()?,
         },
+        7 => {
+            let envelope = r.embedded("envelope v2", ChangesetEnvelopeV2::decode)?;
+            let chain = r.embedded("chain path", ChainPath::decode)?;
+            let admitted_at_ms = r.u64()?;
+            let (n, mut new_blobs) = r.vec(32)?;
+            for _ in 0..n {
+                new_blobs.push(BlobDigest(r.array()?));
+            }
+            WalRecord::RevisionAdmitted {
+                envelope,
+                chain,
+                admitted_at_ms,
+                new_blobs,
+            }
+        }
+        8 => WalRecord::ObsolescenceRecorded {
+            marker: r.embedded("obsolescence marker", ObsolescenceMarker::decode)?,
+            chain: r.embedded("chain path", ChainPath::decode)?,
+            recorded_at_ms: r.u64()?,
+        },
         tag => {
             return Err(CodecRefusal::UnknownTag {
                 at,
@@ -730,17 +802,21 @@ pub struct CheckpointState {
     pub blob_first_visible_seq: BTreeMap<BlobDigest, WalSeq>,
     pub github_projections: BTreeMap<u64, GitHubPullRequestProjection>,
     pub canonical_heads: BTreeMap<RepoId, RadicleCanonicalHead>,
+    /// Revision records (kinds 7 and 8) in sequence order (ADR 0003 B1). Written only when
+    /// non-empty, so checkpoints of stores without revisions keep their exact bytes.
+    pub revision_log: Vec<(WalSeq, WalRecord)>,
 }
 
 /// `state_root_digest` of a store that holds nothing (sequence 0, no changesets): the
 /// v1 root recorded by a store that never wrote a v1 record.
 pub fn empty_state_root() -> [u8; 32] {
-    state_root_of(&BTreeMap::new(), WalSeq::ZERO)
+    state_root_of(&BTreeMap::new(), &[], WalSeq::ZERO)
 }
 
 /// `SynapseStore::state_root_digest` over `changesets` at `snapshot_seq`.
 pub fn state_root_of(
     changesets: &BTreeMap<ChangesetId, StoredChangeset>,
+    revision_log: &[(WalSeq, WalRecord)],
     snapshot_seq: WalSeq,
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -754,6 +830,7 @@ pub fn state_root_of(
             hasher.update((cs.reviews.len() as u32).to_le_bytes());
         }
     }
+    crate::revision::RevisionLedger::hash_into(revision_log, snapshot_seq, &mut hasher);
     hasher.finalize().into()
 }
 
@@ -865,7 +942,7 @@ impl CheckpointState {
 
     /// State root of this state at its checkpoint sequence.
     pub fn state_root(&self) -> [u8; 32] {
-        state_root_of(&self.changesets, self.checkpoint_seq)
+        state_root_of(&self.changesets, &self.revision_log, self.checkpoint_seq)
     }
 
     /// Keys that the encoding derives from values must match them.
@@ -910,6 +987,14 @@ impl CheckpointState {
         w.len(self.canonical_heads.len(), "canonical head count")?;
         for c in self.canonical_heads.values() {
             put_canonical(&mut w, c)?;
+        }
+        // Revision section (ADR 0003 B1): present only when there are revision records.
+        if !self.revision_log.is_empty() {
+            w.len(self.revision_log.len(), "revision record count")?;
+            for (seq, record) in &self.revision_log {
+                w.u64(seq.0);
+                w.bytes(&encode_record(record)?, "revision record")?;
+            }
         }
         Ok(w.0)
     }
@@ -979,6 +1064,40 @@ impl CheckpointState {
             ordered(&prev, &c.repo_id, at, "canonical heads")?;
             prev = Some(c.repo_id.clone());
             s.canonical_heads.insert(c.repo_id.clone(), c);
+        }
+        if r.remaining() > 0 {
+            let at = r.pos;
+            let (n, _) = r.vec::<u8>(8 + MIN_STR)?;
+            if n == 0 {
+                // An empty section is written as no section at all.
+                return Err(CodecRefusal::NotCanonical {
+                    at,
+                    field: "revision records",
+                });
+            }
+            let mut prev = None;
+            for _ in 0..n {
+                let at = r.pos;
+                let seq = WalSeq(r.u64()?);
+                if prev.is_some_and(|p| p >= seq) || seq > checkpoint_seq {
+                    return Err(CodecRefusal::NotCanonical {
+                        at,
+                        field: "revision records",
+                    });
+                }
+                prev = Some(seq);
+                let tag_at = r.pos + 4 + 1;
+                let bytes = r.bytes()?;
+                let record = decode_record(&bytes, r.cap)?;
+                if !matches!(record.kind_byte(), 7 | 8) {
+                    return Err(CodecRefusal::UnknownTag {
+                        at: tag_at,
+                        field: "revision record kind",
+                        tag: record.kind_byte(),
+                    });
+                }
+                s.revision_log.push((seq, record));
+            }
         }
         r.finish()?;
         Ok(s)

@@ -407,7 +407,7 @@ fn a1_documented_layout_decodes_and_every_non_canonical_form_is_refused() {
         Err(CodecRefusal::VersionUnsupported { found: 1 })
     );
     let mut k = review.clone();
-    k[1] = 7;
+    k[1] = 9; // first unused kind (7 and 8 are the B1 revision records)
     assert_eq!(kind(decode_record(&k, CAP)), "UnknownTag");
     let mut k0 = review.clone();
     k0[1] = 0;
@@ -521,11 +521,11 @@ fn a1_state_root_helpers_match_the_store() {
     )
     .unwrap();
     assert_eq!(
-        state_root_of(&s.changesets, s.committed_seq),
+        state_root_of(&s.changesets, &[], s.committed_seq),
         s.state_root_digest(None).unwrap()
     );
     assert_eq!(
-        state_root_of(&s.changesets, WalSeq(3)),
+        state_root_of(&s.changesets, &[], WalSeq(3)),
         s.state_root_digest(Some(WalSeq(3))).unwrap()
     );
 }
