@@ -681,6 +681,247 @@ fn h1_store_refuses_crafted_bridge_entries() {
     fs::remove_dir_all(&root).unwrap();
 }
 
+/// Review of #96, B1: every record is checked against the store's limits (WAL frame cap,
+/// changeset bytes) before the first write, so a record the store would refuse late leaves
+/// the store untouched instead of half imported.
+#[test]
+fn h1_import_refuses_a_record_over_the_store_limits_before_writing() {
+    // One commit whose message alone is larger than the WAL frame cap.
+    let src = temp_dir("c2-huge-commit");
+    git(&src, &["init", "-q", "-b", "main"]);
+    write(&src, "a.txt", b"a\n");
+    git(&src, &["add", "-A"]);
+    let tree = git_text(&src, &["write-tree"]);
+    let message = "m".repeat(100 * 1024);
+    let out = git_raw(
+        &src,
+        &["commit-tree", &tree, "-F", "-"],
+        Some(message.as_bytes()),
+    );
+    assert!(out.status.success());
+    let commit = String::from_utf8(out.stdout).unwrap().trim().to_string();
+    git(&src, &["update-ref", "refs/heads/main", &commit]);
+    let tight = StoreLimits {
+        max_blob_bytes: 4 * 1024,
+        max_total_changeset_bytes: 16 * 1024,
+        max_wal_record_bytes: 64 * 1024,
+        ..limits()
+    };
+    assert_import_refused(
+        &src.join(".git"),
+        tight.clone(),
+        RefusalCode::QuotaPayloadTooLarge,
+        "commit record over max_wal_record_bytes",
+    );
+    // The same store, refused once under the tight limits, then imports the repository
+    // in full under the default limits and exports it with identical IDs.
+    let root = temp_dir("c2-huge-commit-store");
+    {
+        let mut store = open_store(&root, tight);
+        let refusal = import(&mut store, &src.join(".git")).expect_err("over the frame cap");
+        assert_eq!(refusal.code, RefusalCode::QuotaPayloadTooLarge, "{refusal}");
+        assert_eq!(store.committed_seq(), WalSeq(0));
+    }
+    let mut store = open_store(&root, limits());
+    import(&mut store, &src.join(".git")).expect("import under the default limits");
+    let dest = root.join("export.git");
+    export(&store, &BTreeMap::new(), &dest);
+    assert_fsck_strict_clean(&dest);
+    assert_eq!(object_ids(&dest), object_ids(&src));
+    drop(store);
+    fs::remove_dir_all(&root).unwrap();
+    fs::remove_dir_all(&src).unwrap();
+    // A blob within max_blob_bytes but over max_total_changeset_bytes (a custom config).
+    let src = temp_dir("c2-blob-over-changeset");
+    git(&src, &["init", "-q", "-b", "main"]);
+    write(&src, "small.txt", b"small\n");
+    write(&src, "mid.bin", &noise(6 * 1024, 5));
+    commit_all(&src, "one");
+    let skewed = StoreLimits {
+        max_blob_bytes: 8 * 1024,
+        max_total_changeset_bytes: 4 * 1024,
+        ..limits()
+    };
+    assert_import_refused(
+        &src.join(".git"),
+        skewed,
+        RefusalCode::QuotaPayloadTooLarge,
+        "blob over max_total_changeset_bytes",
+    );
+    fs::remove_dir_all(&src).unwrap();
+}
+
+/// Review of #96, B2: the store checks every Git ID it is handed against the content it
+/// maps (re-hashed with the workspace SHA-1), and refuses a Git ID twice in one entry, so a
+/// crafted record cannot poison the map; a correct import still works afterwards.
+#[test]
+fn h1_store_refuses_git_ids_that_do_not_match_their_content() {
+    let root = temp_dir("c2-poison");
+    let mut store = open_store(&root.join("store"), limits());
+    let repo = RepoId::new("aien-dev/h1-poison").unwrap();
+    let a = b"alpha\n".as_slice();
+    let b = b"bravo\n".as_slice();
+    let (da, db) = (BlobDigest::compute(a), BlobDigest::compute(b));
+    let x = GitOid::compute_blob(a);
+    let map = |oid: GitOid, blob: BlobDigest, len: usize| GitBlobMapping {
+        git_oid: oid,
+        blob,
+        size_bytes: len as u64,
+    };
+    let refused = |store: &mut SynapseStore,
+                   entry: GitBridgeEntry,
+                   blobs: &[(BlobDigest, &[u8])],
+                   case: &str| {
+        match store.record_git_import(&repo, entry, blobs) {
+            Err(e) => assert_eq!(e.code, RefusalCode::GitObjectCorrupt, "{case}: {e}"),
+            Ok(s) => panic!("{case}: accepted ({s:?})"),
+        }
+        assert_eq!(store.committed_seq(), WalSeq(0), "{case}: nothing written");
+        assert!(store.git_bridge_repo(&repo).is_none(), "{case}: no map");
+    };
+    refused(
+        &mut store,
+        GitBridgeEntry::Objects {
+            blobs: vec![map(x, da, a.len()), map(x, db, b.len())],
+            trees: vec![],
+        },
+        &[(da, a), (db, b)],
+        "one Git ID mapped to two blobs in one entry",
+    );
+    refused(
+        &mut store,
+        GitBridgeEntry::Objects {
+            blobs: vec![map(x, db, b.len())],
+            trees: vec![],
+        },
+        &[(db, b)],
+        "a blob under another blob's Git ID",
+    );
+    // A tree under a wrong Git ID (its node names blob `a`, mapped in the same entry).
+    let mut enc = synapse_core::TreeNodeEncoder::new(1);
+    enc.file("a.txt", FileMode::Regular644, &da, a.len() as u64)
+        .unwrap();
+    let (tree_digest, node) = enc.finish().unwrap();
+    refused(
+        &mut store,
+        GitBridgeEntry::Objects {
+            blobs: vec![map(x, da, a.len())],
+            trees: vec![GitTreeMapping {
+                git_oid: GitOid::compute_git_object("tree", b"not this tree"),
+                node: node.clone(),
+            }],
+        },
+        &[(da, a)],
+        "a tree under a wrong Git ID",
+    );
+    // The correct objects are accepted after those refusals.
+    let mut tree_payload = b"100644 a.txt\0".to_vec();
+    tree_payload.extend_from_slice(&x.0);
+    let tree_oid = GitOid::compute_git_object("tree", &tree_payload);
+    let node_again = node.clone();
+    store
+        .record_git_import(
+            &repo,
+            GitBridgeEntry::Objects {
+                blobs: vec![map(x, da, a.len())],
+                trees: vec![GitTreeMapping {
+                    git_oid: tree_oid,
+                    node,
+                }],
+            },
+            &[(da, a)],
+        )
+        .expect("the correct objects")
+        .expect("written");
+    // A tree in another repository naming that blob, which no Git blob of that repository
+    // maps (export there would have no Git ID for it).
+    let other = RepoId::new("aien-dev/h1-other").unwrap();
+    let before = store.committed_seq();
+    match store.record_git_import(
+        &other,
+        GitBridgeEntry::Objects {
+            blobs: vec![],
+            trees: vec![GitTreeMapping {
+                git_oid: tree_oid,
+                node: node_again,
+            }],
+        },
+        &[],
+    ) {
+        Err(e) => assert_eq!(e.code, RefusalCode::BlobNotFound, "{e}"),
+        Ok(s) => panic!("a tree naming a blob its repository does not map: accepted ({s:?})"),
+    }
+    assert_eq!(store.committed_seq(), before, "nothing written");
+    let headers = b"author a <a@b> 0 +0000\ncommitter a <a@b> 0 +0000\n\nm\n".to_vec();
+    let mut commit_payload = format!("tree {}\n", tree_oid.to_hex()).into_bytes();
+    commit_payload.extend_from_slice(&headers);
+    let commit_oid = GitOid::compute_git_object("commit", &commit_payload);
+    let commit = |git_oid: GitOid| {
+        GitBridgeEntry::Commit(GitImportedCommit {
+            git_oid,
+            tree: tree_digest,
+            parents: vec![],
+            headers: headers.clone(),
+        })
+    };
+    let refused_after = |store: &mut SynapseStore, entry: GitBridgeEntry, case: &str| {
+        let before = store.committed_seq();
+        match store.record_git_import(&repo, entry, &[]) {
+            Err(e) => assert_eq!(e.code, RefusalCode::GitObjectCorrupt, "{case}: {e}"),
+            Ok(s) => panic!("{case}: accepted ({s:?})"),
+        }
+        assert_eq!(store.committed_seq(), before, "{case}: nothing written");
+    };
+    refused_after(
+        &mut store,
+        commit(GitOid::compute_git_object("commit", b"another commit")),
+        "a commit under a wrong Git ID",
+    );
+    store
+        .record_git_import(&repo, commit(commit_oid), &[])
+        .expect("the correct commit")
+        .expect("written");
+    let mut same_content = commit_oid;
+    same_content.0[0] ^= 1;
+    refused_after(
+        &mut store,
+        commit(same_content),
+        "a second Git ID for the same commit content",
+    );
+    let seq = store.committed_seq();
+    let tag = |git_oid: GitOid| {
+        GitBridgeEntry::Tag(synapse_store::git_bridge::GitImportedTag {
+            git_oid,
+            target: GitBridgeTarget::Blob(da),
+            rest: b"type blob\ntag v1\ntagger a <a@b> 0 +0000\n\nt\n".to_vec(),
+        })
+    };
+    match store.record_git_import(
+        &repo,
+        tag(GitOid::compute_git_object("tag", b"another tag")),
+        &[],
+    ) {
+        Err(e) => assert_eq!(e.code, RefusalCode::GitObjectCorrupt, "{e}"),
+        Ok(s) => panic!("a tag under a wrong Git ID: accepted ({s:?})"),
+    }
+    assert_eq!(store.committed_seq(), seq, "nothing written");
+    // After every refusal a full import into the same repository still works: export gives
+    // the fixture with identical IDs plus exactly the three objects mapped above.
+    let src = fixture("c2-poison-src");
+    import_repository(&mut store, &repo, &src.join(".git"), ReadLimits::default())
+        .expect("a correct import after refusals");
+    let dest = root.join("export.git");
+    export_store(&store, &repo, &BTreeMap::new(), &dest).expect("export");
+    assert_fsck_strict_clean(&dest);
+    let mut expected = object_ids(&src);
+    expected.extend([x, tree_oid, commit_oid]);
+    assert_eq!(object_ids(&dest), expected);
+    assert_eq!(git_refs(&dest), git_refs(&src), "references");
+    drop(store);
+    fs::remove_dir_all(&src).unwrap();
+    fs::remove_dir_all(&root).unwrap();
+}
+
 /// Real repository round trip through the store (ignored by default: CI has no such
 /// clone). `SYNAPSE_H1_REAL_REPO` names a `git clone --mirror` directory; run under
 /// `/usr/bin/time -v` for peak RSS.

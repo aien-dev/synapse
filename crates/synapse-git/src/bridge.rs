@@ -15,16 +15,16 @@
 use crate::object::{parse_commit_links, parse_tag_target, parse_tree, GitTreeEntry};
 use crate::repo::{export_repository, ExportReceipt, GitHistory, GitRepository, ReadLimits};
 use crate::{GitObject, ObjectKind};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use synapse_core::{
-    decode_tree_node, tree_entry_order, validate_tree_entry_name, BlobDigest, ChangesetId,
-    FileMode, GitOid, MutationOp, RefusalCode, RepoId, SynapseError, SynapseResult, TreeDigest,
-    TreeNodeEncoder, TreeNodeEntryKind,
+    decode_tree_node, git_tree_payload_of_node, tree_entry_order, validate_tree_entry_name,
+    BlobDigest, ChangesetId, FileMode, GitOid, MutationOp, RefusalCode, RepoId, SynapseError,
+    SynapseResult, TreeDigest, TreeNodeEncoder, TreeNodeEntryKind,
 };
 use synapse_store::git_bridge::{
     check_git_ref_names, GitBlobMapping, GitBridgeEntry, GitBridgeRepo, GitBridgeTarget,
-    GitImportedCommit, GitImportedRefs, GitImportedTag, GitTreeMapping,
+    GitImportRecord, GitImportedCommit, GitImportedRefs, GitImportedTag, GitTreeMapping,
 };
 use synapse_store::SynapseStore;
 
@@ -92,24 +92,8 @@ fn git_tree_of_node(
     blob_oid: &dyn Fn(BlobDigest) -> SynapseResult<GitOid>,
     tree_oid: &dyn Fn(TreeDigest) -> SynapseResult<GitOid>,
 ) -> SynapseResult<GitObject> {
-    let mut entries = Vec::new();
-    for e in decode_tree_node(node)? {
-        let (mode, oid) = match e.kind {
-            TreeNodeEntryKind::File { mode, blob, .. } => {
-                (mode.git_octal_str().as_bytes().to_vec(), blob_oid(blob)?)
-            }
-            TreeNodeEntryKind::Dir(child) => (b"40000".to_vec(), tree_oid(child)?),
-        };
-        entries.push(GitTreeEntry {
-            mode,
-            name: e.name.into_bytes(),
-            oid,
-        });
-    }
-    Ok(GitObject::new(
-        ObjectKind::Tree,
-        crate::object::encode_tree(&entries),
-    ))
+    let payload = git_tree_payload_of_node(node, &mut |b| blob_oid(b), &mut |t| tree_oid(t))?;
+    Ok(GitObject::new(ObjectKind::Tree, payload))
 }
 
 /// `tree <hex>\n` then `parent <hex>\n` for each parent: the part of a commit the native
@@ -363,7 +347,8 @@ pub fn import_history(
         head: history.head.clone(),
     };
 
-    // Write.
+    // Build every record, then hand them to the store as one batch: it checks them all
+    // (limits, frame size, every Git ID) before the first write, so a refusal writes nothing.
     let mut receipt = ImportReceipt {
         blobs: blob_list.len(),
         trees: tree_order.len(),
@@ -372,52 +357,58 @@ pub fn import_history(
         refs: refs.refs.len(),
         ..ImportReceipt::default()
     };
-    let mut write = |store: &mut SynapseStore,
-                     entry: GitBridgeEntry,
-                     bytes: &[(BlobDigest, &[u8])]|
-     -> SynapseResult<()> {
-        match store.record_git_import(repo_id, entry, bytes)? {
-            Some(_) => receipt.records_written += 1,
-            None => receipt.records_skipped += 1,
-        }
-        Ok(())
-    };
-    // Objects records: at most MAX_MAPPINGS_PER_RECORD mappings, and inline blob bytes plus
-    // tree node bytes within max_total_changeset_bytes.
+    let mut records: Vec<GitImportRecord> = Vec::new();
+    // Objects records: at most MAX_MAPPINGS_PER_RECORD mappings, inline blob bytes within
+    // max_total_changeset_bytes, and an upper bound of the WAL frame (metadata per mapping
+    // plus inline blobs) within max_wal_record_bytes. A single object over either limit
+    // goes alone into a record the store then refuses.
     let budget = limits.max_total_changeset_bytes;
+    let frame_cap = limits.max_wal_record_bytes;
+    let frame_base = 64 + repo_id.as_str().len() as u64;
     let mut batch_blobs: Vec<GitBlobMapping> = Vec::new();
     let mut batch_bytes: Vec<(BlobDigest, &[u8])> = Vec::new();
     let mut batch_trees: Vec<GitTreeMapping> = Vec::new();
     let mut used = 0u64;
-    let mut flush = |store: &mut SynapseStore,
-                     batch_blobs: &mut Vec<GitBlobMapping>,
-                     batch_bytes: &mut Vec<(BlobDigest, &[u8])>,
-                     batch_trees: &mut Vec<GitTreeMapping>,
-                     used: &mut u64|
-     -> SynapseResult<()> {
+    let mut frame = frame_base;
+    #[allow(clippy::too_many_arguments)]
+    fn flush<'a>(
+        records: &mut Vec<GitImportRecord<'a>>,
+        batch_blobs: &mut Vec<GitBlobMapping>,
+        batch_bytes: &mut Vec<(BlobDigest, &'a [u8])>,
+        batch_trees: &mut Vec<GitTreeMapping>,
+        used: &mut u64,
+        frame: &mut u64,
+        frame_base: u64,
+    ) {
         if batch_blobs.is_empty() && batch_trees.is_empty() {
-            return Ok(());
+            return;
         }
         let entry = GitBridgeEntry::Objects {
             blobs: std::mem::take(batch_blobs),
             trees: std::mem::take(batch_trees),
         };
-        write(store, entry, batch_bytes)?;
-        batch_bytes.clear();
+        records.push((entry, std::mem::take(batch_bytes)));
         *used = 0;
-        Ok(())
-    };
+        *frame = frame_base;
+    }
     for &oid in &blob_list {
         let payload = object(oid)?.payload.as_slice();
         let (digest, size) = blobs[&oid];
-        if batch_blobs.len() == MAX_MAPPINGS_PER_RECORD || used + size > budget {
+        // Mapping (20 + 32 + 8) plus inline blob (32 + 4 + bytes).
+        let grows = 96 + size;
+        if batch_blobs.len() == MAX_MAPPINGS_PER_RECORD
+            || used + size > budget
+            || frame + grows > frame_cap
+        {
             flush(
-                store,
+                &mut records,
                 &mut batch_blobs,
                 &mut batch_bytes,
                 &mut batch_trees,
                 &mut used,
-            )?;
+                &mut frame,
+                frame_base,
+            );
         }
         batch_blobs.push(GitBlobMapping {
             git_oid: oid,
@@ -426,40 +417,56 @@ pub fn import_history(
         });
         batch_bytes.push((digest, payload));
         used += size;
+        frame += grows;
     }
     for &oid in &tree_order {
         let (_, node) = &trees[&oid];
         let size = node.len() as u64;
-        if batch_blobs.len() + batch_trees.len() >= MAX_MAPPINGS_PER_RECORD || used + size > budget
+        // Git ID (20) plus length (4) plus node.
+        let grows = 24 + size;
+        if batch_blobs.len() + batch_trees.len() >= MAX_MAPPINGS_PER_RECORD
+            || used + size > budget
+            || frame + grows > frame_cap
         {
             flush(
-                store,
+                &mut records,
                 &mut batch_blobs,
                 &mut batch_bytes,
                 &mut batch_trees,
                 &mut used,
-            )?;
+                &mut frame,
+                frame_base,
+            );
         }
         batch_trees.push(GitTreeMapping {
             git_oid: oid,
             node: node.clone(),
         });
         used += size;
+        frame += grows;
     }
     flush(
-        store,
+        &mut records,
         &mut batch_blobs,
         &mut batch_bytes,
         &mut batch_trees,
         &mut used,
-    )?;
+        &mut frame,
+        frame_base,
+    );
     for c in commit_entries {
-        write(store, GitBridgeEntry::Commit(c), &[])?;
+        records.push((GitBridgeEntry::Commit(c), Vec::new()));
     }
     for t in tag_entries {
-        write(store, GitBridgeEntry::Tag(t), &[])?;
+        records.push((GitBridgeEntry::Tag(t), Vec::new()));
     }
-    write(store, GitBridgeEntry::Refs(refs), &[])?;
+    records.push((GitBridgeEntry::Refs(refs), Vec::new()));
+    for seq in store.record_git_imports(repo_id, records)? {
+        match seq {
+            Some(_) => receipt.records_written += 1,
+            None => receipt.records_skipped += 1,
+        }
+    }
     Ok(receipt)
 }
 
@@ -468,6 +475,7 @@ struct ImportedIds {
     blobs: HashMap<BlobDigest, GitOid>,
     trees: HashMap<TreeDigest, GitOid>,
     commits: HashMap<ChangesetId, GitOid>,
+    tags: HashSet<GitOid>,
 }
 
 impl ImportedIds {
@@ -476,11 +484,13 @@ impl ImportedIds {
             blobs: HashMap::new(),
             trees: HashMap::new(),
             commits: HashMap::new(),
+            tags: HashSet::new(),
         };
         if let Some(r) = repo {
             ids.blobs = r.blobs().iter().map(|(oid, (d, _))| (*d, *oid)).collect();
             ids.trees = r.trees().iter().map(|(oid, d)| (*d, *oid)).collect();
             ids.commits = r.commits().map(|(oid, (id, _))| (*id, *oid)).collect();
+            ids.tags = r.tags().keys().copied().collect();
         }
         ids
     }
@@ -491,7 +501,7 @@ impl ImportedIds {
             GitBridgeTarget::Commit(id) => *self.commits.get(id).ok_or_else(missing)?,
             GitBridgeTarget::Tree(d) => *self.trees.get(d).ok_or_else(missing)?,
             GitBridgeTarget::Blob(b) => *self.blobs.get(b).ok_or_else(missing)?,
-            GitBridgeTarget::Tag(oid) => *oid,
+            GitBridgeTarget::Tag(oid) => *self.tags.get(oid).ok_or_else(missing)?,
         })
     }
 }
@@ -862,4 +872,19 @@ pub fn export_store(
     check_git_ref_names(refs.keys().map(String::as_str), head.as_deref())?;
     let objects: Vec<GitObject> = ex.objects.into_values().collect();
     export_repository(dest, &objects, &refs, head.as_deref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Export resolves a reference or tag that names a tag only when that tag is imported
+    /// (review of #96: it used to pass any tag Git ID through).
+    #[test]
+    fn export_refuses_a_tag_target_that_is_not_imported() {
+        let ids = ImportedIds::of(None);
+        let oid = GitOid::compute_git_object("tag", b"never imported");
+        let err = ids.target(&GitBridgeTarget::Tag(oid)).unwrap_err();
+        assert_eq!(err.code, RefusalCode::GitObjectCorrupt, "{err}");
+    }
 }

@@ -58,18 +58,28 @@ A target is `1 | ChangesetId`, `2 | TreeDigest`, `3 | BlobDigest` or `4 | tag gi
 
 `SynapseStore::git_bridge_repo(repo)` gives, per repository: Git blob to (`BlobDigest`, size); Git tree to `TreeDigest` (the canonical C1 node is stored, so the tree is rebuilt at export, never kept as Git bytes); Git commit to (`ChangesetId`, `TreeDigest`) and back; Git tag to its target and remaining bytes; the references and `HEAD`. An imported commit is a revision whose ID is `SHA-256("SYNAPSE_GIT_IMPORTED_REVISION_V1\0" || u64 len || version 1 | tree | parents | headers)`: the tree, the parents in written order and every byte after the `tree` and `parent` lines (author, committer, `gpgsig`, `mergetag`, `encoding`, message) byte for byte. The Git ID is not hashed in, so it is checked, not trusted: every export recomputes it. A B1 revision may name an imported commit of its repository as a parent.
 
-`SynapseStore::record_git_import` is the only writer. Before anything is written it refuses: a Git ID mapped again to different content (`GitObjectCorrupt`); a blob whose bytes or declared size do not match (`BlobDigestMismatch`); a blob neither provided nor committed (`BlobNotFound`); a non-canonical tree node (`TreeNodeMalformed`) or one naming an unknown child or blob; a commit on an unknown tree (`TreeNodeNotFound`) or parent (`ParentChangesetNotFound`); a reference name that is not a safe `refs/...` path, out of order, or both a file and a directory (`PathInvalid`); a target never imported (`GitObjectCorrupt`). An entry already fully recorded writes nothing, so importing the same history twice writes no record.
+`SynapseStore::record_git_imports(repo, records)` is the only writer (`record_git_import` is a batch of one). It checks the whole batch before the first write: each record is run, in order, against a copy of the map in which the batch's earlier records are already applied, and only when every record passes are they written, each checked again against the live map. So any refusal below leaves the store unchanged, however late in the batch the refused record sits (review of #96, B1). The checks, per record:
+
+* a blob over `max_blob_bytes`, the record's blobs over `max_total_changeset_bytes`, or the record's exact WAL frame (metadata plus inline blobs, encoded as the write will encode it) over `max_wal_record_bytes`: `QuotaPayloadTooLarge`;
+* a blob whose bytes or declared size do not match (`BlobDigestMismatch`), or neither provided nor committed (`BlobNotFound`);
+* a Git ID mapped again to different content, a Git ID twice in one entry, or a second Git ID for the content of a commit already imported: `GitObjectCorrupt`;
+* every Git ID the record newly maps is re-hashed with the workspace SHA-1 from what it maps to, and a mismatch is `GitObjectCorrupt` (review of #96, B2): a blob from its bytes; a tree from its C1 node rebuilt as a Git tree (`synapse_core::git_tree_payload_of_node`, the same function export uses) with the Git IDs of its entries; a commit from its `tree` and `parent` lines plus its stored headers; a tag from its `object` line plus its stored bytes. Entries already mapped were checked when written;
+* a non-canonical tree node (`TreeNodeMalformed`); a tree file entry naming a blob that no Git blob of the same repository maps (`BlobNotFound`) or with another size (`BlobDigestMismatch`); a subtree not imported into the same repository (`TreeNodeNotFound`);
+* a commit on a tree not imported into the repository (`TreeNodeNotFound`) or on an unknown parent (`ParentChangesetNotFound`);
+* a reference name that is not a safe `refs/...` path, out of order, or both a file and a directory (`PathInvalid`); a tag or reference target not imported into the repository (`GitObjectCorrupt`).
+
+An entry already fully recorded writes nothing, so importing the same history twice writes no record.
 
 ### Import
 
-`import_repository(store, repo, git_dir, limits)` reads the full history with the cut 1 reader (bounded by `ReadLimits`), converts all of it in memory, and only then writes: `Objects` records (at most 4,096 mappings and `max_total_changeset_bytes` of inline bytes each), one `Commit` record per commit (parents first), one `Tag` record per tag (inner tags first), one `Refs` record. A repository with anything that has no exact native form is refused `GitObjectNotRepresentable` before the first record, leaving the store unchanged:
+`import_repository(store, repo, git_dir, limits)` reads the full history with the cut 1 reader (bounded by `ReadLimits`), converts all of it in memory, and hands every record to `record_git_imports` as one batch: `Objects` records (at most 4,096 mappings, `max_total_changeset_bytes` of inline bytes, and an upper bound of the WAL frame within `max_wal_record_bytes` each), one `Commit` record per commit (parents first), one `Tag` record per tag (inner tags first), one `Refs` record. A repository with anything that has no exact native form is refused `GitObjectNotRepresentable` before the first record, leaving the store unchanged:
 
 * tree entry modes other than `100644`, `100755`, `120000` and `40000` (gitlinks `160000`, legacy `100664`, zero-padded `040000`);
 * entry names that are not UTF-8 or that C1 refuses (`.git`, `.`, `..`, a `/` or `\`, empty, over 2,048 bytes);
 * an empty subtree, or a tree whose canonical node does not rebuild the same Git tree (order, duplicates);
 * a commit whose bytes do not start with exactly its `tree` and `parent` lines, or a tag without its leading `object` line.
 
-A blob over the store's `max_blob_bytes` is `QuotaPayloadTooLarge`, and the reference names are checked by the same rule the store applies, also before the first record.
+A record the store's limits refuse (a blob over `max_blob_bytes` or `max_total_changeset_bytes`; a commit, tag or single wide tree whose frame is over `max_wal_record_bytes`) is `QuotaPayloadTooLarge` before the first record, and the reference names are checked by the same rule the store applies, also before the first record.
 
 ### Export
 
@@ -90,7 +100,7 @@ Nothing depends on the clock or on order of insertion, so the same store state g
 | Native revisions export deterministically (two exports give identical IDs) | Done: a native revision on imported history (a file edited, a file deleted, a file turned into a directory) exports to the same pack twice and after a reopen; a native child of it exports on its parent's result tree | `h1_native_revisions_export_deterministically_on_imported_history`, `h1_a_native_child_of_a_native_revision_exports_on_its_parents_result_tree` |
 | `git fsck --full --strict` clean | Done for every exported repository, fixture and real, cut 1 and cut 2 | same tests |
 
-Cut 2 hostile input at the import boundary (`h1_import_refuses_*`, `h1_store_refuses_crafted_bridge_entries`): each case is refused typed with the store's committed sequence unchanged and no map created; reference names that would write outside the export directory never reach a write.
+Cut 2 hostile input at the import boundary (`h1_import_refuses_*`, including a record over the store's limits, `h1_store_refuses_crafted_bridge_entries`, `h1_store_refuses_git_ids_that_do_not_match_their_content`): each case is refused typed with the store's committed sequence unchanged and no map created; reference names that would write outside the export directory never reach a write.
 
 Real repositories through the store (`evidence/h1-git-bridge/red-green/cut2-green.txt`): the same mirror clones, imported into a fresh store (`max_blob_bytes` raised to 1 GiB), the store reopened (WAL replay), exported from the store, then the cut 1 Git checks. Release test binary, `/usr/bin/time -v`:
 
@@ -100,6 +110,8 @@ Real repositories through the store (`evidence/h1-git-bridge/red-green/cut2-gree
 | `aien-dev/omega` (main `f4a9849`) | 29,636 (16,867, 10,345, 2,413, 11) | 633 | 2,433 | 123.3 s | 5.8 s | 976,824 KiB | identical IDs and references, fsck strict clean |
 
 Reopening the store (WAL replay of the records) took 0.1 s and 0.3 s. The cut 2 mirrors are newer clones (same `main`, more pull request references), so the counts differ from the cut 1 table.
+
+After the review of #96 (whole-import check, Git ID re-hash; `review96-green.txt`), the same two mirrors again: identical IDs and references, fsck strict clean, the same object and record counts. synapse: import 8.1 s, reopen 0.1 s, export 0.9 s, peak RSS 197,056 KiB. omega: import 133.7 s, reopen 4.1 s, export 15.1 s, peak RSS 977,812 KiB. The host was shared during that run (load average about 14.5 on 20 cores), so these times are not a clean comparison with the table above; peak RSS is 0.101% above it (calc:f87ba615b0d5).
 
 Cut 1 runs (`evidence/h1-git-bridge/red-green/green.txt`), each a `git clone --mirror` (full history, every reference including pull request refs): native read, native export, then Git checks that every reference resolves to the same object, that the exported database holds exactly the source's reachable objects (`rev-list --objects --all`), and `fsck --full --strict`:
 
@@ -140,6 +152,19 @@ Cut 2 (`cut2-red.txt`): seven stubs, each removing one behaviour, each applied a
 
 `cut2-green.txt` holds the passing workspace run and the two real repository runs through the store.
 
+Review of #96 (`review96-red.txt`). Baseline: the two new tests, run unchanged against the reviewed head `b69db2d`, both fail: "one Git ID mapped to two blobs in one entry: accepted", and "commit record over max_wal_record_bytes: nothing written" (`WalSeq(1)` against `WalSeq(0)`: the blobs were written before the commit was refused). Eight stubs on the fixed code, each alone, each failing by assertion:
+
+1. R1 the dry run skips the frame size: the limits test fails, nothing-written assertion (`WalSeq(1)` against `WalSeq(0)`).
+2. R2 the importer writes record by record instead of one checked batch: the same failure.
+3. R3 blob Git IDs not re-hashed: "a blob under another blob's Git ID: accepted".
+4. R4 tree Git IDs not re-hashed: "a tree under a wrong Git ID: accepted".
+5. R5 commit Git IDs not re-hashed: "a commit under a wrong Git ID: accepted".
+6. R6 tag Git IDs not re-hashed: "a tag under a wrong Git ID: accepted".
+7. R7 a tree file entry may name any visible blob (N3): the tree from another repository is then refused only later, with `GitObjectCorrupt` instead of `BlobNotFound`.
+8. R8 export passes any `Tag(oid)` target through: the export unit test fails (the lookup returns a Git ID).
+
+Two checks have no stub of their own because the re-hash already refuses every case they catch: a Git ID twice in one entry (two different contents cannot both hash to it; the identical duplicate is harmless) and a second Git ID for one commit's content (it cannot hash to both). Both are kept so the refusal names the fault. The same tests also show a correct import into the same store after each refusal (the limits test imports the full repository under the default limits; the Git ID test imports the fixture into the repository that took the refusals), each exported with identical IDs and fsck strict clean. `review96-green.txt` holds the passing runs.
+
 
 ## 4. Limits and what remains
 
@@ -147,9 +172,10 @@ Cut 2 (`cut2-red.txt`): seven stubs, each removing one behaviour, each applied a
 * A detached `HEAD`'s commit is imported (with its history) but no reference names it, and the exported `HEAD` then names `refs/heads/main` (the exporter's default); `git fsck` accepts it, the objects are identical, but the detached state is not reproduced.
 * A native revision exports only when its `base_tree` is the empty tree, an imported tree, or the result of a native revision exported in the same call (its parent chain). A base registered only in the API tree store (`register_base_tree`) is `TreeNodeNotFound`. Native references are passed by the caller; the store keeps no native reference state in this cut. Native commits carry no signature.
 * An import refused by the checks writes nothing. An I/O failure part way through the writes leaves the records written so far; importing again skips them and writes the rest (each record is checked against the map), so the import resumes, but the store is between states until then.
+* WAL replay applies kind 10 records without re-running the write checks (`GitBridgeLedger::apply` is total, as kinds 7 and 8 replay). A well-formed but crafted frame placed in the WAL by hand is therefore trusted by the map. Export still re-hashes every blob, tree, commit and tag against its Git ID, refuses a `Tag(oid)` target that is not an imported tag, and checks reference names again, so such a frame cannot write outside the export directory or export an object under a wrong ID (review of #96, N1).
 * The fan-out and `refs/` directories are checked with `symlink_metadata` and then the file below is opened with `O_NOFOLLOW`, which guards only the last path component: a directory swapped for a link between the check and the open would be followed. Closing that needs a walk relative to opened directory handles (`openat` with `O_DIRECTORY | O_NOFOLLOW` per component); not in this change.
 * Exported packs are not compressed beyond zlib stored blocks and hold no deltas: the omega export is 374,712,257 bytes in cut 1 and 374,713,444 bytes in the cut 2 run through the store against 50,117 KiB for Git's own pack (`count-objects -v`). Correct and accepted by Git, but large; a native compressor is a later change.
 * SHA-1 object format only. A SHA-256 Git repository (`extensions.objectformat = sha256`) is not read.
 * The existing per-changeset `materialize_changeset_to_git` still writes loose objects; it is a legacy path, `export_store` is the bridge's export, and removing the legacy path is not part of this change.
-* **Memory against the budget (review item c).** `ReadLimits::max_total_object_bytes` (default 1 GiB = 1,048,576 KiB) bounds the resolved object bytes a read holds, not the whole process: pack files are held whole, and the history map, the import's converted records and the export's object set sit beside them. Measured peak RSS (`/usr/bin/time -v`) for omega (374,301,457 bytes of objects): cut 1 read and export 1,114,576 KiB, 1.063 times the budget (calc:f4b7563320d5) and 3.049 times the object bytes (calc:b42240ae452f); cut 2 import, reopen and export through the store 976,824 KiB, 0.9316 times the budget (calc:3499282d5a7c) and 2.672 times the object bytes (calc:15f1957f5764). The breakdown between those parts was not profiled. A repository larger than the defaults needs the caller to raise them.
+* **Memory against the budget (review item c).** `ReadLimits::max_total_object_bytes` (default 1 GiB = 1,048,576 KiB) bounds the resolved object bytes a read holds, not the whole process: pack files are held whole, and the history map, the import's converted records and the export's object set sit beside them. Measured peak RSS (`/usr/bin/time -v`) for omega (374,301,457 bytes of objects): cut 1 read and export 1,114,576 KiB, 1.063 times the budget (calc:f4b7563320d5) and 3.049 times the object bytes (calc:b42240ae452f); cut 2 import, reopen and export through the store 976,824 KiB, 0.9316 times the budget (calc:3499282d5a7c) and 2.672 times the object bytes (calc:15f1957f5764). After the review of #96 the import checks the whole batch on a copy of the map (the copy holds every repository's map and tree nodes while the batch is checked); the omega peak was 977,812 KiB, 0.9325 times the budget (calc:54368b37d67c) and 2.675 times the object bytes (calc:51cc5db6ffa7). The breakdown between those parts was not profiled. Delta streams are not counted either: resolving a deep delta chain holds up to 4,096 inflated delta streams, and the budget counts only declared result sizes, while copy instructions can make a stream several times larger than its result (review of #96, N2; unchanged from cut 1). A repository larger than the defaults needs the caller to raise them.
 * No performance figure is claimed against a section 6 bound; the import and export times above are measurements of the test runs, not profiled (the test store uses `FsyncPolicy::EveryCommit`, one WAL record per imported commit).

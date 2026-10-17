@@ -23,8 +23,8 @@ use crate::WalRecord;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use synapse_core::{
-    decode_tree_node, BlobDigest, ChangesetId, GitOid, RefusalCode, RepoId, SynapseError,
-    SynapseResult, TreeDigest, TreeNodeEntryKind, WalSeq,
+    decode_tree_node, git_tree_payload_of_node, BlobDigest, ChangesetId, GitOid, RefusalCode,
+    RepoId, SynapseError, SynapseResult, TreeDigest, TreeNodeEntryKind, WalSeq,
 };
 
 /// Domain tag of an imported revision's `ChangesetId`. Distinct from the v1 and v2 domains, so
@@ -178,6 +178,12 @@ pub fn valid_git_ref_name(name: &str) -> bool {
             .any(|b| b < 0x20 || b == 0x7f || b" ~^:?*[\\".contains(&b))
 }
 
+/// Blobs that come with one kind 10 record: digest and bytes.
+pub type GitImportBlobs<'a> = Vec<(BlobDigest, &'a [u8])>;
+
+/// One record of a Git import batch: the entry and the blobs it brings.
+pub type GitImportRecord<'a> = (GitBridgeEntry, GitImportBlobs<'a>);
+
 fn refused(code: RefusalCode, msg: impl Into<String>) -> SynapseError {
     SynapseError::new(code, msg)
 }
@@ -191,6 +197,9 @@ pub struct GitBridgeRepo {
     by_changeset: BTreeMap<ChangesetId, GitOid>,
     tags: BTreeMap<GitOid, GitImportedTag>,
     refs: Option<GitImportedRefs>,
+    /// Reverse maps (native identity to Git ID), so a tree, commit or tag can be re-hashed.
+    blob_oids: BTreeMap<BlobDigest, GitOid>,
+    tree_oids: BTreeMap<TreeDigest, GitOid>,
 }
 
 impl GitBridgeRepo {
@@ -292,11 +301,13 @@ impl GitBridgeLedger {
             GitBridgeEntry::Objects { blobs, trees } => {
                 for b in blobs {
                     repo.blobs.insert(b.git_oid, (b.blob, b.size_bytes));
+                    repo.blob_oids.insert(b.blob, b.git_oid);
                     self.blob_sizes.entry(b.blob).or_insert(b.size_bytes);
                 }
                 for t in trees {
                     let d = t.digest();
                     repo.trees.insert(t.git_oid, d);
+                    repo.tree_oids.insert(d, t.git_oid);
                     self.nodes.entry(d).or_insert_with(|| t.node.clone());
                 }
             }
@@ -312,43 +323,23 @@ impl GitBridgeLedger {
         }
     }
 
-    fn tree_known(&self, digest: TreeDigest, pending: &BTreeSet<TreeDigest>) -> bool {
-        digest == TreeDigest::empty()
-            || self.nodes.contains_key(&digest)
-            || pending.contains(&digest)
-    }
-
-    fn target_known(
-        &self,
-        repo: Option<&GitBridgeRepo>,
-        target: &GitBridgeTarget,
-        blob_visible: &dyn Fn(&BlobDigest) -> bool,
-    ) -> SynapseResult<()> {
-        let ok = match target {
-            GitBridgeTarget::Commit(id) => repo.is_some_and(|r| r.by_changeset.contains_key(id)),
-            GitBridgeTarget::Tree(d) => self.tree_known(*d, &BTreeSet::new()),
-            GitBridgeTarget::Blob(b) => blob_visible(b),
-            GitBridgeTarget::Tag(oid) => repo.is_some_and(|r| r.tags.contains_key(oid)),
-        };
-        if ok {
-            Ok(())
-        } else {
-            Err(refused(
-                RefusalCode::GitObjectCorrupt,
-                format!("bridge target {target:?} is not imported"),
-            ))
-        }
-    }
-
     /// Check one entry against the map before it is written. Returns `false` when the entry
-    /// is already fully recorded (nothing to write). `provided` maps blobs whose bytes come with
-    /// the record to their length; `blob_visible` says whether a blob is already committed.
+    /// is already fully recorded (nothing to write). `provided` holds the blobs whose bytes
+    /// come with the record; `blob_visible` says whether a blob is already committed and
+    /// `read_blob` reads one that is.
+    ///
+    /// Beyond structure (sizes, visibility, subtrees, parents and targets imported in this
+    /// repository, no Git ID remapped), every Git ID the entry newly maps is re-hashed from
+    /// the content it maps to (blob bytes; tree, commit and tag payloads rebuilt from the
+    /// stored form and the Git IDs already mapped), and a Git ID may appear only once in an
+    /// entry. So a record cannot map a Git ID to anything export would not give back.
     pub(crate) fn check(
         &self,
         repo_id: &RepoId,
         entry: &GitBridgeEntry,
-        provided: &BTreeMap<BlobDigest, u64>,
+        provided: &BTreeMap<BlobDigest, &[u8]>,
         blob_visible: &dyn Fn(&BlobDigest) -> bool,
+        read_blob: &dyn Fn(&BlobDigest) -> SynapseResult<Vec<u8>>,
     ) -> SynapseResult<bool> {
         let repo = self.repos.get(repo_id);
         let conflict = |what: &str, oid: GitOid| {
@@ -365,21 +356,37 @@ impl GitBridgeLedger {
                         "an objects entry maps no object",
                     ));
                 }
-                let mut fresh = false;
-                let mut sizes: BTreeMap<BlobDigest, u64> = BTreeMap::new();
-                for b in blobs {
-                    match repo.and_then(|r| r.blobs.get(&b.git_oid)) {
-                        Some(&(d, s)) if d == b.blob && s == b.size_bytes => {}
-                        Some(_) => return Err(conflict("Git blob", b.git_oid)),
-                        None => fresh = true,
+                let mut ids: BTreeSet<GitOid> = BTreeSet::new();
+                for oid in blobs
+                    .iter()
+                    .map(|b| b.git_oid)
+                    .chain(trees.iter().map(|t| t.git_oid))
+                {
+                    if !ids.insert(oid) {
+                        return Err(refused(
+                            RefusalCode::GitObjectCorrupt,
+                            format!("Git ID {oid} appears more than once in one objects entry"),
+                        ));
                     }
+                }
+                let mut fresh = false;
+                // Blobs this entry maps: digest to (Git ID, size).
+                let mut entry_blobs: BTreeMap<BlobDigest, (GitOid, u64)> = BTreeMap::new();
+                for b in blobs {
+                    let known = match repo.and_then(|r| r.blobs.get(&b.git_oid)) {
+                        Some(&(d, s)) if d == b.blob && s == b.size_bytes => true,
+                        Some(_) => return Err(conflict("Git blob", b.git_oid)),
+                        None => false,
+                    };
                     match provided.get(&b.blob) {
-                        Some(&len) if len != b.size_bytes => {
+                        Some(bytes) if bytes.len() as u64 != b.size_bytes => {
                             return Err(refused(
                                 RefusalCode::BlobDigestMismatch,
                                 format!(
-                                    "Git blob {} declares {} bytes but its blob holds {len}",
-                                    b.git_oid, b.size_bytes
+                                    "Git blob {} declares {} bytes but its blob holds {}",
+                                    b.git_oid,
+                                    b.size_bytes,
+                                    bytes.len()
                                 ),
                             ))
                         }
@@ -392,44 +399,80 @@ impl GitBridgeLedger {
                             ))
                         }
                     }
-                    sizes.insert(b.blob, b.size_bytes);
+                    if !known {
+                        fresh = true;
+                        let read;
+                        let content: &[u8] = match provided.get(&b.blob) {
+                            Some(bytes) => bytes,
+                            None => {
+                                read = read_blob(&b.blob)?;
+                                &read
+                            }
+                        };
+                        if content.len() as u64 != b.size_bytes {
+                            return Err(refused(
+                                RefusalCode::BlobDigestMismatch,
+                                format!(
+                                    "Git blob {} declares {} bytes but its blob holds {}",
+                                    b.git_oid,
+                                    b.size_bytes,
+                                    content.len()
+                                ),
+                            ));
+                        }
+                        verify_git_id("blob", b.git_oid, content)?;
+                    }
+                    entry_blobs.insert(b.blob, (b.git_oid, b.size_bytes));
                 }
-                let mut pending: BTreeSet<TreeDigest> = BTreeSet::new();
+                let mapped_blob = |blob: &BlobDigest| -> Option<(GitOid, u64)> {
+                    entry_blobs.get(blob).copied().or_else(|| {
+                        let r = repo?;
+                        let oid = *r.blob_oids.get(blob)?;
+                        r.blobs.get(&oid).map(|&(_, s)| (oid, s))
+                    })
+                };
+                // Trees this entry maps: digest to Git ID.
+                let mut entry_trees: BTreeMap<TreeDigest, GitOid> = BTreeMap::new();
                 for t in trees {
                     let digest = t.digest();
-                    match repo.and_then(|r| r.trees.get(&t.git_oid)) {
-                        Some(&d) if d == digest => {}
+                    let known = match repo.and_then(|r| r.trees.get(&t.git_oid)) {
+                        Some(&d) if d == digest => true,
                         Some(_) => return Err(conflict("Git tree", t.git_oid)),
-                        None => fresh = true,
-                    }
+                        None => false,
+                    };
+                    let mapped_tree = |child: &TreeDigest| -> Option<GitOid> {
+                        entry_trees
+                            .get(child)
+                            .or_else(|| repo.and_then(|r| r.tree_oids.get(child)))
+                            .copied()
+                    };
                     for e in decode_tree_node(&t.node)? {
                         match e.kind {
                             TreeNodeEntryKind::File {
                                 blob, size_bytes, ..
-                            } => {
-                                let known_size = sizes
-                                    .get(&blob)
-                                    .or_else(|| self.blob_sizes.get(&blob))
-                                    .copied();
-                                if !(sizes.contains_key(&blob) || blob_visible(&blob)) {
+                            } => match mapped_blob(&blob) {
+                                None => {
                                     return Err(refused(
                                         RefusalCode::BlobNotFound,
-                                        format!("tree {} names missing blob {blob}", t.git_oid),
-                                    ));
+                                        format!(
+                                            "tree {} names blob {blob} that no Git blob of this repository maps",
+                                            t.git_oid
+                                        ),
+                                    ))
                                 }
-                                if known_size.is_some_and(|s| s != size_bytes) {
+                                Some((_, s)) if s != size_bytes => {
                                     return Err(refused(
                                         RefusalCode::BlobDigestMismatch,
                                         format!(
-                                            "tree {} gives {} the size {size_bytes}",
+                                            "tree {} gives {} the size {size_bytes} but its blob holds {s}",
                                             t.git_oid, e.name
                                         ),
-                                    ));
+                                    ))
                                 }
-                            }
+                                Some(_) => {}
+                            },
                             TreeNodeEntryKind::Dir(child) => {
-                                if child == TreeDigest::empty() || !self.tree_known(child, &pending)
-                                {
+                                if child == TreeDigest::empty() || mapped_tree(&child).is_none() {
                                     return Err(refused(
                                         RefusalCode::TreeNodeNotFound,
                                         format!(
@@ -441,7 +484,17 @@ impl GitBridgeLedger {
                             }
                         }
                     }
-                    pending.insert(digest);
+                    if !known {
+                        fresh = true;
+                        let unmapped = || refused(RefusalCode::GitObjectCorrupt, "unmapped entry");
+                        let payload = git_tree_payload_of_node(
+                            &t.node,
+                            &mut |b| mapped_blob(&b).map(|(o, _)| o).ok_or_else(unmapped),
+                            &mut |c| mapped_tree(&c).ok_or_else(unmapped),
+                        )?;
+                        verify_git_id("tree", t.git_oid, &payload)?;
+                    }
+                    entry_trees.insert(digest, t.git_oid);
                 }
                 Ok(fresh)
             }
@@ -454,23 +507,36 @@ impl GitBridgeLedger {
                         Err(conflict("Git commit", c.git_oid))
                     };
                 }
-                if !self.tree_known(c.tree, &BTreeSet::new()) {
+                if let Some(other) = repo.and_then(|r| r.by_changeset.get(&id)) {
                     return Err(refused(
+                        RefusalCode::GitObjectCorrupt,
+                        format!(
+                            "commit {} has the same content as the imported commit {other}",
+                            c.git_oid
+                        ),
+                    ));
+                }
+                let tree = target_oid(repo, &GitBridgeTarget::Tree(c.tree)).map_err(|_| {
+                    refused(
                         RefusalCode::TreeNodeNotFound,
                         format!(
                             "commit {} names tree {} that is not imported",
                             c.git_oid, c.tree
                         ),
-                    ));
-                }
+                    )
+                })?;
+                let mut payload = format!("tree {}\n", tree.to_hex()).into_bytes();
                 for p in &c.parents {
-                    if !repo.is_some_and(|r| r.by_changeset.contains_key(p)) {
+                    let Some(parent) = repo.and_then(|r| r.by_changeset.get(p)) else {
                         return Err(refused(
                             RefusalCode::ParentChangesetNotFound,
                             format!("commit {} names parent {p} that is not imported", c.git_oid),
                         ));
-                    }
+                    };
+                    payload.extend_from_slice(format!("parent {}\n", parent.to_hex()).as_bytes());
                 }
+                payload.extend_from_slice(&c.headers);
+                verify_git_id("commit", c.git_oid, &payload)?;
                 Ok(true)
             }
             GitBridgeEntry::Tag(t) => {
@@ -481,17 +547,53 @@ impl GitBridgeLedger {
                         Err(conflict("Git tag", t.git_oid))
                     };
                 }
-                self.target_known(repo, &t.target, blob_visible)?;
+                let target = target_oid(repo, &t.target)?;
+                let mut payload = format!("object {}\n", target.to_hex()).into_bytes();
+                payload.extend_from_slice(&t.rest);
+                verify_git_id("tag", t.git_oid, &payload)?;
                 Ok(true)
             }
             GitBridgeEntry::Refs(r) => {
                 check_git_ref_names(r.refs.iter().map(|(n, _)| n.as_str()), r.head.as_deref())?;
                 for (_, target) in &r.refs {
-                    self.target_known(repo, target, blob_visible)?;
+                    target_oid(repo, target)?;
                 }
                 Ok(repo.and_then(|x| x.refs.as_ref()) != Some(r))
             }
         }
+    }
+}
+
+/// The Git ID a bridge target names in `repo`, refused unless it is imported there (the
+/// empty tree is always known: its Git ID is that of the empty Git tree).
+fn target_oid(repo: Option<&GitBridgeRepo>, target: &GitBridgeTarget) -> SynapseResult<GitOid> {
+    let oid = match target {
+        GitBridgeTarget::Commit(id) => repo.and_then(|r| r.by_changeset.get(id).copied()),
+        GitBridgeTarget::Tree(d) if *d == TreeDigest::empty() => {
+            Some(GitOid::compute_git_object("tree", b""))
+        }
+        GitBridgeTarget::Tree(d) => repo.and_then(|r| r.tree_oids.get(d).copied()),
+        GitBridgeTarget::Blob(b) => repo.and_then(|r| r.blob_oids.get(b).copied()),
+        GitBridgeTarget::Tag(oid) => repo.filter(|r| r.tags.contains_key(oid)).map(|_| *oid),
+    };
+    oid.ok_or_else(|| {
+        refused(
+            RefusalCode::GitObjectCorrupt,
+            format!("bridge target {target:?} is not imported"),
+        )
+    })
+}
+
+/// Refuse a Git ID that is not the SHA-1 of its object (`{kind} {len}\0{payload}`).
+fn verify_git_id(kind: &str, claimed: GitOid, payload: &[u8]) -> SynapseResult<()> {
+    let actual = GitOid::compute_git_object(kind, payload);
+    if actual == claimed {
+        Ok(())
+    } else {
+        Err(refused(
+            RefusalCode::GitObjectCorrupt,
+            format!("Git {kind} {claimed} does not match its content (which hashes to {actual})"),
+        ))
     }
 }
 
@@ -547,21 +649,87 @@ pub(crate) fn record_digest_input(record: &WalRecord, h: &mut Sha256) {
 }
 
 impl crate::SynapseStore {
-    /// Write one Git bridge record (WAL kind 10) for `repo_id`, after every check: binary
-    /// codec, blob caps, each provided blob's digest and that every provided blob is mapped by
-    /// the entry, then [`GitBridgeLedger::check`] (blob sizes and visibility, subtrees, parents
-    /// and targets already imported, no Git ID remapped, reference names). Blobs not yet visible
-    /// go inline in the record. Returns `None` when the entry is already recorded.
+    /// Write one Git bridge record (WAL kind 10) for `repo_id`: a batch of one, see
+    /// [`Self::record_git_imports`]. Returns `None` when the entry is already recorded.
     pub fn record_git_import(
         &mut self,
         repo_id: &RepoId,
         entry: GitBridgeEntry,
         blobs: &[(BlobDigest, &[u8])],
     ) -> SynapseResult<Option<WalSeq>> {
+        let mut out = self.record_git_imports(repo_id, vec![(entry, blobs.to_vec())])?;
+        Ok(out.pop().flatten())
+    }
+
+    /// Write a whole Git import (WAL kind 10 records, in order) for `repo_id`, checked as one
+    /// unit before the first write. Every record of a batch of more than one is first run
+    /// against a copy of the map in which the earlier records of the batch are already applied: binary codec, blob caps,
+    /// each provided blob's digest and that the entry maps it, [`GitBridgeLedger::check`]
+    /// (structure and every new Git ID re-hashed from its content) and the exact size of its
+    /// WAL frame against `max_wal_record_bytes`. Only when every record passes are they
+    /// written, each checked again against the live map. So any refusal the checks can give
+    /// leaves the store untouched; a failure while writing (an I/O error) can still stop a
+    /// batch part way, and a re-import then finishes it. Blobs not yet visible go inline.
+    /// Returns, per record, its sequence number or `None` when it was already recorded.
+    pub fn record_git_imports(
+        &mut self,
+        repo_id: &RepoId,
+        records: Vec<GitImportRecord<'_>>,
+    ) -> SynapseResult<Vec<Option<WalSeq>>> {
         self.check_writable()?;
         self.check_binary_codec()?;
+        // Dry run on a copy of the map. A single record needs none: its write checks every
+        // limit, the frame size included, before anything is written.
+        let mut sim = (records.len() > 1).then(|| self.git_bridge.clone());
+        let mut sim_visible: BTreeSet<BlobDigest> = BTreeSet::new();
+        let mut prepared = Vec::with_capacity(records.len());
+        for (entry, blobs) in records {
+            let record = WalRecord::GitBridgeImported {
+                repo_id: repo_id.clone(),
+                entry,
+            };
+            if let Some(sim) = sim.as_mut() {
+                let visible = |d: &BlobDigest| {
+                    self.blob_first_visible_seq.contains_key(d) || sim_visible.contains(d)
+                };
+                if let Some(inline) = self.prepare_git_import(sim, &record, &blobs, &visible)? {
+                    self.check_frame_cap(self.git_import_frame_len(&record, &inline)?)?;
+                    sim_visible.extend(inline.iter().map(|(d, _)| *d));
+                    sim.apply(&record);
+                }
+            }
+            prepared.push((record, blobs));
+        }
+        drop(sim);
+        let mut out = Vec::with_capacity(prepared.len());
+        for (record, blobs) in prepared {
+            let visible = |d: &BlobDigest| self.blob_first_visible_seq.contains_key(d);
+            let seq = match self.prepare_git_import(&self.git_bridge, &record, &blobs, &visible)? {
+                None => None,
+                Some(inline) => Some(self.append_revision_record(record, &inline)?),
+            };
+            out.push(seq);
+        }
+        Ok(out)
+    }
+
+    /// Every check of one kind 10 record against `ledger`. Returns the blobs to put inline,
+    /// or `None` when the entry is already recorded.
+    fn prepare_git_import<'b>(
+        &self,
+        ledger: &GitBridgeLedger,
+        record: &WalRecord,
+        blobs: &[(BlobDigest, &'b [u8])],
+        visible: &dyn Fn(&BlobDigest) -> bool,
+    ) -> SynapseResult<Option<GitImportBlobs<'b>>> {
+        let WalRecord::GitBridgeImported { repo_id, entry } = record else {
+            return Err(refused(
+                RefusalCode::GitObjectCorrupt,
+                "not a Git bridge record",
+            ));
+        };
         let mapped: BTreeSet<BlobDigest> = entry.blobs().into_iter().collect();
-        let mut provided: BTreeMap<BlobDigest, u64> = BTreeMap::new();
+        let mut provided: BTreeMap<BlobDigest, &[u8]> = BTreeMap::new();
         let mut total = 0u64;
         for (declared, bytes) in blobs {
             let len = bytes.len() as u64;
@@ -585,26 +753,37 @@ impl crate::SynapseStore {
                     format!("blob {declared} is provided but no Git blob maps to it"),
                 ));
             }
-            provided.insert(*declared, len);
+            provided.insert(*declared, bytes);
         }
-        let visible = |d: &BlobDigest| self.blob_first_visible_seq.contains_key(d);
-        if !self
-            .git_bridge
-            .check(repo_id, &entry, &provided, &visible)?
-        {
+        let read_blob = |d: &BlobDigest| self.get_blob_visible(*d, None, None);
+        if !ledger.check(repo_id, entry, &provided, visible, &read_blob)? {
             return Ok(None);
         }
-        let mut inline: Vec<(BlobDigest, &[u8])> = Vec::new();
+        let mut inline: GitImportBlobs<'b> = Vec::new();
         for (digest, bytes) in blobs {
             if !visible(digest) && !inline.iter().any(|(d, _)| d == digest) {
                 inline.push((*digest, *bytes));
             }
         }
-        let record = WalRecord::GitBridgeImported {
-            repo_id: repo_id.clone(),
-            entry,
-        };
-        self.append_revision_record(record, &inline).map(Some)
+        Ok(Some(inline))
+    }
+
+    /// The exact WAL payload length `append_revision_record` gives `record` with `inline`
+    /// blobs (v2: `u32 meta_len | meta | u32 count | (digest | u32 len | bytes)*`; v1: the
+    /// metadata, blobs go to files).
+    fn git_import_frame_len(
+        &self,
+        record: &WalRecord,
+        inline: &[(BlobDigest, &[u8])],
+    ) -> SynapseResult<usize> {
+        let meta = crate::codec::encode_record_with(record, self.codec)?.len();
+        Ok(if self.v2_mode {
+            inline
+                .iter()
+                .fold(8 + meta, |n, (_, b)| n.saturating_add(36 + b.len()))
+        } else {
+            meta
+        })
     }
 
     /// The Git bridge map of `repo_id`, if anything was imported into it.
