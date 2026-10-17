@@ -139,6 +139,10 @@ pub enum RefusalCode {
     /// A move of a revision to `Canonical` that does not come from the promotion queue
     /// (ADR 0003 sections 5.3 and 5.5, step B4).
     CanonicalOutsidePromotionQueue,
+    /// Strict recovery found a WAL kind 9 state move whose mover signature does not verify
+    /// or whose mover key is not the audience of its chain's leaf link: the log was written
+    /// without the mover's private key (ADR 0003 sections 5.3 and 5.4, step B4, issue #89).
+    RevisionStateMoveUnverified,
 
     // Git and Radicle canonicality refusals
     GitObjectCorrupt,

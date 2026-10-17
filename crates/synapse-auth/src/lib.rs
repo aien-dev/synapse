@@ -11,7 +11,9 @@ use synapse_core::{
 };
 
 mod chain;
+mod state_move;
 pub use chain::*;
+pub use state_move::*;
 
 /// Current capability grant schema version.
 pub const CAPABILITY_GRANT_VERSION: u16 = 1;

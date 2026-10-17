@@ -1,0 +1,13 @@
+# PR #100 review note 1 red: head 30353d6 plus only the test changes of the next commit, run with
+# nice -n 19 cargo test --locked -p synapse-store -j 4 --lib b89_
+
+test revision::b4_tests::b89_state_root_record_digest_covers_the_signature_fields ... ok
+test revision::b4_tests::b89_a_forger_minted_leaf_link_verifies_but_never_owns_a_revision ... ok
+test revision::b4_tests::b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay ... ok
+test revision::b4_tests::b89_signed_owner_move_round_trips_replay_checkpoint_and_compaction ... ok
+test revision::b4_tests::b89_torn_tail_compaction_drops_unverified_moves_so_strict_recovery_accepts_the_store ... FAILED
+thread 'revision::b4_tests::b89_torn_tail_compaction_drops_unverified_moves_so_strict_recovery_accepts_the_store' panicked at crates/synapse-store/src/revision.rs:1306:13:
+assertion `left == right` failed: StateMoveReplayReport { signature_invalid: 1, signer_not_chain_leaf: 1, not_owner_move: 1, first_unverified: Some((WalSeq(2), SignatureInvalid)) }
+  left: 2
+ right: 0
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 55 filtered out; finished

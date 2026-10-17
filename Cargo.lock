@@ -498,6 +498,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "synapse-auth",
  "synapse-core",
 ]
 
