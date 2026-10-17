@@ -1,0 +1,16 @@
+{
+  "step": "ADR 0003 section 9 step 27, R1 (issue #47): seconds and joules per accepted change, R1 raw block store (file-backed O_DIRECT) beside A2 on ext4, against the flush bound",
+  "host": "spark-b87b, 20 CPUs, kernel 7.0.0-1019-nvidia; both arms on /dev/nvme0n1p2 ext4: A2 as files in a directory, R1 on a 512 MiB preallocated regular file (written with zeros, synced) opened with O_DIRECT",
+  "binary": {"commit": "57d1135", "sha256": "7581c17d9083578d80854fad930aeedd925f802cd8da94cb3e266ed41aa842d2", "build": "nice -n 19 cargo build --release -p synapse-bench -j 4"},
+  "commands": [
+    "synapse-bench floor --dir <dir> --out floor.json --iterations 300",
+    "3 x interleaved: synapse-bench segments --dir <dir> --out raw-r1-<i>.json --reps 1 --block-device <device file>; synapse-bench segments --dir <dir> --out raw-a2-<i>.json --reps 1   (defaults otherwise: --agents 1,4,8,32 --changes 4000 --blob-bytes 11949 --segment-mib 16 --checkpoint-every 1000 --idle-window-s 30)",
+    "synapse-bench segments-report --raw raw-<arm>-<i>.json --floor floor.json > report-<arm>-<i>.json",
+    "aggregate.sh > summary.json   (median and range of the three invocations per arm and agent count)"
+  ],
+  "run_start_utc": "2026-10-17T04:55:45Z", "loadavg_start": "6.27 7.16 6.81",
+  "run_end_utc": "2026-10-17T05:00:32Z", "loadavg_end": "8.35 8.44 7.54",
+  "clock": "std::time::Instant (CLOCK_MONOTONIC), ns",
+  "energy": "aien_spbm hwmon, SoC package only, 1 mJ step, 10 Hz sampling, uncalibrated; NVMe UNMEASURED. Idle window per invocation read 36.0 to 72.7 W (other sessions' workloads, including a GPU test, were running), so package energy per change is dominated by other load and does not separate the arms.",
+  "note": "Shared, loaded host (load average 6 to 8.5). Each R1 cell starts on a device whose first MiB was zeroed and synced, then formatted by the store."
+}

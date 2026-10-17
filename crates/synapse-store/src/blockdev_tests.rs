@@ -387,12 +387,14 @@ fn r1_superblock_falls_back_to_the_older_copy_when_the_newest_is_damaged() {
     assert_eq!(d.read_named("a").as_deref(), Some(&b"first"[..]));
     assert_eq!(d.read_named("b"), None);
     io.rec().image[newest + 40] = saved;
-    // Damage the metadata region the newest copy points at: same fallback.
+    // Damage the metadata region the newest copy points at: same fallback. The byte is
+    // the last byte of "second" ("SBM1", count, then "a" and "b" entries: 41 bytes), so
+    // the region still decodes and only its digest catches the damage.
     let d = reopen(&io).unwrap();
     assert_eq!(d.generation(), g);
     let slot = d.meta_slot() as usize;
     let region = geo.meta_offset[slot] as usize;
-    io.rec().image[region + 12] ^= 0x01;
+    io.rec().image[region + 40] ^= 0x01;
     let d = reopen(&io).unwrap();
     assert_eq!(d.generation(), g - 1);
     assert_eq!(d.read_named("b"), None);
