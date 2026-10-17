@@ -1,7 +1,7 @@
 //! Capability-scoped Ed25519 authentication, replay protection, quota enforcement,
 //! and tamper-evident hash-chained security audit logging (`synapse-auth`, Gate 2a).
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,8 +11,10 @@ use synapse_core::{
 };
 
 mod chain;
+mod key_cache;
 mod state_move;
 pub use chain::*;
+pub use key_cache::KEY_CACHE_CAPACITY;
 pub use state_move::*;
 
 /// Current capability grant schema version.
@@ -155,7 +157,7 @@ impl AgentCapabilityGrant {
             ));
         }
         let pubkey_bytes = decode_did_key_ed25519(&self.issuer_did)?;
-        let verifying_key = VerifyingKey::from_bytes(&pubkey_bytes).map_err(|_| {
+        let verifying_key = key_cache::verifying_key(&pubkey_bytes).map_err(|_| {
             SynapseError::new(
                 RefusalCode::DidKeyInvalid,
                 "invalid authority Ed25519 public key",
@@ -540,7 +542,7 @@ impl PolicyEnforcer {
         }
 
         let agent_pubkey_bytes = decode_did_key_ed25519(&req.grant.agent_did)?;
-        let agent_verifying_key = VerifyingKey::from_bytes(&agent_pubkey_bytes).map_err(|_| {
+        let agent_verifying_key = key_cache::verifying_key(&agent_pubkey_bytes).map_err(|_| {
             SynapseError::new(RefusalCode::DidKeyInvalid, "invalid agent Ed25519 key")
         })?;
         let sig_arr: [u8; 64] = req.agent_signature.as_slice().try_into().map_err(|_| {
