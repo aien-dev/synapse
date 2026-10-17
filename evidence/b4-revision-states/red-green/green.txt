@@ -1,4 +1,4 @@
-# Green (2026-10-17, B4 commit a49a56d on origin/main 3d78efe; workspace 340 passed, 0 failed, 1 ignored; clippy -D warnings and fmt clean)
+# Green (2026-10-17, B4 commit 6ad04b9 on origin/main 3d78efe; workspace 341 passed, 0 failed, 1 ignored; clippy -D warnings and fmt clean)
 
 # Command: cargo test --locked -p synapse-core --lib b4_ -- --test-threads=1
 test revision_state::tests::b4_every_allowed_move_raises_the_rank_and_every_other_pair_is_refused ... ok
@@ -9,7 +9,8 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; fin
 
 # Command: cargo test --locked -p synapse-store --lib b4_ -- --test-threads=1
 test revision::b4_tests::b4_property_forged_record_sequences_never_move_a_revision_backwards ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished
+test revision::b4_tests::b4_replay_refuses_a_forged_move_to_verified ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished
 
 # Command: cargo test --locked -p synapse-store --test b4_revision_states -- --test-threads=1
 test b4_any_move_to_canonical_outside_the_promotion_queue_is_refused ... ok
