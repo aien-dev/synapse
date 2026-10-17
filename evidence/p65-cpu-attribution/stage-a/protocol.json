@@ -1,0 +1,22 @@
+{
+  "schema": "synapse-bench/pmu-diag-protocol/v1",
+  "purpose": "Issue #65 Stage A: attribute CPU time on the accepted-submit (every-commit and group-commit), query and crumb-advisory paths on the GB10 Spark, unpinned and pinned to each core class. Seconds per operation and CPU microseconds (getrusage) are the measured units; PMU counts are supporting units if the host permits them. Decides whether CPU control flow (branch mispredicts) is a measured wall-time driver before any hot-path change.",
+  "seed": 65,
+  "fixture_rev": "e863c87b581ddd0d33183667d6d4842d2de1f4fe",
+  "reps": 7,
+  "order": "control-then-instrumented",
+  "affinity": ["unpinned", "a725", "x925"],
+  "legs": [
+    {"kind": "floor", "op": "sha256_content_12k", "iterations": 20000},
+    {"kind": "floor", "op": "ed25519_verify", "iterations": 2000},
+    {"kind": "floor", "op": "envelope_validate", "iterations": 2000},
+    {"kind": "floor", "op": "json_decode_submit_request", "iterations": 2000},
+    {"kind": "write", "arm": "every_commit", "agents": 1, "ops_per_agent": 16},
+    {"kind": "write", "arm": "group_commit", "agents": 1, "ops_per_agent": 32},
+    {"kind": "write", "arm": "group_commit", "agents": 8, "ops_per_agent": 32},
+    {"kind": "write", "arm": "group_commit", "agents": 32, "ops_per_agent": 32},
+    {"kind": "query", "populate_agents": 4, "populate_ops_per_agent": 4, "samples": 50},
+    {"kind": "crumb", "samples": 50}
+  ],
+  "held_out": "Nothing is tuned from this run. It only decides go or no-go for Stage B. A Stage B change, if any, needs its own matched before/after runs on identical inputs."
+}
