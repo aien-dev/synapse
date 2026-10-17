@@ -1,0 +1,32 @@
+# J1 red: the sealed-corpus test with the exporter in place but no sealed corpus (3d78efe + this branch's exporter; corpus.bin removed for this run, then restored and cmp-checked); 2026-10-17T05:32:20Z
+# Note: this run was taken while the Spark quiet flag was held by another job (SPEED-1B); it is a 0.68 s host test of already-built code, recorded as is.
+$ cargo test -p synapse-store --lib j1_corpus
+
+running 2 tests
+j1_corpus::j1_sealed_corpus_is_what_the_rust_codec_gives --- FAILED
+.
+failures:
+
+---- j1_corpus::j1_sealed_corpus_is_what_the_rust_codec_gives stdout ----
+  checkpoint_bit_flipped: 21952 cases, 3570 refused, 18382 accepted (canonical)
+  checkpoint_false_length: 8214 cases, 2390 refused, 5824 accepted (canonical)
+  checkpoint_hand_made: 9 cases, 9 refused, 0 accepted (canonical)
+  checkpoint_truncated: 2744 cases, 2743 refused, 1 accepted (canonical)
+  record_bit_flipped: 15208 cases, 1948 refused, 13260 accepted (canonical)
+  record_false_length: 5631 cases, 1348 refused, 4283 accepted (canonical)
+  record_hand_made: 11 cases, 11 refused, 0 accepted (canonical)
+  record_truncated: 1901 cases, 1901 refused, 0 accepted (canonical)
+  total malformed cases: 55670; corpus 775681 bytes, sha256 b2aba356b7dd58b48b6cd7139fdeaa059ee5ab8f496d3ba03f6e4a5aa94db50b
+
+thread 'j1_corpus::j1_sealed_corpus_is_what_the_rust_codec_gives' (2346559) panicked at crates/synapse-store/src/j1_corpus.rs:950:53:
+/home/drakestapleton/workspace/synapse-53/crates/synapse-store/../../evidence/j1-codec-corpus/corpus.bin: No such file or directory (os error 2)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    j1_corpus::j1_sealed_corpus_is_what_the_rust_codec_gives
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.68s
+
+error: test failed, to rerun pass `-p synapse-store --lib`
+exit=101

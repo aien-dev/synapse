@@ -960,7 +960,7 @@ impl CheckpointState {
         }
     }
 
-    fn encode_content(&self) -> SynapseResult<Vec<u8>> {
+    pub(crate) fn encode_content(&self) -> SynapseResult<Vec<u8>> {
         self.check_keys()?;
         let mut w = Writer(Vec::with_capacity(4096));
         w.u8(CODEC_V2);
@@ -999,7 +999,7 @@ impl CheckpointState {
         Ok(w.0)
     }
 
-    fn decode_content(
+    pub(crate) fn decode_content(
         bytes: &[u8],
         checkpoint_seq: WalSeq,
         anchor_frame_sha256: [u8; 32],
