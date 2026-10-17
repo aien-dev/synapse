@@ -364,3 +364,37 @@ fn b4_api_move_to_canonical_outside_the_promotion_queue_is_refused() {
         RefusalCode::EnvelopeMalformed
     );
 }
+
+/// Joins with real F1 chains: `W`, whose grant descends from `O`'s, submits content
+/// byte-identical to `O`'s `Private` revision and joins it (B1), but gains no ownership: it
+/// cannot read the revision (so not `O`'s witness or attestation) and cannot move it to
+/// `Draft`, so the outsider `X` still cannot see it. Only after `O` shares it can `W` read
+/// it, and moving it stays `O`'s.
+#[test]
+fn b4_api_joining_identical_content_grants_no_ownership_of_a_private_revision() {
+    let mut fx = Fx::new("join");
+    let (o, w, x) = (fx.o.clone(), fx.w.clone(), fx.x.clone());
+    let rev = fx.submit(&o, b"orchestrator private attempt", 1);
+    assert_eq!(fx.submit(&w, b"orchestrator private attempt", 2), rev);
+    assert_eq!(fx.read(&o, rev).unwrap().witnesses.len(), 2);
+    for who in [&w, &x] {
+        assert_eq!(
+            fx.read(who, rev).unwrap_err().0,
+            RefusalCode::ChangesetNotFound
+        );
+    }
+    assert_eq!(
+        fx.mv(&w, rev, RevisionState::Draft).unwrap_err(),
+        RefusalCode::ChangesetNotFound
+    );
+    assert_eq!(
+        fx.read(&x, rev).unwrap_err().0,
+        RefusalCode::ChangesetNotFound
+    );
+    fx.mv(&o, rev, RevisionState::Draft).unwrap();
+    assert_eq!(fx.read(&w, rev).unwrap().state, RevisionState::Draft);
+    assert_eq!(
+        fx.mv(&w, rev, RevisionState::Proposed).unwrap_err(),
+        RefusalCode::AuthChainNotDominant
+    );
+}

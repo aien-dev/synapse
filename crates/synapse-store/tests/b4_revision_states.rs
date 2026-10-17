@@ -470,6 +470,104 @@ fn b4_any_move_to_canonical_outside_the_promotion_queue_is_refused() {
     }
 }
 
+/// Acceptance 2, joins: a chain outside the owner chain that submits byte-identical content
+/// joins the existing `Private` revision (B1 identity) but gains no ownership of it. The
+/// owner chain is fixed by the revision's first admission. The joiner cannot read it (its
+/// witnesses and attestations stay hidden), cannot find it in the change, and cannot move
+/// it; outsiders still cannot see it. After the owner shares it, the joiner may read it but
+/// still not move it. The same holds after replay and a checkpoint.
+#[test]
+fn b4_joining_identical_content_grants_no_ownership_of_a_private_revision() {
+    let dir = temp_dir("join");
+    let mut s = open(&dir, FsyncPolicy::EveryCommit);
+    let o: &[u8] = &[1, 2];
+    let w1: &[u8] = &[1, 2, 3];
+    let x: &[u8] = &[1, 9];
+    let p = admit(&mut s, o, b"orchestrator private attempt", 1);
+    // W1 descends from the creating chain, so B1 lets it join without change scope.
+    let (env, blobs) = revision(
+        &key_of(w1),
+        CHANGE,
+        b"orchestrator private attempt",
+        [2; 32],
+        vec![],
+    );
+    match s
+        .admit_revision(env, &blobs, auth(&path(w1)), 5_000)
+        .unwrap()
+    {
+        RevisionOutcome::Admitted {
+            changeset_id,
+            joined_existing_revision,
+            ..
+        } => {
+            assert_eq!(changeset_id, p);
+            assert!(joined_existing_revision);
+        }
+        other => panic!("expected a join, got {other:?}"),
+    }
+    assert_eq!(s.get_revision(&repo(), p).unwrap().witnesses.len(), 2);
+    let check = |s: &mut SynapseStore| {
+        assert_eq!(state(s, p), RevisionState::Private);
+        for viewer in [w1, x] {
+            let viewer = path(viewer);
+            assert_eq!(
+                s.get_revision_visible_to(&repo(), p, &viewer)
+                    .unwrap_err()
+                    .code,
+                RefusalCode::ChangesetNotFound,
+                "{viewer:?} joined or is outside: not an owner"
+            );
+            assert!(s
+                .change_status_visible_to(&repo(), CHANGE, &viewer)
+                .is_err());
+            let before = s.committed_seq();
+            for to in [RevisionState::Draft, RevisionState::Proposed] {
+                assert_eq!(
+                    s.advance_revision_state(&repo(), p, to, viewer.clone(), 6_000)
+                        .unwrap_err()
+                        .code,
+                    RefusalCode::ChangesetNotFound,
+                    "{viewer:?}"
+                );
+            }
+            assert_eq!(s.committed_seq(), before, "nothing written");
+        }
+        assert_eq!(
+            s.get_revision_visible_to(&repo(), p, &path(o))
+                .unwrap()
+                .witnesses
+                .len(),
+            2
+        );
+    };
+    check(&mut s);
+    drop(s);
+    let mut s = open(&dir, FsyncPolicy::EveryCommit);
+    check(&mut s);
+    s.checkpoint_and_compact(9_000).unwrap();
+    drop(s);
+    let mut s = open(&dir, FsyncPolicy::EveryCommit);
+    check(&mut s);
+    // The owner shares it: the joiner reads it now, but moving it stays the owner's.
+    s.advance_revision_state(&repo(), p, RevisionState::Draft, path(o), 9_100)
+        .unwrap();
+    assert_eq!(
+        s.get_revision_visible_to(&repo(), p, &path(w1))
+            .unwrap()
+            .state,
+        RevisionState::Draft
+    );
+    assert_eq!(
+        s.advance_revision_state(&repo(), p, RevisionState::Proposed, path(w1), 9_200)
+            .unwrap_err()
+            .code,
+        RefusalCode::AuthChainNotDominant
+    );
+    s.advance_revision_state(&repo(), p, RevisionState::Proposed, path(o), 9_300)
+        .unwrap();
+}
+
 /// The kind 9 record round-trips byte for byte; truncated, extended, and unknown-state bytes
 /// are refused typed, never a panic.
 #[test]
