@@ -404,11 +404,25 @@ impl AdmissionWitness {
 // What a replica needs to check and recompute
 // ---------------------------------------------------------------------------------------
 
-/// Which server machine key the repository identity document registered at a `WalSeq`
-/// (`synapse_radicle::IdentityLog` implements it from the E0 document chain).
+/// What a [`ServerKeyRegistry`] answers for one repository at one `WalSeq`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerKeyLookup {
+    /// The `server_key` of the repository's identity document in effect at the sequence.
+    Registered([u8; 32]),
+    /// No identity document of the repository is in effect at the sequence (before genesis).
+    NoDocument,
+    /// The registry holds the identity documents of another repository (named here), so it
+    /// says nothing about the one asked for.
+    OtherRepository(RepoId),
+}
+
+/// Which server machine key a repository identity document registered at a `WalSeq`
+/// (`synapse_radicle::IdentityLog` implements it from the E0 document chain). The repository
+/// is part of the question, so one repository's documents can never vouch for another's
+/// derivations, even when both register the same server machine key.
 pub trait ServerKeyRegistry {
-    /// The `server_key` of the document in effect at `at`; `None` before genesis.
-    fn registered_server_key(&self, at: WalSeq) -> Option<[u8; 32]>;
+    /// The `server_key` of `repo`'s document in effect at `at`.
+    fn registered_server_key(&self, repo: &RepoId, at: WalSeq) -> ServerKeyLookup;
 }
 
 /// The tree operations a derivation rule needs (the C1 tree store implements them).
