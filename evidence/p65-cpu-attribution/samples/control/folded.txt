@@ -1,0 +1,25 @@
+stack samples (all threads stopped): 439
+thread-samples with run_leg on stack: 438 (run 438)
+
+# state
+    438  run
+
+# phase (callee under anchor) | run or wait
+    417  measure<synapse_bench::pmu_diag::floor_window::{closure_env#0}>@pmu_diag.rs | run
+     20  {closure#0}@pmu_diag.rs | run
+      1  floor_window@pmu_diag.rs | run
+
+# leaf (self) of run samples
+    215  sha2
+    200  curve25519-dalek
+     22  synapse-bench:pmu_diag.rs
+      1  signature
+
+# inclusive crate presence in run samples
+    438  synapse-bench
+    215  sha2
+    215  digest
+    215  block-buffer
+    201  curve25519-dalek
+      1  synapse-core
+      1  signature
