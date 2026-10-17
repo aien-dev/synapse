@@ -7,7 +7,7 @@
 //! an older `snapshot_seq`, a promoted canonical head, with and without claims in the
 //! coordination plane. It runs, then new proposals land (a new snapshot, a `.crumb`
 //! rewrite, a promotion), and it runs again twice (the second time fully warm). The SHA-256
-//! of the whole transcript, with the host-dependent claim session names masked, was
+//! of the whole transcript, with the host part of each claim session masked, was
 //! recorded on `origin/main` (3d78efe).
 //!
 //! Keys, nonces and grant ids are derived from labels and counters, never literals.
@@ -33,11 +33,12 @@ use synapse_store::{FsyncPolicy, IngestOutcome, RecoveryPolicy, StoreLimits};
 /// SHA-256 of the host-neutral transcript (see [`host_neutral`]), recorded on `origin/main`
 /// 3d78efe (before #94).
 const RECORDED_TRANSCRIPT_SHA256: &str =
-    "644330d80e6c13ef31d1602c29b4bf9586e2b981f6da4a66030073cf9344e516";
+    "36bfcc7b7ab1dc637555b17a8587662998c638fa0d4cbcff29ac54af89bc7e96";
 
-/// The transcript with every claim `session: "..."` value replaced by `<session>`. A claim's
-/// session defaults to `agent@hostname` (or `CRUMB_SESSION`), so it differs between hosts;
-/// everything else in the transcript is a function of the corpus alone.
+/// The transcript with the host part of every claim session masked: `session: "carol@host"`
+/// becomes `session: "carol@<host>"`. A claim's session defaults to `agent@hostname`, so the
+/// host differs between machines; the agent part is kept, so a claim whose session names the
+/// wrong agent still changes the hash. Everything else is a function of the corpus alone.
 fn host_neutral(transcript: &[u8]) -> Vec<u8> {
     const FIELD: &[u8] = b"session: \"";
     let mut out = Vec::with_capacity(transcript.len());
@@ -46,7 +47,14 @@ fn host_neutral(transcript: &[u8]) -> Vec<u8> {
         out.extend_from_slice(&rest[..at + FIELD.len()]);
         rest = &rest[at + FIELD.len()..];
         let end = rest.iter().position(|&b| b == b'"').unwrap_or(rest.len());
-        out.extend_from_slice(b"<session>");
+        let value = &rest[..end];
+        match value.iter().rposition(|&b| b == b'@') {
+            Some(host_at) => {
+                out.extend_from_slice(&value[..=host_at]);
+                out.extend_from_slice(b"<host>");
+            }
+            None => out.extend_from_slice(value),
+        }
         rest = &rest[end..];
     }
     out.extend_from_slice(rest);
@@ -358,6 +366,10 @@ fn claim(store: &CoordStore, agent: &str, target: &str) {
 
 #[test]
 fn advisory_and_crumb_answers_match_the_transcript_recorded_on_main() {
+    assert!(
+        std::env::var_os("CRUMB_SESSION").is_none_or(|s| s.is_empty()),
+        "unset CRUMB_SESSION: it replaces the agent@host claim sessions the transcript records"
+    );
     let mut c = Corpus::new();
     let coord = CoordStore::open(c.dir.join("coord")).with_clock(|| T0);
     claim(&coord, "carol", "src/deep");
