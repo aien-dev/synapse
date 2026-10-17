@@ -24,6 +24,8 @@ use synapse_store::{
 
 mod advisory;
 mod crumb;
+mod derivation;
+pub use derivation::ServiceDerivationTrees;
 mod evidence;
 pub mod tree;
 pub use advisory::{

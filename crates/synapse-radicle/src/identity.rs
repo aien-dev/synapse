@@ -621,3 +621,12 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 }
+
+/// The server key a derivation attestation must name is the `server_key` of the document in
+/// effect at the admission `WalSeq` (ADR 0003 step B5): a later rotation never invalidates a
+/// derivation admitted before it, and a key rotated out refuses every later one.
+impl synapse_core::ServerKeyRegistry for IdentityLog {
+    fn registered_server_key(&self, at: WalSeq) -> Option<[u8; 32]> {
+        self.server_key_at(at)
+    }
+}
