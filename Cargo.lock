@@ -380,6 +380,7 @@ dependencies = [
  "synapse-core",
  "synapse-crumb",
  "synapse-evidence",
+ "synapse-radicle",
  "synapse-store",
 ]
 

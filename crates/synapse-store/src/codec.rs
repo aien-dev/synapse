@@ -355,6 +355,15 @@ pub fn encode_record(record: &WalRecord) -> SynapseResult<Vec<u8>> {
             w.raw(&m.mover_key);
             w.raw(&m.signature);
         }
+        WalRecord::DerivedRevisionAdmitted {
+            derived,
+            chain,
+            admitted_at_ms,
+        } => {
+            w.bytes(&derived.encode(), "derived revision")?;
+            put_chain(&mut w, chain)?;
+            w.u64(*admitted_at_ms);
+        }
     }
     Ok(w.0)
 }
@@ -772,6 +781,11 @@ pub fn decode_record(bytes: &[u8], cap: u64) -> Result<WalRecord, CodecRefusal> 
                 moved_at_ms,
             }
         }
+        11 => WalRecord::DerivedRevisionAdmitted {
+            derived: r.embedded("derived revision", DerivedRevision::decode)?,
+            chain: r.embedded("chain path", ChainPath::decode)?,
+            admitted_at_ms: r.u64()?,
+        },
         tag => {
             return Err(CodecRefusal::UnknownTag {
                 at,
@@ -1130,7 +1144,7 @@ impl CheckpointState {
                 let tag_at = r.pos + 4 + 1;
                 let bytes = r.bytes()?;
                 let record = decode_record(&bytes, r.cap)?;
-                if !matches!(record.kind_byte(), 7..=9) {
+                if !matches!(record.kind_byte(), 7..=9 | 11) {
                     return Err(CodecRefusal::UnknownTag {
                         at: tag_at,
                         field: "revision record kind",

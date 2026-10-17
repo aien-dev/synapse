@@ -621,3 +621,22 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 }
+
+/// The server key a derivation attestation must name is the `server_key` of the document in
+/// effect at the admission `WalSeq` (ADR 0003 step B5): a later rotation never invalidates a
+/// derivation admitted before it, and a key rotated out refuses every later one. The log holds
+/// one repository's documents (`apply` refuses an edit for another), so it answers only for
+/// that repository and names it as `OtherRepository` for any other.
+impl synapse_core::ServerKeyRegistry for IdentityLog {
+    fn registered_server_key(&self, repo: &RepoId, at: WalSeq) -> synapse_core::ServerKeyLookup {
+        use synapse_core::ServerKeyLookup;
+        let own = &self.current().repo_id;
+        if own != repo {
+            return ServerKeyLookup::OtherRepository(own.clone());
+        }
+        match self.server_key_at(at) {
+            Some(key) => ServerKeyLookup::Registered(key),
+            None => ServerKeyLookup::NoDocument,
+        }
+    }
+}

@@ -21,9 +21,10 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 pub use synapse_auth::{SignedStateMove, StateMoveFault};
 use synapse_core::{
-    BlobDigest, ChainPath, ChangesetEnvelope, ChangesetEnvelopeV2, ChangesetId, EvidenceAttachment,
-    GitHubPullRequestProjection, IdempotencyKey, MutationOp, ObsolescenceMarker,
-    RadicleCanonicalHead, RefusalCode, RepoId, RevisionState, SynapseError, SynapseResult, WalSeq,
+    BlobDigest, ChainPath, ChangesetEnvelope, ChangesetEnvelopeV2, ChangesetId, DerivedRevision,
+    EvidenceAttachment, GitHubPullRequestProjection, IdempotencyKey, MutationOp,
+    ObsolescenceMarker, RadicleCanonicalHead, RefusalCode, RepoId, RevisionState, SynapseError,
+    SynapseResult, WalSeq,
 };
 
 #[cfg(test)]
@@ -40,8 +41,8 @@ pub mod wal2;
 
 pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
 pub use revision::{
-    AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome, StateMoveReplayReport,
-    StoredRevision, DOMAIN_STATE_ROOT_REVISIONS_V1,
+    verify_revision_log, AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome,
+    StateMoveReplayReport, StoredRevision, DOMAIN_STATE_ROOT_REVISIONS_V1,
 };
 pub use shared::{GroupCommitStats, SharedStore};
 
@@ -332,6 +333,15 @@ pub enum WalRecord {
         state_move: SignedStateMove,
         moved_at_ms: u64,
     },
+    /// Admission of a server-derived revision under `chain` at server time `admitted_at_ms`
+    /// (ADR 0003 B5). It references only blobs already visible, so it carries none. Binary
+    /// codec only.
+    #[serde(skip)]
+    DerivedRevisionAdmitted {
+        derived: DerivedRevision,
+        chain: ChainPath,
+        admitted_at_ms: u64,
+    },
 }
 
 impl WalRecord {
@@ -346,6 +356,7 @@ impl WalRecord {
             Self::RevisionAdmitted { .. } => 7,
             Self::ObsolescenceRecorded { .. } => 8,
             Self::RevisionStateMoved { .. } => 9,
+            Self::DerivedRevisionAdmitted { .. } => 11,
         }
     }
 
@@ -354,6 +365,7 @@ impl WalRecord {
         let mutations = match self {
             Self::ChangesetIngest { envelope, .. } => &envelope.mutations,
             Self::RevisionAdmitted { envelope, .. } => &envelope.content.mutations,
+            Self::DerivedRevisionAdmitted { derived, .. } => &derived.content.mutations,
             _ => return Vec::new(),
         };
         mutations
@@ -2156,6 +2168,12 @@ impl SynapseStore {
             }
             record @ (WalRecord::ObsolescenceRecorded { .. }
             | WalRecord::RevisionStateMoved { .. }) => self.revisions.apply(seq, record),
+            record @ WalRecord::DerivedRevisionAdmitted { .. } => {
+                for digest in record.upsert_blobs() {
+                    self.blob_first_visible_seq.entry(digest).or_insert(seq);
+                }
+                self.revisions.apply(seq, record);
+            }
         }
     }
 
