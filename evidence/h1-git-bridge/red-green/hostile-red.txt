@@ -132,3 +132,26 @@ test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 error: test failed, to rerun pass `-p synapse-git --test h1_hostile_repo`
 error: 1 target failed:
     `-p synapse-git --test h1_hostile_repo`
+
+# Run 4, stub C on the fixed code: repository files opened without O_NOFOLLOW | O_NONBLOCK (custom_flags(0)).
+# Command: cargo test --locked --no-fail-fast -p synapse-git --lib -- a_file_swapped
+
+running 1 test
+test repo::tests::a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking ... FAILED
+
+failures:
+
+---- repo::tests::a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking stdout ----
+
+thread 'repo::tests::a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking' (1921050) panicked at crates/synapse-git/src/repo.rs:620:21:
+pipe: open blocked for more than 10 s
+
+
+failures:
+    repo::tests::a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 10.00s
+
+error: test failed, to rerun pass `-p synapse-git --lib`
+error: 1 target failed:
+    `-p synapse-git --lib`

@@ -35,7 +35,7 @@ A repository handed to the bridge is untrusted input. The reader may not hang on
 
 All five limits are fields of `ReadLimits` (`GitRepository::open_with_limits`); `GitRepository::open` uses the defaults. Also from the review: `*.lock` files under `refs/` are skipped as Git skips them, and a detached `HEAD`'s commit is collected with its history (`GitHistory::detached_head`). A symbolic link as `HEAD` is now refused instead of read as "no `HEAD`".
 
-Residual, stated: the file checks assume the repository is not being changed while it is read. An attacker who swaps a regular file for a pipe between the `symlink_metadata` check and the `open` can still block that `open` (the inode check runs after it). Closing that needs `O_NOFOLLOW | O_NONBLOCK`, which `std` does not name portably; not done here.
+A file swapped between the check and the open is refused too: the open uses `O_NOFOLLOW | O_NONBLOCK` (`OpenOptionsExt::custom_flags`, constants from the workspace `libc` dependency), so a swapped-in link fails with `ELOOP` and a swapped-in pipe opens at once and fails the device, inode and regular-file check (unit test `a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking`).
 
 ## 2. Acceptance status (issue #48)
 
@@ -67,7 +67,7 @@ The fixture (built by Git in the test) covers nested trees, executable files, a 
 
 `green.txt` holds the passing runs and the two real repository runs.
 
-`evidence/h1-git-bridge/red-green/hostile-red.txt` (review findings B1 and B2): `tests/h1_hostile_repo.rs` uses only `GitRepository::open` and `full_history`, so the same file runs unchanged against the reviewed head `b4fe463`. There all 8 cases fail: the pipe cases (a reference, `packed-refs`, a loose object) block until the test's 10 s deadline releases them, the `/dev/zero` link fails with `IoFailure: out of memory` under the run's `ulimit -v 4000000` guard, the link to a file outside the repository and the 1 MiB reference are read as references, the 82 KB delta bomb resolves 5 objects of 256 MiB, and the detached `HEAD` commit is missing. Two further stubs on the fixed code: (A) the total budget check removed: the budget test fails; (B) links followed (`metadata` instead of `symlink_metadata`, and in the `refs/` walk): the outside-link test fails. `hostile-green.txt` holds the passing runs.
+`evidence/h1-git-bridge/red-green/hostile-red.txt` (review findings B1 and B2): `tests/h1_hostile_repo.rs` uses only `GitRepository::open` and `full_history`, so the same file runs unchanged against the reviewed head `b4fe463`. There all 8 cases fail: the pipe cases (a reference, `packed-refs`, a loose object) block until the test's 10 s deadline releases them, the `/dev/zero` link fails with `IoFailure: out of memory` under the run's `ulimit -v 4000000` guard, the link to a file outside the repository and the 1 MiB reference are read as references, the 82 KB delta bomb resolves 5 objects of 256 MiB, and the detached `HEAD` commit is missing. Three further stubs on the fixed code: (A) the total budget check removed: the budget test fails; (B) links followed (`metadata` instead of `symlink_metadata`, and in the `refs/` walk): the outside-link test fails; (C) files opened without `O_NOFOLLOW | O_NONBLOCK`: the swap test blocks on the pipe until its 10 s deadline. `hostile-green.txt` holds the passing runs.
 
 ## 4. Limits and what remains
 

@@ -105,10 +105,10 @@ impl Default for ReadLimits {
 /// Read `path` if it is a regular file of at most `max` bytes. `Ok(None)` when it does not
 /// exist. A symbolic link, directory, pipe, socket or device is refused (`PathInvalid`)
 /// without being opened, so a pipe cannot block the reader and a link cannot lead outside the
-/// repository; the opened file must still be the one inspected, and at most `max + 1` bytes
-/// are read even if it grows.
+/// repository. The open itself uses `O_NOFOLLOW | O_NONBLOCK` and the opened file must be the
+/// regular file inspected (same device and inode), so a file swapped between the check and the
+/// open is refused too; at most `max + 1` bytes are read even if it grows.
 pub(crate) fn read_regular(path: &Path, max: u64) -> SynapseResult<Option<Vec<u8>>> {
-    use std::os::unix::fs::MetadataExt;
     let meta = match fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -120,11 +120,7 @@ pub(crate) fn read_regular(path: &Path, max: u64) -> SynapseResult<Option<Vec<u8
     if meta.len() > max {
         return Err(over_cap(path, meta.len(), max));
     }
-    let file = File::open(path).map_err(|e| io(e, path))?;
-    let opened = file.metadata().map_err(|e| io(e, path))?;
-    if !opened.file_type().is_file() || opened.ino() != meta.ino() || opened.dev() != meta.dev() {
-        return Err(not_regular(path, "a file that changed while being opened"));
-    }
+    let (file, opened) = open_inspected(path, &meta)?;
     let mut bytes = Vec::with_capacity(opened.len().min(max) as usize);
     file.take(max.saturating_add(1))
         .read_to_end(&mut bytes)
@@ -133,6 +129,27 @@ pub(crate) fn read_regular(path: &Path, max: u64) -> SynapseResult<Option<Vec<u8
         return Err(over_cap(path, bytes.len() as u64, max));
     }
     Ok(Some(bytes))
+}
+
+/// Open `path`, which `symlink_metadata` reported as `meta` (a regular file), and require the
+/// opened file to be that same regular file. `O_NOFOLLOW`: a link swapped in after the check
+/// fails to open (`ELOOP`). `O_NONBLOCK`: a pipe swapped in opens at once instead of waiting for
+/// a writer, and the device and inode check refuses it.
+fn open_inspected(path: &Path, meta: &fs::Metadata) -> SynapseResult<(File, fs::Metadata)> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .map_err(|e| match e.raw_os_error() {
+            Some(libc::ELOOP) => not_regular(path, "a symbolic link"),
+            _ => io(e, path),
+        })?;
+    let opened = file.metadata().map_err(|e| io(e, path))?;
+    if !opened.file_type().is_file() || opened.ino() != meta.ino() || opened.dev() != meta.dev() {
+        return Err(not_regular(path, "a file that changed while being opened"));
+    }
+    Ok((file, opened))
 }
 
 /// `Ok(true)` if `path` is a real directory, `Ok(false)` if it does not exist; a symbolic link
@@ -549,4 +566,61 @@ pub fn export_repository(
         object_count: entries.len(),
         pack_bytes: pack.len() as u64,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    fn scratch(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "synapse-h1-open-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// The file is inspected as a regular file, then swapped before the open (the race the
+    /// `symlink_metadata` check alone cannot close). The open must refuse it at once.
+    #[test]
+    fn a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking() {
+        for swap in ["pipe", "link"] {
+            let dir = scratch(swap);
+            let path = dir.join("ref");
+            fs::write(&path, b"0000000000000000000000000000000000000000\n").unwrap();
+            let meta = fs::symlink_metadata(&path).unwrap();
+            fs::remove_file(&path).unwrap();
+            if swap == "pipe" {
+                let ok = std::process::Command::new("mkfifo")
+                    .arg(&path)
+                    .status()
+                    .unwrap()
+                    .success();
+                assert!(ok);
+            } else {
+                fs::write(dir.join("elsewhere"), b"x").unwrap();
+                std::os::unix::fs::symlink(dir.join("elsewhere"), &path).unwrap();
+            }
+            let (tx, rx) = mpsc::channel();
+            let p = path.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(open_inspected(&p, &meta).map(|_| ()));
+            });
+            let result = match rx.recv_timeout(Duration::from_secs(10)) {
+                Ok(r) => r,
+                Err(_) => {
+                    drop(fs::OpenOptions::new().write(true).open(&path));
+                    panic!("{swap}: open blocked for more than 10 s");
+                }
+            };
+            assert_eq!(result.unwrap_err().code, RefusalCode::PathInvalid, "{swap}");
+        }
+    }
 }
