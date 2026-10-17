@@ -14,7 +14,7 @@
 //! kinds and checks every size, offset and checksum before it trusts them; malformed input is
 //! refused with `RefusalCode::GitObjectCorrupt`.
 
-use crate::inflate::zlib_decompress;
+use crate::inflate::{zlib_decompress, zlib_inflate_prefix};
 use crate::object::{GitObject, ObjectKind};
 use crate::zlib_compress_store;
 use sha1::{Digest, Sha1};
@@ -25,14 +25,21 @@ fn corrupt(msg: impl Into<String>) -> SynapseError {
     SynapseError::new(RefusalCode::GitObjectCorrupt, msg)
 }
 
+fn over_cap(what: &str, size: u64, cap: u64) -> SynapseError {
+    SynapseError::new(
+        RefusalCode::QuotaPayloadTooLarge,
+        format!("{what} declares {size} bytes, over the {cap} byte cap"),
+    )
+}
+
 const PACK_SIGNATURE: &[u8; 4] = b"PACK";
 const PACK_VERSION: u32 = 2;
 const IDX_MAGIC: [u8; 4] = [0xff, b't', b'O', b'c'];
 const IDX_VERSION: u32 = 2;
 const OBJ_OFS_DELTA: u8 = 6;
 const OBJ_REF_DELTA: u8 = 7;
-/// Most bytes one resolved object may hold while reading a pack (a declared size above it is
-/// refused before anything is allocated).
+/// Default for the most bytes one resolved object may hold while reading a pack (a declared size
+/// above the cap is refused with `QuotaPayloadTooLarge` before anything is allocated).
 pub const MAX_PACK_OBJECT_BYTES: u64 = 1 << 30;
 /// Longest delta chain the reader follows (Git's own `pack.depth` maximum is 4095).
 pub const MAX_DELTA_CHAIN: usize = 4096;
@@ -276,6 +283,7 @@ pub struct PackReader {
     entries: Vec<PackIndexEntry>,
     cache: HashMap<u64, (ObjectKind, std::sync::Arc<Vec<u8>>)>,
     cache_bytes: usize,
+    max_object_bytes: u64,
 }
 
 const CACHE_BOUND_BYTES: usize = 256 << 20;
@@ -301,6 +309,16 @@ impl PackReader {
     /// record this pack's checksum and name exactly the pack's object count; every offset must
     /// fall inside the pack body.
     pub fn with_index(data: Vec<u8>, idx: &[u8]) -> SynapseResult<Self> {
+        Self::with_index_limited(data, idx, MAX_PACK_OBJECT_BYTES)
+    }
+
+    /// [`Self::with_index`] with a per-object cap: no entry, delta stream or delta result may
+    /// declare more than `max_object_bytes`.
+    pub fn with_index_limited(
+        data: Vec<u8>,
+        idx: &[u8],
+        max_object_bytes: u64,
+    ) -> SynapseResult<Self> {
         let count = check_pack_framing(&data)?;
         let (entries, pack_sum) = decode_idx(idx)?;
         if pack_sum.0[..] != data[data.len() - 20..] {
@@ -325,6 +343,7 @@ impl PackReader {
             entries,
             cache: HashMap::new(),
             cache_bytes: 0,
+            max_object_bytes,
         })
     }
 
@@ -341,7 +360,7 @@ impl PackReader {
             if pos >= body_end {
                 return Err(corrupt("pack holds fewer entries than its header declares"));
             }
-            let (_, next) = read_raw_entry(&data[..body_end], pos as u64)?;
+            let (_, next) = read_raw_entry(&data[..body_end], pos as u64, MAX_PACK_OBJECT_BYTES)?;
             offsets.push((pos as u64, crc32(&data[pos..next])));
             pos = next;
         }
@@ -356,6 +375,7 @@ impl PackReader {
             entries: Vec::with_capacity(offsets.len()),
             cache: HashMap::new(),
             cache_bytes: 0,
+            max_object_bytes: MAX_PACK_OBJECT_BYTES,
         };
         // Whole objects and offset deltas resolve by position alone; reference deltas need
         // their base's ID first, so repeat until every entry is resolved or nothing moves.
@@ -401,6 +421,22 @@ impl PackReader {
         self.by_oid.contains_key(&oid)
     }
 
+    /// Sum of the sizes every entry declares it resolves to, read from entry headers and the
+    /// first bytes of each delta stream without resolving anything. Resolving an entry
+    /// produces exactly its declared size (checked on every read), so this bounds what reading
+    /// the whole pack can hold. An entry over the per-object cap is refused.
+    pub fn declared_bytes(&self) -> SynapseResult<u64> {
+        let body = &self.data[..self.data.len() - 20];
+        let mut total = 0u64;
+        for e in &self.entries {
+            let size = declared_object_size(body, e.offset, self.max_object_bytes)?;
+            total = total
+                .checked_add(size)
+                .ok_or_else(|| corrupt("pack declared sizes overflow u64"))?;
+        }
+        Ok(total)
+    }
+
     /// Read and resolve object `oid`, checking that its content hashes to `oid`.
     pub fn read(&mut self, oid: GitOid) -> SynapseResult<Option<GitObject>> {
         let Some(&offset) = self.by_oid.get(&oid) else {
@@ -439,7 +475,7 @@ impl PackReader {
                     "pack delta chain is longer than the reader follows",
                 ));
             }
-            let (raw, _) = read_raw_entry(&self.data[..body_end], at)?;
+            let (raw, _) = read_raw_entry(&self.data[..body_end], at, self.max_object_bytes)?;
             match raw {
                 RawEntry::Whole(kind, payload) => break (kind, std::sync::Arc::new(payload)),
                 RawEntry::OfsDelta(base, delta) => {
@@ -460,7 +496,11 @@ impl PackReader {
             }
         };
         while let Some((at, delta)) = chain.pop() {
-            payload = std::sync::Arc::new(apply_delta(&payload, &delta)?);
+            payload = std::sync::Arc::new(apply_delta_limited(
+                &payload,
+                &delta,
+                self.max_object_bytes,
+            )?);
             self.remember(at, kind, payload.clone());
         }
         Ok((kind, payload))
@@ -488,9 +528,23 @@ fn read_size_encoding(data: &[u8], pos: &mut usize) -> SynapseResult<u64> {
     }
 }
 
-/// Read the entry at `offset`: header, delta base, and decompressed data. Returns the entry
-/// and the offset just past it.
-fn read_raw_entry(body: &[u8], offset: u64) -> SynapseResult<(RawEntry, usize)> {
+/// A pack entry's header: its pack type, declared size (the object's size for whole entries,
+/// the delta stream's size for deltas), delta base (offset, or object ID for a reference
+/// delta), and where its zlib data starts.
+struct EntryHeader {
+    pack_type: u8,
+    size: u64,
+    base: Option<Result<u64, GitOid>>,
+    data_pos: usize,
+}
+
+/// Parse the header of the entry at `offset`. A declared size over `max_object_bytes` is
+/// refused (`QuotaPayloadTooLarge`) before anything is allocated.
+fn read_entry_header(
+    body: &[u8],
+    offset: u64,
+    max_object_bytes: u64,
+) -> SynapseResult<EntryHeader> {
     let mut pos = usize::try_from(offset).map_err(|_| corrupt("pack offset overflows"))?;
     let first = *body
         .get(pos)
@@ -505,10 +559,8 @@ fn read_raw_entry(body: &[u8], offset: u64) -> SynapseResult<(RawEntry, usize)> 
         }
         size |= rest << 4;
     }
-    if size > MAX_PACK_OBJECT_BYTES {
-        return Err(corrupt(format!(
-            "pack entry declares {size} bytes, over the {MAX_PACK_OBJECT_BYTES} byte cap"
-        )));
+    if size > max_object_bytes {
+        return Err(over_cap("pack entry", size, max_object_bytes));
     }
     let entry_start = offset;
     let base = match pack_type {
@@ -546,6 +598,49 @@ fn read_raw_entry(body: &[u8], offset: u64) -> SynapseResult<(RawEntry, usize)> 
         }
         other => return Err(corrupt(format!("pack entry type {other} is invalid"))),
     };
+    if pos > body.len() {
+        return Err(corrupt("pack entry truncated"));
+    }
+    Ok(EntryHeader {
+        pack_type,
+        size,
+        base,
+        data_pos: pos,
+    })
+}
+
+/// The size of the object the entry at `offset` resolves to, read without resolving it: the
+/// header's size for a whole entry, the result size at the start of the delta stream for a
+/// delta (only its first bytes are inflated). Over `max_object_bytes` is refused.
+fn declared_object_size(body: &[u8], offset: u64, max_object_bytes: u64) -> SynapseResult<u64> {
+    let h = read_entry_header(body, offset, max_object_bytes)?;
+    if h.base.is_none() {
+        return Ok(h.size);
+    }
+    // Two size encodings of at most 10 bytes each start every delta stream.
+    let head = zlib_inflate_prefix(&body[h.data_pos..], 20)?;
+    let mut pos = 0usize;
+    read_size_encoding(&head, &mut pos)?;
+    let result_size = read_size_encoding(&head, &mut pos)?;
+    if result_size > max_object_bytes {
+        return Err(over_cap("delta result", result_size, max_object_bytes));
+    }
+    Ok(result_size)
+}
+
+/// Read the entry at `offset`: header, delta base, and decompressed data. Returns the entry
+/// and the offset just past it.
+fn read_raw_entry(
+    body: &[u8],
+    offset: u64,
+    max_object_bytes: u64,
+) -> SynapseResult<(RawEntry, usize)> {
+    let EntryHeader {
+        pack_type,
+        size,
+        base,
+        data_pos: pos,
+    } = read_entry_header(body, offset, max_object_bytes)?;
     let (data, used) = zlib_decompress(&body[pos..], size as usize)?;
     if data.len() as u64 != size {
         return Err(corrupt(format!(
@@ -561,8 +656,20 @@ fn read_raw_entry(body: &[u8], offset: u64) -> SynapseResult<(RawEntry, usize)> 
     Ok((entry, pos + used))
 }
 
-/// Apply a Git delta (`gitformat-pack`, "Deltified representation") to `base`.
+/// Apply a Git delta (`gitformat-pack`, "Deltified representation") to `base`, with the
+/// default per-object cap.
 pub fn apply_delta(base: &[u8], delta: &[u8]) -> SynapseResult<Vec<u8>> {
+    apply_delta_limited(base, delta, MAX_PACK_OBJECT_BYTES)
+}
+
+/// [`apply_delta`] refusing a declared result over `max_object_bytes` before any allocation.
+/// The output grows as instructions produce bytes (never reserved up front past what the
+/// base and delta could give in one pass) and may never pass the declared result size.
+pub fn apply_delta_limited(
+    base: &[u8],
+    delta: &[u8],
+    max_object_bytes: u64,
+) -> SynapseResult<Vec<u8>> {
     let mut pos = 0usize;
     let base_size = read_size_encoding(delta, &mut pos)?;
     if base_size != base.len() as u64 {
@@ -572,10 +679,10 @@ pub fn apply_delta(base: &[u8], delta: &[u8]) -> SynapseResult<Vec<u8>> {
         )));
     }
     let result_size = read_size_encoding(delta, &mut pos)?;
-    if result_size > MAX_PACK_OBJECT_BYTES {
-        return Err(corrupt("delta result is over the object byte cap"));
+    if result_size > max_object_bytes {
+        return Err(over_cap("delta result", result_size, max_object_bytes));
     }
-    let mut out = Vec::with_capacity(result_size as usize);
+    let mut out = Vec::with_capacity(result_size.min((base.len() + delta.len()) as u64) as usize);
     while pos < delta.len() {
         let op = delta[pos];
         pos += 1;
@@ -696,6 +803,15 @@ mod tests {
         assert!(
             apply_delta(base, &[16, 4, 0x91, 10, 3]).is_err(),
             "short result"
+        );
+        // A declared result over the cap is refused before any output is produced.
+        let e = apply_delta_limited(base, &[16, 7, 0x91, 10, 3, 4, b'X', b'Y', b'Z', b'!'], 6)
+            .unwrap_err();
+        assert_eq!(e.code, RefusalCode::QuotaPayloadTooLarge);
+        assert_eq!(
+            apply_delta_limited(base, &delta, 7).unwrap(),
+            b"abcXYZ!",
+            "exactly at the cap"
         );
     }
 

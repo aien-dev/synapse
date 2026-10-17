@@ -40,6 +40,7 @@ pub fn zlib_decompress(input: &[u8], max_out: usize) -> SynapseResult<(Vec<u8>, 
         bit_count: 0,
         out: Vec::new(),
         max_out,
+        prefix: false,
     };
     inf.run()?;
     // Discard the bits left in the last partial byte, then read the big-endian Adler-32.
@@ -52,6 +53,40 @@ pub fn zlib_decompress(input: &[u8], max_out: usize) -> SynapseResult<(Vec<u8>, 
         return Err(corrupt("zlib Adler-32 checksum mismatch"));
     }
     Ok((inf.out, pos + 4))
+}
+
+/// Internal marker: a prefix decode filled its `n` bytes.
+const PREFIX_FULL: &str = "zlib prefix decode reached its length";
+
+/// Decompress only the first `n` bytes of the zlib stream at the start of `input` (fewer if the
+/// stream ends sooner). Used to read a declared size (a loose object header, a delta's result
+/// size) before anything is allocated for the whole object. The stream is not checked past
+/// those bytes and the Adler-32 trailer is not read; a later full decode checks both.
+pub fn zlib_inflate_prefix(input: &[u8], n: usize) -> SynapseResult<Vec<u8>> {
+    if input.len() < 2 {
+        return Err(corrupt("zlib stream shorter than its 2-byte header"));
+    }
+    let (cmf, flg) = (input[0], input[1]);
+    if cmf & 0x0f != 8 || cmf >> 4 > 7 || (u16::from(cmf) << 8 | u16::from(flg)) % 31 != 0 {
+        return Err(corrupt("zlib header is invalid"));
+    }
+    if flg & 0x20 != 0 {
+        return Err(corrupt("zlib preset dictionary is not used by Git"));
+    }
+    let mut inf = Inflater {
+        input,
+        pos: 2,
+        bit_buf: 0,
+        bit_count: 0,
+        out: Vec::with_capacity(n.min(4096)),
+        max_out: n,
+        prefix: true,
+    };
+    match inf.run() {
+        Ok(()) => Ok(inf.out),
+        Err(e) if e.message == PREFIX_FULL => Ok(inf.out),
+        Err(e) => Err(e),
+    }
 }
 
 const MAX_BITS: usize = 15;
@@ -122,6 +157,8 @@ struct Inflater<'a> {
     bit_count: u32,
     out: Vec<u8>,
     max_out: usize,
+    /// Stop with [`PREFIX_FULL`] once `max_out` bytes are out instead of refusing.
+    prefix: bool,
 }
 
 impl Inflater<'_> {
@@ -143,6 +180,9 @@ impl Inflater<'_> {
 
     fn push(&mut self, byte: u8) -> SynapseResult<()> {
         if self.out.len() >= self.max_out {
+            if self.prefix {
+                return Err(corrupt(PREFIX_FULL));
+            }
             return Err(corrupt(format!(
                 "decompressed data exceeds the declared {} bytes",
                 self.max_out
@@ -192,6 +232,11 @@ impl Inflater<'_> {
             .get(self.pos..self.pos + len)
             .ok_or_else(|| corrupt("DEFLATE stored block truncated"))?;
         if self.out.len() + len > self.max_out {
+            if self.prefix {
+                let room = self.max_out - self.out.len();
+                self.out.extend_from_slice(&data[..room]);
+                return Err(corrupt(PREFIX_FULL));
+            }
             return Err(corrupt(format!(
                 "decompressed data exceeds the declared {} bytes",
                 self.max_out
@@ -304,6 +349,21 @@ fn fixed_tables() -> SynapseResult<(Huffman, Huffman)> {
 mod tests {
     use super::*;
     use crate::zlib_compress_store;
+
+    #[test]
+    fn prefix_decode_stops_at_its_length_without_inflating_the_rest() {
+        let raw: Vec<u8> = (0..200_000usize).map(|i| (i * 7 % 251) as u8).collect();
+        let z = zlib_compress_store(&raw);
+        for n in [0usize, 1, 20, 65_535, 65_540, 199_999, 200_000, 300_000] {
+            let out = zlib_inflate_prefix(&z, n).unwrap();
+            assert_eq!(out, raw[..n.min(raw.len())], "prefix {n}");
+        }
+        assert!(zlib_inflate_prefix(&z[..1], 4).is_err(), "short header");
+        assert!(
+            zlib_inflate_prefix(&[0x78, 0x00], 4).is_err(),
+            "bad check bits"
+        );
+    }
 
     #[test]
     fn stored_blocks_round_trip_and_report_consumed_length() {

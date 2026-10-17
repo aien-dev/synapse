@@ -15,7 +15,7 @@ pub mod repo;
 
 pub use object::{GitObject, GitTreeEntry, ObjectKind};
 pub use pack::{PackIndexEntry, PackReader, WrittenPack};
-pub use repo::{export_repository, ExportReceipt, GitHistory, GitRepository};
+pub use repo::{export_repository, ExportReceipt, GitHistory, GitRepository, ReadLimits};
 
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;

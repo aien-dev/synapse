@@ -14,12 +14,12 @@
 //! No Git process is started here; the system `git` is used only by the tests, as an
 //! independent oracle.
 
-use crate::inflate::zlib_decompress;
+use crate::inflate::{zlib_decompress, zlib_inflate_prefix};
 use crate::object::{object_links, GitObject, ObjectKind};
 use crate::pack::{write_pack, PackReader, WrittenPack};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use synapse_core::{GitOid, RefusalCode, SynapseError, SynapseResult};
 
@@ -31,13 +31,128 @@ fn io(e: std::io::Error, what: &Path) -> SynapseError {
     SynapseError::new(RefusalCode::IoFailure, format!("{}: {e}", what.display()))
 }
 
-/// Most bytes a loose object may inflate to.
+fn over_cap(what: &Path, size: u64, cap: u64) -> SynapseError {
+    SynapseError::new(
+        RefusalCode::QuotaPayloadTooLarge,
+        format!(
+            "{} holds {size} bytes, over the {cap} byte cap",
+            what.display()
+        ),
+    )
+}
+
+fn not_regular(what: &Path, detail: &str) -> SynapseError {
+    SynapseError::new(
+        RefusalCode::PathInvalid,
+        format!(
+            "{} is {detail}; the bridge reads only regular files and directories inside the repository",
+            what.display()
+        ),
+    )
+}
+
+fn describe(t: fs::FileType) -> &'static str {
+    if t.is_symlink() {
+        "a symbolic link"
+    } else if t.is_dir() {
+        "a directory"
+    } else {
+        "not a regular file (a pipe, socket or device)"
+    }
+}
+
+/// Most bytes a loose object may inflate to by default.
 pub const MAX_LOOSE_OBJECT_BYTES: usize = 1 << 30;
+
+/// Default cap on a loose reference file and on `HEAD` (a 40-hex ID or `ref: <name>`).
+pub const DEFAULT_MAX_REF_FILE_BYTES: u64 = 4096;
+/// Default cap on `packed-refs`.
+pub const DEFAULT_MAX_PACKED_REFS_BYTES: u64 = 64 << 20;
+/// Default cap on all `.pack` and `.idx` files together (they are held in memory).
+pub const DEFAULT_MAX_PACK_FILES_BYTES: u64 = 2 << 30;
+/// Default budget for the inflated bytes of every object a read may hold.
+pub const DEFAULT_MAX_TOTAL_OBJECT_BYTES: u64 = 1 << 30;
+
+/// What reading a repository may cost. Every limit is checked before the bytes it bounds are
+/// allocated, and an excess is refused with `QuotaPayloadTooLarge`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadLimits {
+    /// A loose reference file or `HEAD`.
+    pub max_ref_file_bytes: u64,
+    /// `packed-refs`.
+    pub max_packed_refs_bytes: u64,
+    /// Every `.pack` and `.idx` file together.
+    pub max_pack_files_bytes: u64,
+    /// One object (whole, delta stream, or delta result), packed or loose.
+    pub max_object_bytes: u64,
+    /// The objects of the whole read: the sizes every pack entry declares (counted at
+    /// [`GitRepository::open_with_limits`]) plus every loose object read.
+    pub max_total_object_bytes: u64,
+}
+
+impl Default for ReadLimits {
+    fn default() -> Self {
+        Self {
+            max_ref_file_bytes: DEFAULT_MAX_REF_FILE_BYTES,
+            max_packed_refs_bytes: DEFAULT_MAX_PACKED_REFS_BYTES,
+            max_pack_files_bytes: DEFAULT_MAX_PACK_FILES_BYTES,
+            max_object_bytes: MAX_LOOSE_OBJECT_BYTES as u64,
+            max_total_object_bytes: DEFAULT_MAX_TOTAL_OBJECT_BYTES,
+        }
+    }
+}
+
+/// Read `path` if it is a regular file of at most `max` bytes. `Ok(None)` when it does not
+/// exist. A symbolic link, directory, pipe, socket or device is refused (`PathInvalid`)
+/// without being opened, so a pipe cannot block the reader and a link cannot lead outside the
+/// repository; the opened file must still be the one inspected, and at most `max + 1` bytes
+/// are read even if it grows.
+pub(crate) fn read_regular(path: &Path, max: u64) -> SynapseResult<Option<Vec<u8>>> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io(e, path)),
+    };
+    if !meta.file_type().is_file() {
+        return Err(not_regular(path, describe(meta.file_type())));
+    }
+    if meta.len() > max {
+        return Err(over_cap(path, meta.len(), max));
+    }
+    let file = File::open(path).map_err(|e| io(e, path))?;
+    let opened = file.metadata().map_err(|e| io(e, path))?;
+    if !opened.file_type().is_file() || opened.ino() != meta.ino() || opened.dev() != meta.dev() {
+        return Err(not_regular(path, "a file that changed while being opened"));
+    }
+    let mut bytes = Vec::with_capacity(opened.len().min(max) as usize);
+    file.take(max.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|e| io(e, path))?;
+    if bytes.len() as u64 > max {
+        return Err(over_cap(path, bytes.len() as u64, max));
+    }
+    Ok(Some(bytes))
+}
+
+/// `Ok(true)` if `path` is a real directory, `Ok(false)` if it does not exist; a symbolic link
+/// or any other file type is refused.
+fn real_dir(path: &Path) -> SynapseResult<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_dir() => Ok(true),
+        Ok(m) => Err(not_regular(path, describe(m.file_type()))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(io(e, path)),
+    }
+}
 
 /// A Git repository opened for reading (its `.git` directory or a bare repository).
 pub struct GitRepository {
     git_dir: PathBuf,
     packs: Vec<PackReader>,
+    limits: ReadLimits,
+    /// Object bytes counted against `limits.max_total_object_bytes` so far.
+    object_bytes: u64,
 }
 
 /// Every object reachable from a repository's references, with the references themselves.
@@ -47,29 +162,47 @@ pub struct GitHistory {
     pub refs: BTreeMap<String, GitOid>,
     /// The branch `HEAD` names (`refs/heads/...`), or `None` for a detached or missing `HEAD`.
     pub head: Option<String>,
+    /// The commit a detached `HEAD` names (its history is collected too).
+    pub detached_head: Option<GitOid>,
     /// Every reachable object, keyed by ID.
     pub objects: BTreeMap<GitOid, GitObject>,
 }
 
+/// What `HEAD` holds.
+enum HeadState {
+    Missing,
+    Symbolic(String),
+    Detached(GitOid),
+}
+
 impl GitRepository {
-    /// Open `git_dir` and load the index of every pack in `objects/pack` (a pack without its
-    /// `.idx` is ignored, as Git ignores it).
+    /// Open `git_dir` with the default [`ReadLimits`].
     pub fn open(git_dir: &Path) -> SynapseResult<Self> {
+        Self::open_with_limits(git_dir, ReadLimits::default())
+    }
+
+    /// Open `git_dir` and load the index of every pack in `objects/pack` (a pack without its
+    /// `.idx` is ignored, as Git ignores it). The pack and index files must be regular files
+    /// within `limits.max_pack_files_bytes` together, and the sizes their entries declare must
+    /// fit `limits.max_total_object_bytes`; both are checked before any object is resolved.
+    pub fn open_with_limits(git_dir: &Path, limits: ReadLimits) -> SynapseResult<Self> {
         let objects = git_dir.join("objects");
-        if !objects.is_dir() {
+        if !real_dir(&objects)? {
             return Err(SynapseError::new(
                 RefusalCode::PathInvalid,
                 format!("{} has no objects directory", git_dir.display()),
             ));
         }
-        if git_dir.join("objects/info/alternates").exists() {
+        if fs::symlink_metadata(git_dir.join("objects/info/alternates")).is_ok() {
             return Err(corrupt(
                 "repositories with alternate object stores are not read by the bridge",
             ));
         }
         let mut packs = Vec::new();
+        let mut file_bytes = 0u64;
+        let mut object_bytes = 0u64;
         let pack_dir = objects.join("pack");
-        if pack_dir.is_dir() {
+        if real_dir(&pack_dir)? {
             let mut names: Vec<PathBuf> = fs::read_dir(&pack_dir)
                 .map_err(|e| io(e, &pack_dir))?
                 .filter_map(|e| e.ok().map(|e| e.path()))
@@ -78,21 +211,42 @@ impl GitRepository {
             names.sort();
             for idx_path in names {
                 let pack_path = idx_path.with_extension("pack");
-                if !pack_path.exists() {
+                if fs::symlink_metadata(&pack_path).is_err() {
                     continue;
                 }
-                let idx = fs::read(&idx_path).map_err(|e| io(e, &idx_path))?;
-                let data = fs::read(&pack_path).map_err(|e| io(e, &pack_path))?;
-                packs.push(PackReader::with_index(data, &idx)?);
+                let room = limits.max_pack_files_bytes - file_bytes;
+                let idx = read_regular(&idx_path, room)?
+                    .ok_or_else(|| corrupt(format!("{} vanished", idx_path.display())))?;
+                file_bytes += idx.len() as u64;
+                let room = limits.max_pack_files_bytes - file_bytes;
+                let data = read_regular(&pack_path, room)?
+                    .ok_or_else(|| corrupt(format!("{} vanished", pack_path.display())))?;
+                file_bytes += data.len() as u64;
+                let pack = PackReader::with_index_limited(data, &idx, limits.max_object_bytes)?;
+                object_bytes = object_bytes.saturating_add(pack.declared_bytes()?);
+                if object_bytes > limits.max_total_object_bytes {
+                    return Err(SynapseError::new(
+                        RefusalCode::QuotaPayloadTooLarge,
+                        format!(
+                            "pack objects declare {object_bytes} bytes, over the {} byte budget",
+                            limits.max_total_object_bytes
+                        ),
+                    ));
+                }
+                packs.push(pack);
             }
         }
         Ok(Self {
             git_dir: git_dir.to_path_buf(),
             packs,
+            limits,
+            object_bytes,
         })
     }
 
     /// Read object `oid` from the packs or the loose store, checking that it hashes to `oid`.
+    /// A loose object's declared size is read from the first bytes of its stream and checked
+    /// against the per-object cap and the remaining budget before it is inflated.
     pub fn read_object(&mut self, oid: GitOid) -> SynapseResult<Option<GitObject>> {
         for pack in &mut self.packs {
             if let Some(object) = pack.read(oid)? {
@@ -101,12 +255,37 @@ impl GitRepository {
         }
         let hex = oid.to_hex();
         let path = self.git_dir.join("objects").join(&hex[..2]).join(&hex[2..]);
-        let compressed = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(io(e, &path)),
+        // An incompressible object stored as zlib grows by 5 bytes per 65,535-byte block plus
+        // 6; allow the object cap plus 1/64 and 1 KiB for that and the object header.
+        let max_file = self.limits.max_object_bytes / 64 * 65 + 1024;
+        let Some(compressed) = read_regular(&path, max_file)? else {
+            return Ok(None);
         };
-        let (raw, used) = zlib_decompress(&compressed, MAX_LOOSE_OBJECT_BYTES)?;
+        let head = zlib_inflate_prefix(&compressed, 64)?;
+        let nul = head
+            .iter()
+            .position(|&b| b == 0)
+            .ok_or_else(|| corrupt(format!("loose object {hex} has no header")))?;
+        let size: u64 = std::str::from_utf8(&head[..nul])
+            .ok()
+            .and_then(|h| h.split_once(' '))
+            .and_then(|(_, n)| n.parse().ok())
+            .ok_or_else(|| corrupt(format!("loose object {hex} has a malformed header")))?;
+        if size > self.limits.max_object_bytes {
+            return Err(over_cap(&path, size, self.limits.max_object_bytes));
+        }
+        let total = self.object_bytes.saturating_add(size);
+        if total > self.limits.max_total_object_bytes {
+            return Err(SynapseError::new(
+                RefusalCode::QuotaPayloadTooLarge,
+                format!(
+                    "loose object {hex} brings the read to {total} bytes, over the {} byte budget",
+                    self.limits.max_total_object_bytes
+                ),
+            ));
+        }
+        self.object_bytes = total;
+        let (raw, used) = zlib_decompress(&compressed, nul + 1 + size as usize)?;
         if used != compressed.len() {
             return Err(corrupt(format!("loose object {hex} has trailing bytes")));
         }
@@ -120,13 +299,31 @@ impl GitRepository {
         Ok(Some(object))
     }
 
+    fn head_state(&self) -> SynapseResult<HeadState> {
+        let path = self.git_dir.join("HEAD");
+        let Some(bytes) = read_regular(&path, self.limits.max_ref_file_bytes)? else {
+            return Ok(HeadState::Missing);
+        };
+        let text = std::str::from_utf8(&bytes).map_err(|_| corrupt("HEAD is not UTF-8"))?;
+        let value = text.trim_end();
+        if let Some(name) = value.strip_prefix("ref: ") {
+            return Ok(HeadState::Symbolic(name.to_string()));
+        }
+        Ok(HeadState::Detached(GitOid::from_hex(value).map_err(
+            |_| corrupt("HEAD is neither a symbolic reference nor an object ID"),
+        )?))
+    }
+
     /// Every reference: loose refs under `refs/` override `packed-refs`; peeled lines (`^`)
-    /// and comments are skipped. Also returns the branch `HEAD` points to, if symbolic.
+    /// and comments are skipped, as are `*.lock` files (Git's in-progress updates). Also
+    /// returns the branch `HEAD` points to, if symbolic. Every file read must be a regular file
+    /// within its cap; a symbolic link, pipe or device anywhere under `refs/` is refused.
     pub fn refs(&self) -> SynapseResult<(BTreeMap<String, GitOid>, Option<String>)> {
         let mut refs = BTreeMap::new();
         let packed = self.git_dir.join("packed-refs");
-        if packed.exists() {
-            let text = fs::read_to_string(&packed).map_err(|e| io(e, &packed))?;
+        if let Some(bytes) = read_regular(&packed, self.limits.max_packed_refs_bytes)? {
+            let text =
+                std::str::from_utf8(&bytes).map_err(|_| corrupt("packed-refs is not UTF-8"))?;
             for line in text.lines() {
                 if line.is_empty() || line.starts_with('#') || line.starts_with('^') {
                     continue;
@@ -137,15 +334,26 @@ impl GitRepository {
                 refs.insert(name.to_string(), GitOid::from_hex(hex)?);
             }
         }
-        let mut stack = vec![self.git_dir.join("refs")];
+        let root = self.git_dir.join("refs");
+        let mut stack = if real_dir(&root)? {
+            vec![root]
+        } else {
+            Vec::new()
+        };
         while let Some(dir) = stack.pop() {
-            if !dir.is_dir() {
-                continue;
-            }
             for entry in fs::read_dir(&dir).map_err(|e| io(e, &dir))? {
-                let path = entry.map_err(|e| io(e, &dir))?.path();
-                if path.is_dir() {
+                let entry = entry.map_err(|e| io(e, &dir))?;
+                let path = entry.path();
+                // `DirEntry::file_type` does not follow symbolic links.
+                let file_type = entry.file_type().map_err(|e| io(e, &path))?;
+                if file_type.is_dir() {
                     stack.push(path);
+                    continue;
+                }
+                if !file_type.is_file() {
+                    return Err(not_regular(&path, describe(file_type)));
+                }
+                if path.extension().is_some_and(|x| x == "lock") {
                     continue;
                 }
                 let rel = path
@@ -154,7 +362,10 @@ impl GitRepository {
                     .and_then(|p| p.to_str())
                     .ok_or_else(|| corrupt("reference name is not UTF-8"))?
                     .replace(std::path::MAIN_SEPARATOR, "/");
-                let text = fs::read_to_string(&path).map_err(|e| io(e, &path))?;
+                let bytes = read_regular(&path, self.limits.max_ref_file_bytes)?
+                    .ok_or_else(|| corrupt(format!("reference {rel} vanished")))?;
+                let text = std::str::from_utf8(&bytes)
+                    .map_err(|_| corrupt(format!("reference {rel} is not UTF-8")))?;
                 let value = text.trim_end();
                 if value.starts_with("ref: ") {
                     // Symbolic refs other than HEAD (for example refs/remotes/origin/HEAD)
@@ -164,31 +375,37 @@ impl GitRepository {
                 refs.insert(rel, GitOid::from_hex(value)?);
             }
         }
-        let head_path = self.git_dir.join("HEAD");
-        let head = match fs::read_to_string(&head_path) {
-            Ok(text) => text
-                .trim_end()
-                .strip_prefix("ref: ")
-                .map(|name| name.to_string()),
-            Err(_) => None,
+        let head = match self.head_state()? {
+            HeadState::Symbolic(name) => Some(name),
+            HeadState::Missing | HeadState::Detached(_) => None,
         };
         Ok((refs, head))
     }
 
-    /// Collect every object reachable from every reference (breadth first). A missing object
-    /// or an object of the wrong kind for its link is refused (`GitObjectCorrupt`): a partial
-    /// or shallow repository cannot be imported as full history.
+    /// Collect every object reachable from every reference and from a detached `HEAD`
+    /// (breadth first). A missing object or an object of the wrong kind for its link is
+    /// refused (`GitObjectCorrupt`): a partial or shallow repository cannot be imported as
+    /// full history.
     pub fn full_history(&mut self) -> SynapseResult<GitHistory> {
-        if self.git_dir.join("shallow").exists() {
+        if fs::symlink_metadata(self.git_dir.join("shallow")).is_ok() {
             return Err(corrupt("shallow repositories do not hold full history"));
         }
         let (refs, head) = self.refs()?;
+        let detached_head = match self.head_state()? {
+            HeadState::Detached(oid) => Some(oid),
+            _ => None,
+        };
         let mut objects = BTreeMap::new();
         let mut queued: BTreeSet<GitOid> = BTreeSet::new();
         let mut queue: VecDeque<(GitOid, Option<ObjectKind>)> = VecDeque::new();
         for oid in refs.values() {
             if queued.insert(*oid) {
                 queue.push_back((*oid, None));
+            }
+        }
+        if let Some(oid) = detached_head {
+            if queued.insert(oid) {
+                queue.push_back((oid, Some(ObjectKind::Commit)));
             }
         }
         while let Some((oid, expected)) = queue.pop_front() {
@@ -214,6 +431,7 @@ impl GitRepository {
         Ok(GitHistory {
             refs,
             head,
+            detached_head,
             objects,
         })
     }
