@@ -22,11 +22,15 @@ use ed25519_dalek::SigningKey;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use synapse_api::{SynapseService, TreeTarget};
+use synapse_auth::{
+    Capability, CapabilityChain, CapabilityLink, ChainQuotas, ChangeScope, LinkCaveats,
+    OperationSet, PathScope, ReferenceScope, SignedStateMove, ROOT_PARENT,
+};
 use synapse_core::{
     BlobDigest, ChainPath, ChangeId, ChangesetEnvelopeV2, ChangesetId, DerivationAttestation,
     DerivationInput, DerivationRule, DerivedRevision, FileMode, GitOid, IdempotencyKey, MergeTier,
-    MutationOp, PathMutation, RefusalCode, RepoId, RevisionContent, TreeDigest, WalSeq,
-    WitnessSigner,
+    MutationOp, PathMutation, RefusalCode, RepoId, RevisionContent, RevisionState, TreeDigest,
+    WalSeq, WitnessSigner,
 };
 use synapse_radicle::{
     IdentityDocumentDigest, IdentityEdit, IdentityLog, RepositoryIdentityDocument,
@@ -68,11 +72,45 @@ fn change(s: &str) -> ChangeId {
     ChangeId(id)
 }
 
+/// The one-link F1 chain held by `s`: issued by the fixture authority to `key("chain {s}")`.
+fn chain(s: &str) -> CapabilityChain {
+    let caveats = LinkCaveats {
+        operations: OperationSet::from_capabilities(&[Capability::Read, Capability::Propose]),
+        paths: PathScope::whole_repository(),
+        references: ReferenceScope::from_kinds(&[]),
+        changes: ChangeScope::any(),
+        quotas: ChainQuotas {
+            max_ops_per_window: 1_000,
+            window_duration_ms: 60_000,
+            storage_bytes: 1 << 30,
+            footprint_paths: 1 << 20,
+            max_bytes_per_op: 1 << 20,
+        },
+        issued_at_ms: 0,
+        expires_at_ms: u64::MAX,
+    };
+    CapabilityChain::new(vec![CapabilityLink::issue(
+        &key("authority"),
+        ROOT_PARENT,
+        label(&format!("nonce {s}")),
+        repo(),
+        pk(&key(&format!("chain {s}"))),
+        caveats,
+    )])
+}
+
 fn authority(s: &str) -> AdmissionAuthority {
+    let links = chain(s).link_digests().iter().map(|d| d.0).collect();
     AdmissionAuthority {
-        chain: ChainPath::new(vec![label(&format!("chain {s}"))]).unwrap(),
+        chain: ChainPath::new(links).unwrap(),
         change_scope: vec![],
     }
+}
+
+/// The owner `s` moves its revision `id` to `to` (step B4: a `Private` revision is invisible
+/// outside its owner chain until its owner moves it).
+fn owner_move(s: &str, id: ChangesetId, to: RevisionState) -> SignedStateMove {
+    SignedStateMove::sign_new(&key(&format!("chain {s}")), repo(), id, to, &chain(s), NOW).unwrap()
 }
 
 fn pk(k: &SigningKey) -> [u8; 32] {
@@ -235,6 +273,13 @@ impl Fx {
                 )
                 .unwrap();
             assert!(matches!(out, RevisionOutcome::Admitted { .. }));
+            // Published, so other chains may name it as a derivation input (step B4).
+            svc.store_mut()
+                .advance_revision_state(
+                    owner_move(who, env.changeset_id(), RevisionState::Proposed),
+                    NOW,
+                )
+                .unwrap();
         }
         Self {
             dir,
@@ -380,7 +425,11 @@ fn b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests() {
         );
     }
     let live = fx.records();
-    assert_eq!(fx.verify(&live), Ok(5), "3 agent and 2 derived revisions");
+    assert_eq!(
+        fx.verify(&live),
+        Ok(8),
+        "3 agent revisions, their 3 publishing moves and 2 derived revisions"
+    );
 
     // A replica: reopen from the WAL (base trees registered again), recompute everything.
     let Fx {
@@ -393,7 +442,7 @@ fn b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests() {
     drop(svc);
     let mut replica = open(&dir);
     assert_eq!(replica.store().revision_records(), live.as_slice());
-    assert_eq!(replica.verify_revision_log(&keys).unwrap(), 5);
+    assert_eq!(replica.verify_revision_log(&keys).unwrap(), 8);
     // Recomputing on the replica gives byte-identical revisions and attestations.
     let again = replica
         .derive_revision(
@@ -412,7 +461,7 @@ fn b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests() {
     drop(replica);
     let mut replica = open(&dir);
     assert_eq!(replica.store().revision_records(), live.as_slice());
-    assert_eq!(replica.verify_revision_log(&keys).unwrap(), 5);
+    assert_eq!(replica.verify_revision_log(&keys).unwrap(), 8);
 }
 
 #[test]
@@ -442,7 +491,7 @@ fn b5_attestation_naming_different_inputs_is_refused_at_admission_and_replay() {
     fx.refused_at_admission_and_replay(at, forged, RefusalCode::DerivationInputMismatch);
     // The honest record still verifies.
     let live = fx.records();
-    assert_eq!(fx.verify(&live), Ok(4));
+    assert_eq!(fx.verify(&live), Ok(7));
 }
 
 #[test]
@@ -484,7 +533,7 @@ fn b5_attestation_naming_a_different_rule_is_refused_at_admission_and_replay() {
     );
     fx.refused_at_admission(forged, RefusalCode::DerivationInputMismatch);
     let live = fx.records();
-    assert_eq!(fx.verify(&live), Ok(4));
+    assert_eq!(fx.verify(&live), Ok(7));
 }
 
 #[test]
@@ -533,7 +582,7 @@ fn b5_unregistered_server_key_is_refused_at_admission_and_replay() {
     let s_merge = fx.admit(by_s2, "merge").unwrap();
     assert!(s_merge >= rotate_at);
     let live = fx.records();
-    assert_eq!(fx.verify(&live), Ok(5), "each verifies at its own sequence");
+    assert_eq!(fx.verify(&live), Ok(8), "each verifies at its own sequence");
     // At replay, the old key's merge in place of the new key's is refused.
     let records = fx.records_with(s_merge, derived_record(merge));
     assert_eq!(
@@ -590,7 +639,7 @@ fn b5_identity_log_of_another_repository_is_refused_at_admission_and_replay() {
         Err(RefusalCode::DerivationIdentityRepoMismatch),
         "refused at replay"
     );
-    assert_eq!(fx.verify(&live), Ok(4));
+    assert_eq!(fx.verify(&live), Ok(7));
     // The same derivation is admitted against this repository's own log.
     fx.admit(merge, "merge").unwrap();
 }
@@ -731,7 +780,7 @@ fn b5_recomputation_that_disagrees_is_refused_at_admission_and_replay() {
         .unwrap_err();
     assert_eq!(err.code, RefusalCode::DerivationRecomputeMismatch);
     let live = fx.records();
-    assert_eq!(fx.verify(&live), Ok(4));
+    assert_eq!(fx.verify(&live), Ok(7));
 }
 
 #[test]
@@ -761,4 +810,98 @@ fn b5_derivation_written_at_another_sequence_than_it_was_checked_at_is_refused()
     assert!(fx.svc.store().poisoned().is_some(), "store is poisoned");
     assert_eq!(fx.admit(honest, "a"), Err(RefusalCode::IoFailure));
     assert!(fx.svc.store().committed_seq() > checked_at);
+}
+
+/// Step B4 composed with B5: another owner's `Private` revision is not a derivation input. A
+/// rebase or merge naming it is refused at admission for any other chain with the code of an
+/// input that is not held (`DerivationInputMismatch`), exactly like an unknown revision, and
+/// refused at replay when the record carries such a chain; its owner may still admit the rebase.
+#[test]
+fn b5_another_owners_private_revision_is_not_a_derivation_input() {
+    let mut fx = Fx::new("private-input");
+    // `rd` stays `Private` to its owner "d".
+    let rd = agent_revision("d", fx.b0, "src/a.rs", b"a1");
+    fx.svc
+        .store_mut()
+        .admit_revision(rd.clone(), &[], authority("d"), NOW)
+        .unwrap();
+    let rebase = {
+        let inputs = fx.rebase_inputs(&rd);
+        fx.derive(DerivationRule::Rebase, inputs)
+    };
+    let merge = {
+        let mut ids = vec![rd.changeset_id(), fx.rb.changeset_id()];
+        ids.sort();
+        let mut inputs = vec![DerivationInput::Tree(fx.b0)];
+        inputs.extend(ids.into_iter().map(DerivationInput::Revision));
+        fx.derive(T0, inputs)
+    };
+    let before = fx.svc.store().committed_seq();
+    for (derived, who) in [(&rebase, "b"), (&merge, "merge"), (&merge, "b")] {
+        assert_eq!(
+            fx.admit(derived.clone(), who),
+            Err(RefusalCode::DerivationInputMismatch),
+            "chain {who} names another owner's private revision"
+        );
+    }
+    assert_eq!(fx.svc.store().committed_seq(), before, "nothing written");
+
+    // At replay: the same rebase written under chain "b" is refused.
+    let mut records = fx.records();
+    let honest = records.len();
+    records.push((
+        before.next(),
+        WalRecord::DerivedRevisionAdmitted {
+            derived: rebase.clone(),
+            chain: authority("b").chain,
+            admitted_at_ms: NOW,
+        },
+    ));
+    assert_eq!(
+        fx.verify(&records),
+        Err(RefusalCode::DerivationInputMismatch),
+        "refused at replay"
+    );
+
+    // The owner may rebase its own private revision, and the log verifies.
+    fx.admit(rebase, "d").unwrap();
+    let live = fx.records();
+    assert_eq!(fx.verify(&live), Ok(honest + 1));
+}
+
+/// A replica verifies kind 9 state moves like strict recovery does (issue #89): a move whose
+/// signature does not verify is refused, not skipped.
+#[test]
+fn b5_replica_refuses_a_state_move_that_does_not_verify() {
+    let mut fx = Fx::new("unverified-move");
+    let live = fx.records();
+    assert_eq!(
+        fx.verify(&live),
+        Ok(6),
+        "3 agent revisions and 3 publishing moves"
+    );
+    let (seq, record) = live
+        .iter()
+        .find(|(_, r)| matches!(r, WalRecord::RevisionStateMoved { .. }))
+        .cloned()
+        .unwrap();
+    let WalRecord::RevisionStateMoved {
+        mut state_move,
+        moved_at_ms,
+    } = record
+    else {
+        unreachable!()
+    };
+    state_move.signature[17] ^= 0x01;
+    let forged = fx.records_with(
+        seq,
+        WalRecord::RevisionStateMoved {
+            state_move,
+            moved_at_ms,
+        },
+    );
+    assert_eq!(
+        fx.verify(&forged),
+        Err(RefusalCode::RevisionStateMoveUnverified)
+    );
 }

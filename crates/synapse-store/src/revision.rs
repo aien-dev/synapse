@@ -539,12 +539,14 @@ impl RevisionLedger {
     /// belong to the attestation's repository (`DerivationIdentityRepoMismatch`); that key is
     /// the identity document's server key in effect at `at` (`DerivationServerKeyUnregistered`);
     /// the attestation was not admitted before (`DerivationAttestationReplayed`); the inputs fit
-    /// the rule and are held (`DerivationInputMismatch`); recomputing the rule on them gives the
-    /// attested `ChangesetId` and `TreeDigest` (`DerivationRecomputeMismatch`).
+    /// the rule and are held where `viewer` may see them, so another owner's `Private` revision
+    /// counts as not held (step B4, `DerivationInputMismatch`); recomputing the rule on them
+    /// gives the attested `ChangesetId` and `TreeDigest` (`DerivationRecomputeMismatch`).
     pub(crate) fn check_derivation(
         &self,
         derived: &DerivedRevision,
         at: WalSeq,
+        viewer: &ChainPath,
         keys: &dyn ServerKeyRegistry,
         trees: &mut dyn DerivationTrees,
     ) -> SynapseResult<ChangesetId> {
@@ -587,8 +589,11 @@ impl RevisionLedger {
                 ),
             ));
         }
-        let lookup =
-            |input: ChangesetId| self.get_revision(&repo, input).map(|r| r.content.clone());
+        // Another owner's `Private` revision is not an input this chain can name (B4).
+        let lookup = |input: ChangesetId| {
+            self.get_visible(&repo, input, viewer)
+                .map(|r| r.content.clone())
+        };
         let (content, tree) = derive_revision_output(att.rule, &att.inputs, &lookup, trees)?;
         let recomputed = content.changeset_id();
         if recomputed != att.output_changeset || tree != att.output_tree {
@@ -741,10 +746,11 @@ impl RevisionLedger {
 /// signature over its own content: a derived revision presented with an agent signature it
 /// does not have is refused (`AuthSignatureInvalid`). A marker (kind 8) must verify. A derived
 /// revision (kind 11) must pass the admission checks of its derivation at its own `WalSeq`
-/// (signature, server key registered then, not a replay, inputs admitted before it, the same
-/// digests on recomputation). The refusal keeps its code and names the record's `WalSeq`.
-/// Returns the number of records verified. Authorization (chains, join rule) and blobs are
-/// not re-checked here.
+/// (signature, server key registered then, not a replay, inputs admitted before it and
+/// visible to the record's chain, the same digests on recomputation). A state move (kind 9)
+/// must verify (`RevisionStateMoveUnverified`), the rule strict recovery applies (issue #89).
+/// The refusal keeps its code and names the record's `WalSeq`. Returns the number of records
+/// verified. Authorization (chains, join rule) and blobs are not re-checked here.
 pub fn verify_revision_log(
     records: &[(WalSeq, WalRecord)],
     keys: &dyn ServerKeyRegistry,
@@ -770,10 +776,20 @@ pub fn verify_revision_log(
             WalRecord::ObsolescenceRecorded { marker, .. } => {
                 marker.validate().map_err(at_seq)?;
             }
-            WalRecord::DerivedRevisionAdmitted { derived, .. } => {
+            WalRecord::DerivedRevisionAdmitted { derived, chain, .. } => {
                 ledger
-                    .check_derivation(derived, *seq, keys, trees)
+                    .check_derivation(derived, *seq, chain, keys, trees)
                     .map_err(at_seq)?;
+            }
+            WalRecord::RevisionStateMoved { state_move, .. } => {
+                // The same rule as strict recovery (issue #89): a move that does not verify
+                // was not written with the mover's key.
+                state_move.verify().map_err(|fault| {
+                    SynapseError::new(
+                        RefusalCode::RevisionStateMoveUnverified,
+                        format!("state move at {seq} does not verify: {fault:?}"),
+                    )
+                })?;
             }
             other => {
                 return Err(SynapseError::new(
@@ -961,7 +977,9 @@ impl crate::SynapseStore {
         self.check_writable()?;
         self.check_binary_codec()?;
         let at = self.committed_seq().next();
-        let id = self.revisions.check_derivation(&derived, at, keys, trees)?;
+        let id = self
+            .revisions
+            .check_derivation(&derived, at, &authority.chain, keys, trees)?;
         let content = &derived.content;
         let repo = derived.attestation.repo_id.clone();
         if content.mutations.len() > self.limits.max_paths_per_changeset {
