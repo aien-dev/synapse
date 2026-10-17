@@ -1,4 +1,4 @@
-# Green (2026-10-17, B4 commit 6f222e6 on origin/main 3d78efe; workspace 338 passed, 0 failed; clippy -D warnings and fmt clean)
+# Green (2026-10-17, B4 commit a49a56d on origin/main 3d78efe; workspace 340 passed, 0 failed, 1 ignored; clippy -D warnings and fmt clean)
 
 # Command: cargo test --locked -p synapse-core --lib b4_ -- --test-threads=1
 test revision_state::tests::b4_every_allowed_move_raises_the_rank_and_every_other_pair_is_refused ... ok
@@ -13,15 +13,17 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; fin
 
 # Command: cargo test --locked -p synapse-store --test b4_revision_states -- --test-threads=1
 test b4_any_move_to_canonical_outside_the_promotion_queue_is_refused ... ok
+test b4_joining_identical_content_grants_no_ownership_of_a_private_revision ... ok
 test b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain ... ok
 test b4_property_random_operation_sequences_never_move_a_revision_backwards ... ok
 test b4_state_move_records_round_trip_and_malformed_bytes_are_refused_typed ... ok
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished
 
 # Command: cargo test --locked -p synapse-api --test b4_revision_states -- --test-threads=1
+test b4_api_joining_identical_content_grants_no_ownership_of_a_private_revision ... ok
 test b4_api_move_to_canonical_outside_the_promotion_queue_is_refused ... ok
 test b4_api_private_revision_is_invisible_outside_its_owner_chain_with_real_f1_chains ... ok
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished
 
 # Command: cargo test --locked -p synapse-store --test b1_change_identity -- --test-threads=1
 test b1_divergence_two_live_successors_is_detected ... ok
