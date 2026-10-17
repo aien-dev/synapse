@@ -5,7 +5,8 @@
 //! `docs`).
 
 use ed25519_dalek::SigningKey;
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 use synapse_api::{RevisionStateMovePayload, SynapseService, TreeTarget};
 use synapse_auth::{
     Capability, CapabilityChain, CapabilityLink, ChainQuotas, ChainedRequest, ChangeScope,
@@ -22,6 +23,20 @@ const NOW: u64 = 2_000;
 const C: ChangeId = ChangeId([0xC4; 16]);
 
 type Agent = (SigningKey, CapabilityChain);
+
+/// Link nonces for one fixture: SHA-256 of the fixture's unique directory and a counter, so
+/// every link gets a fresh nonce and none is a fixed value.
+fn link_nonces(dir: &Path) -> impl FnMut() -> [u8; 32] {
+    let seed = dir.to_string_lossy().into_owned();
+    let mut issued = 0u32;
+    move || {
+        issued += 1;
+        let mut h = Sha256::new();
+        h.update(seed.as_bytes());
+        h.update(issued.to_le_bytes());
+        h.finalize().into()
+    }
+}
 
 fn repo() -> RepoId {
     RepoId::new("aien-spark/synapse").unwrap()
@@ -95,13 +110,14 @@ impl Fx {
         let rp = [Capability::Read, Capability::Propose];
         let own = [ReferenceKind::OwnDrafts];
         let whole = PathScope::whole_repository;
-        let root = |nonce: u8, to: &SigningKey, c: LinkCaveats| {
-            CapabilityLink::issue(&a, ROOT_PARENT, [nonce; 32], repo(), pk(to), c)
+        let mut nonce = link_nonces(&dir);
+        let root = |nonce: [u8; 32], to: &SigningKey, c: LinkCaveats| {
+            CapabilityLink::issue(&a, ROOT_PARENT, nonce, repo(), pk(to), c)
         };
-        let root_o = root(0xA0, &o, caveats(&rp, whole(), &own, 1));
-        let root_x = root(0xA9, &x, caveats(&rp, whole(), &own, 1));
+        let root_o = root(nonce(), &o, caveats(&rp, whole(), &own, 1));
+        let root_x = root(nonce(), &x, caveats(&rp, whole(), &own, 1));
         let root_p = root(
-            0xA7,
+            nonce(),
             &p,
             caveats(
                 &[Capability::Read, Capability::Propose, Capability::Publish],
@@ -113,19 +129,19 @@ impl Fx {
                 1,
             ),
         );
-        let child = |nonce: u8, to: &SigningKey, paths: PathScope| {
+        let child = |nonce: [u8; 32], to: &SigningKey, paths: PathScope| {
             CapabilityLink::issue(
                 &o,
                 root_o.digest(),
-                [nonce; 32],
+                nonce,
                 repo(),
                 pk(to),
                 caveats(&rp, paths, &own, 4),
             )
         };
-        let link_w = child(0xB3, &w, PathScope::new(vec!["src".into()]).unwrap());
-        let link_v = child(0xB4, &v, whole());
-        let link_d = child(0xB5, &d, PathScope::new(vec!["docs".into()]).unwrap());
+        let link_w = child(nonce(), &w, PathScope::new(vec!["src".into()]).unwrap());
+        let link_v = child(nonce(), &v, whole());
+        let link_d = child(nonce(), &d, PathScope::new(vec!["docs".into()]).unwrap());
         let co = CapabilityChain::new(vec![root_o]);
         let cx = CapabilityChain::new(vec![root_x]);
         let cp = CapabilityChain::new(vec![root_p]);
