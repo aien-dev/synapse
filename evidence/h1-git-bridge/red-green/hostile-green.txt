@@ -22,7 +22,7 @@ test h1_total_object_budget_is_enforced_for_packed_and_loose_objects ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
 
-# Command: cargo test --locked --workspace (357 passed, 0 failed, 2 ignored, 46 test binaries)
+# Command: cargo test --locked --workspace (358 passed, 0 failed, 2 ignored, 46 test binaries; includes the unit test a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking)
 
 # Real repository with default ReadLimits: git clone --mirror https://github.com/aien-dev/synapse
 # Command: SYNAPSE_H1_REAL_REPO=<mirror> /usr/bin/time -v cargo test --locked -p synapse-git --test h1_git_bridge -- --ignored --nocapture h1_real_repository
