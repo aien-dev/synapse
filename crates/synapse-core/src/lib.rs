@@ -80,8 +80,9 @@ pub enum RefusalCode {
 
     // Schema, path, and consistency refusals
     EnvelopeVersionUnsupported,
-    /// A changeset envelope v2, authorship attestation, admission witness, or obsolescence
-    /// marker is not in its one canonical binary encoding (ADR 0003 section 5.1, step B1).
+    /// A changeset envelope v2, authorship attestation, admission witness, obsolescence
+    /// marker, derivation attestation, or derived revision is not in its one canonical binary
+    /// encoding (ADR 0003 section 5.1, steps B1 and B5).
     EnvelopeMalformed,
     RepoIdInvalid,
     PathInvalid,
