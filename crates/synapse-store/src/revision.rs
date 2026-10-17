@@ -13,9 +13,10 @@ use crate::{SignedStateMove, StateMoveFault, WalRecord};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use synapse_core::{
-    AdmissionWitness, AuthorshipAttestation, BlobDigest, ChainPath, ChangeId, ChangesetEnvelopeV2,
-    ChangesetId, IdempotencyKey, MutationOp, ObsolescenceKind, ObsolescenceMarker, RefusalCode,
-    RepoId, RevisionContent, RevisionState, SynapseError, SynapseResult, WalSeq,
+    derive_revision_output, AdmissionWitness, AuthorshipAttestation, BlobDigest, ChainPath,
+    ChangeId, ChangesetEnvelopeV2, ChangesetId, DerivationAttestation, DerivationTrees,
+    DerivedRevision, IdempotencyKey, MutationOp, ObsolescenceKind, ObsolescenceMarker, RefusalCode,
+    RepoId, RevisionContent, RevisionState, ServerKeyRegistry, SynapseError, SynapseResult, WalSeq,
 };
 
 /// Domain tag of the revision part of the state root (only hashed when revisions exist).
@@ -32,8 +33,9 @@ pub struct AdmissionAuthority {
     pub change_scope: Vec<ChangeId>,
 }
 
-/// One admitted revision: its content, every authorship attestation, and every admission
-/// witness, in admission order.
+/// One admitted revision: its content, every authorship attestation (agents), every
+/// derivation attestation (the server, step B5), and every admission witness, in admission
+/// order. A revision only the server derived has no authorship attestation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredRevision {
     pub repo_id: RepoId,
@@ -42,6 +44,7 @@ pub struct StoredRevision {
     /// Sequence of the first admission.
     pub first_seq: WalSeq,
     pub attestations: Vec<AuthorshipAttestation>,
+    pub derivations: Vec<DerivationAttestation>,
     pub witnesses: Vec<AdmissionWitness>,
     /// Current state (step B4): `Private` from the first admission; it only moves forward.
     pub state: RevisionState,
@@ -141,6 +144,8 @@ pub(crate) struct RevisionLedger {
     idempotency: BTreeMap<(RepoId, [u8; 32], IdempotencyKey), (WalSeq, ChangesetId)>,
     /// Kind 9 records that changed nothing, by reason.
     state_moves: StateMoveReplayReport,
+    /// (repository, derivation attestation digest) to its admission (replay refusal, B5).
+    derivations: BTreeMap<(RepoId, [u8; 32]), WalSeq>,
 }
 
 /// Digest of one revision record over its canonical core encodings.
@@ -195,6 +200,18 @@ fn record_digest(record: &WalRecord) -> [u8; 32] {
             h.update(&link);
             h.update(m.mover_key);
             h.update(m.signature);
+        }
+        WalRecord::DerivedRevisionAdmitted {
+            derived,
+            chain: c,
+            admitted_at_ms,
+        } => {
+            let d = derived.encode();
+            h.update((d.len() as u64).to_le_bytes());
+            h.update(&d);
+            c.encode_into(&mut chain);
+            h.update(&chain);
+            h.update(admitted_at_ms.to_le_bytes());
         }
         _ => {}
     }
@@ -324,10 +341,50 @@ impl RevisionLedger {
                             content: envelope.content.clone(),
                             first_seq: seq,
                             attestations: Vec::new(),
+                            derivations: Vec::new(),
                             witnesses: Vec::new(),
                             state: RevisionState::Private,
                         });
                 rev.attestations.push(att.clone());
+                rev.witnesses.push(witness);
+            }
+            WalRecord::DerivedRevisionAdmitted {
+                derived,
+                chain,
+                admitted_at_ms,
+            } => {
+                let att = &derived.attestation;
+                let id = att.output_changeset;
+                let repo = att.repo_id.clone();
+                let witness =
+                    AdmissionWitness::of_derivation(derived, chain.clone(), seq, *admitted_at_ms);
+                let entry = self
+                    .changes
+                    .entry((repo.clone(), derived.content.change_id))
+                    .or_default();
+                if entry.creating_chain.is_none() {
+                    entry.creating_chain = Some(chain.clone());
+                }
+                if !entry.revisions.contains(&id) {
+                    entry.revisions.push(id);
+                }
+                self.derivations
+                    .entry((repo.clone(), att.digest()))
+                    .or_insert(seq);
+                let rev =
+                    self.revisions
+                        .entry((repo.clone(), id))
+                        .or_insert_with(|| StoredRevision {
+                            repo_id: repo,
+                            changeset_id: id,
+                            content: derived.content.clone(),
+                            first_seq: seq,
+                            attestations: Vec::new(),
+                            derivations: Vec::new(),
+                            witnesses: Vec::new(),
+                            state: RevisionState::Private,
+                        });
+                rev.derivations.push(att.clone());
                 rev.witnesses.push(witness);
             }
             WalRecord::ObsolescenceRecorded {
@@ -474,6 +531,63 @@ impl RevisionLedger {
         ))
     }
 
+    /// Checks of a derived revision at admission `WalSeq` `at` (ADR 0003 B5), shared by
+    /// admission and replay verification so both refuse exactly the same records. In order:
+    /// content rules, the attestation names this content and its signature verifies under the
+    /// server key it names (`DerivationSignatureInvalid`); that key is the identity document's
+    /// server key in effect at `at` (`DerivationServerKeyUnregistered`); the attestation was
+    /// not admitted before (`DerivationAttestationReplayed`); the inputs fit the rule and are
+    /// held (`DerivationInputMismatch`); recomputing the rule on them gives the attested
+    /// `ChangesetId` and `TreeDigest` (`DerivationRecomputeMismatch`).
+    pub(crate) fn check_derivation(
+        &self,
+        derived: &DerivedRevision,
+        at: WalSeq,
+        keys: &dyn ServerKeyRegistry,
+        trees: &mut dyn DerivationTrees,
+    ) -> SynapseResult<ChangesetId> {
+        let id = derived.validate()?;
+        let att = &derived.attestation;
+        let registered = keys.registered_server_key(at);
+        if registered != Some(att.server_key) {
+            return Err(SynapseError::new(
+                RefusalCode::DerivationServerKeyUnregistered,
+                match registered {
+                    Some(_) => format!(
+                        "server key {} is not the server key of the identity document in effect at {at}",
+                        att.server_did()
+                    ),
+                    None => format!("no identity document is in effect at {at}"),
+                },
+            ));
+        }
+        let repo = att.repo_id.clone();
+        let digest = att.digest();
+        if let Some(first) = self.derivations.get(&(repo.clone(), digest)) {
+            return Err(SynapseError::new(
+                RefusalCode::DerivationAttestationReplayed,
+                format!(
+                    "derivation attestation {} was already admitted at {first}",
+                    hex::encode(digest)
+                ),
+            ));
+        }
+        let lookup =
+            |input: ChangesetId| self.get_revision(&repo, input).map(|r| r.content.clone());
+        let (content, tree) = derive_revision_output(att.rule, &att.inputs, &lookup, trees)?;
+        let recomputed = content.changeset_id();
+        if recomputed != att.output_changeset || tree != att.output_tree {
+            return Err(SynapseError::new(
+                RefusalCode::DerivationRecomputeMismatch,
+                format!(
+                    "recomputed {:?} on the named inputs gives revision {recomputed} tree {tree}, the attestation names revision {} tree {}",
+                    att.rule, att.output_changeset, att.output_tree
+                ),
+            ));
+        }
+        Ok(id)
+    }
+
     /// Checks of an obsolescence marker against the ledger. `Ok(Some(seq))` when the same
     /// predecessor and successors are already recorded (the first marker's sequence).
     pub(crate) fn plan_marker(
@@ -606,6 +720,61 @@ impl RevisionLedger {
     }
 }
 
+/// Replica verification of revision records (ADR 0003 B5): replay `records` in `WalSeq`
+/// order into a fresh ledger and refuse the first record that could not have been admitted
+/// on its own evidence. An agent revision (kind 7) must carry a strictly verifying agent
+/// signature over its own content: a derived revision presented with an agent signature it
+/// does not have is refused (`AuthSignatureInvalid`). A marker (kind 8) must verify. A derived
+/// revision (kind 11) must pass the admission checks of its derivation at its own `WalSeq`
+/// (signature, server key registered then, not a replay, inputs admitted before it, the same
+/// digests on recomputation). The refusal keeps its code and names the record's `WalSeq`.
+/// Returns the number of records verified. Authorization (chains, join rule) and blobs are
+/// not re-checked here.
+pub fn verify_revision_log(
+    records: &[(WalSeq, WalRecord)],
+    keys: &dyn ServerKeyRegistry,
+    trees: &mut dyn DerivationTrees,
+) -> SynapseResult<usize> {
+    let mut ledger = RevisionLedger::default();
+    let mut prev: Option<WalSeq> = None;
+    for (seq, record) in records {
+        let at_seq = |e: SynapseError| {
+            SynapseError::new(e.code, format!("revision record at {seq}: {}", e.message))
+        };
+        if prev.is_some_and(|p| p >= *seq) {
+            return Err(SynapseError::new(
+                RefusalCode::WalSequenceGap,
+                format!("revision record at {seq} does not follow the previous record"),
+            ));
+        }
+        prev = Some(*seq);
+        match record {
+            WalRecord::RevisionAdmitted { envelope, .. } => {
+                envelope.validate().map_err(at_seq)?;
+            }
+            WalRecord::ObsolescenceRecorded { marker, .. } => {
+                marker.validate().map_err(at_seq)?;
+            }
+            WalRecord::DerivedRevisionAdmitted { derived, .. } => {
+                ledger
+                    .check_derivation(derived, *seq, keys, trees)
+                    .map_err(at_seq)?;
+            }
+            other => {
+                return Err(SynapseError::new(
+                    RefusalCode::WalRecordMalformed,
+                    format!(
+                        "record of kind {} at {seq} is not a revision record",
+                        other.kind_byte()
+                    ),
+                ))
+            }
+        }
+        ledger.apply(*seq, record.clone());
+    }
+    Ok(records.len())
+}
+
 impl crate::SynapseStore {
     /// Admit an envelope v2 revision under `authority` at server time `now_ms` (ADR 0003
     /// B1). Checks, in order: the envelope (content rules, attestation names this content,
@@ -659,29 +828,7 @@ impl crate::SynapseStore {
         }
         self.revisions
             .check_join(&repo, content.change_id, &authority)?;
-        for parent in &content.parents {
-            // Another owner's `Private` revision is not a parent this chain can name (B4).
-            let parent_repo = if self
-                .revisions
-                .get_visible(&repo, *parent, &authority.chain)
-                .is_some()
-            {
-                &repo
-            } else if let Some(cs) = self.changesets.get(parent) {
-                &cs.envelope.repo_id
-            } else {
-                return Err(SynapseError::new(
-                    RefusalCode::ParentChangesetNotFound,
-                    format!("parent {parent} not found"),
-                ));
-            };
-            if parent_repo != &repo {
-                return Err(SynapseError::new(
-                    RefusalCode::AuthCrossRepoDenied,
-                    "parent changeset belongs to a different repository",
-                ));
-            }
-        }
+        self.check_revision_parents(&repo, content, &authority.chain)?;
         let mut provided: BTreeMap<BlobDigest, &[u8]> = BTreeMap::new();
         let mut total = 0u64;
         for (declared, bytes) in blobs {
@@ -748,6 +895,117 @@ impl crate::SynapseStore {
             changeset_id: id,
             joined_existing_revision,
         })
+    }
+
+    /// Parents of a revision: each an admitted revision or a v1 changeset of `repo`.
+    fn check_revision_parents(
+        &self,
+        repo: &RepoId,
+        content: &RevisionContent,
+        viewer: &ChainPath,
+    ) -> SynapseResult<()> {
+        for parent in &content.parents {
+            // Another owner's `Private` revision is not a parent this chain can name (B4).
+            let parent_repo = if self.revisions.get_visible(repo, *parent, viewer).is_some() {
+                repo
+            } else if let Some(cs) = self.changesets.get(parent) {
+                &cs.envelope.repo_id
+            } else {
+                return Err(SynapseError::new(
+                    RefusalCode::ParentChangesetNotFound,
+                    format!("parent {parent} not found"),
+                ));
+            };
+            if parent_repo != repo {
+                return Err(SynapseError::new(
+                    RefusalCode::AuthCrossRepoDenied,
+                    "parent changeset belongs to a different repository",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Admit a server-derived revision (ADR 0003 B5) under `authority` at server time
+    /// `now_ms`. `keys` answers which server key the repository identity document registered
+    /// at the admission `WalSeq`; `trees` is the tree store the rule is recomputed on. Checks,
+    /// in order: the derivation (see `RevisionLedger::check_derivation`: signature, registered
+    /// key, replay, inputs, recomputation); the path-count limit; the join rule against the
+    /// change's creating chain (`AuthChangeOutOfScope`); parents; every upserted blob already
+    /// visible (`BlobNotFound`: a derived revision brings no new content). Nothing is written
+    /// on a refusal. The witness records the server key, its signature, and the attestation
+    /// digest; no agent signature is recorded or claimed.
+    pub fn admit_derived_revision(
+        &mut self,
+        derived: DerivedRevision,
+        authority: AdmissionAuthority,
+        keys: &dyn ServerKeyRegistry,
+        trees: &mut dyn DerivationTrees,
+        now_ms: u64,
+    ) -> SynapseResult<RevisionOutcome> {
+        self.check_writable()?;
+        self.check_binary_codec()?;
+        let at = self.committed_seq().next();
+        let id = self.revisions.check_derivation(&derived, at, keys, trees)?;
+        let content = &derived.content;
+        let repo = derived.attestation.repo_id.clone();
+        if content.mutations.len() > self.limits.max_paths_per_changeset {
+            return Err(SynapseError::new(
+                RefusalCode::QuotaTooManyPaths,
+                format!(
+                    "revision touches {} paths, exceeding limit {}",
+                    content.mutations.len(),
+                    self.limits.max_paths_per_changeset
+                ),
+            ));
+        }
+        self.revisions
+            .check_join(&repo, content.change_id, &authority)?;
+        self.check_revision_parents(&repo, content, &authority.chain)?;
+        for m in &content.mutations {
+            if let MutationOp::Upsert { blob_digest, .. } = &m.op {
+                if !self.blob_first_visible_seq.contains_key(blob_digest) {
+                    return Err(SynapseError::new(
+                        RefusalCode::BlobNotFound,
+                        format!(
+                            "derived mutation path {} references blob {blob_digest}, which is not visible",
+                            m.path
+                        ),
+                    ));
+                }
+            }
+        }
+        let joined_existing_revision = self.revisions.get_revision(&repo, id).is_some();
+        let record = WalRecord::DerivedRevisionAdmitted {
+            derived,
+            chain: authority.chain,
+            admitted_at_ms: now_ms,
+        };
+        let wal_seq = self.append_revision_record(record, &[])?;
+        debug_assert_eq!(
+            wal_seq, at,
+            "derivation checked at the sequence it was written at"
+        );
+        Ok(RevisionOutcome::Admitted {
+            wal_seq,
+            changeset_id: id,
+            joined_existing_revision,
+        })
+    }
+
+    /// Every revision record (kinds 7, 8 and 11) this store holds, in `WalSeq` order: what a
+    /// replica replays and verifies with [`verify_revision_log`].
+    pub fn revision_records(&self) -> &[(WalSeq, WalRecord)] {
+        self.revisions.log()
+    }
+
+    /// [`verify_revision_log`] over this store's revision records.
+    pub fn verify_revisions(
+        &self,
+        keys: &dyn ServerKeyRegistry,
+        trees: &mut dyn DerivationTrees,
+    ) -> SynapseResult<usize> {
+        verify_revision_log(self.revisions.log(), keys, trees)
     }
 
     /// Record an obsolescence marker authorized under `chain` at server time `now_ms`. A

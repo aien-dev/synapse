@@ -54,21 +54,28 @@ const MAX_PATH_BYTES: usize = 2048;
 const MAX_REPO_ID_BYTES: usize = 128;
 /// Encoded size of the smallest mutation (`u32` empty path and a delete tag).
 const MIN_MUTATION_BYTES: usize = 4 + 1;
-/// Witness signer tag of an agent admission (B5 adds the server-derived signer as tag 2).
+/// Witness signer tag of an agent admission.
 const SIGNER_TAG_AGENT: u8 = 1;
+/// Witness signer tag of a server-derived admission (step B5).
+const SIGNER_TAG_SERVER: u8 = 2;
 const OP_TAG_UPSERT: u8 = 1;
 const OP_TAG_DELETE: u8 = 2;
 
-fn malformed(msg: impl Into<String>) -> SynapseError {
+pub(crate) fn malformed(msg: impl Into<String>) -> SynapseError {
     SynapseError::new(RefusalCode::EnvelopeMalformed, msg)
 }
 
-fn put_str(buf: &mut Vec<u8>, s: &str) {
+pub(crate) fn put_str(buf: &mut Vec<u8>, s: &str) {
     buf.extend_from_slice(&(s.len() as u32).to_le_bytes());
     buf.extend_from_slice(s.as_bytes());
 }
 
-fn verify_ed25519(key: &[u8; 32], msg: &[u8], sig: &[u8; 64], what: &str) -> SynapseResult<()> {
+pub(crate) fn verify_ed25519(
+    key: &[u8; 32],
+    msg: &[u8],
+    sig: &[u8; 64],
+    what: &str,
+) -> SynapseResult<()> {
     let vk = VerifyingKey::from_bytes(key).map_err(|_| {
         SynapseError::new(
             RefusalCode::DidKeyInvalid,
@@ -155,7 +162,7 @@ impl RevisionContent {
         Ok(content)
     }
 
-    fn decode_from(r: &mut Reader) -> SynapseResult<Self> {
+    pub(crate) fn decode_from(r: &mut Reader) -> SynapseResult<Self> {
         let version = r.u16()?;
         if version != ENVELOPE_V2_VERSION {
             return Err(SynapseError::new(
@@ -461,14 +468,22 @@ impl ChainPath {
     }
 }
 
-/// Who signed an admitted revision. Step B5 adds the server-derived signer (the server's
-/// machine-key signature and its `DerivationAttestation` digest) under tag 2.
+/// Who signed an admitted revision: an agent (tag 1, step B1) or, for a server-derived
+/// revision, the server's machine key with its `DerivationAttestation` (tag 2, step B5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessSigner {
     /// An agent's key and its signature over the envelope (its authorship attestation).
     Agent {
         author_key: [u8; 32],
         signature: [u8; 64],
+    },
+    /// The server's machine key, its signature over the revision's
+    /// [`crate::DerivationAttestation`], and that attestation's digest. A server-derived
+    /// revision never carries an agent signature (ADR 0003 sections 5.1 and 5.6).
+    Server {
+        server_key: [u8; 32],
+        signature: [u8; 64],
+        attestation_digest: [u8; 32],
     },
 }
 
@@ -514,11 +529,13 @@ impl AdmissionWitness {
     pub fn signer_did(&self) -> String {
         match &self.signer {
             WitnessSigner::Agent { author_key, .. } => encode_did_key_ed25519(author_key),
+            WitnessSigner::Server { server_key, .. } => encode_did_key_ed25519(server_key),
         }
     }
 
     /// `repo_id str | changeset_id [32] | signer | idempotency_key [32] | admission_seq u64 |
-    /// admitted_at_ms u64 | chain`, with `signer` = `1 | author_key [32] | signature [64]`.
+    /// admitted_at_ms u64 | chain`, with `signer` = `1 | author_key [32] | signature [64]`
+    /// (agent) or `2 | server_key [32] | signature [64] | attestation_digest [32]` (server).
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(256);
         put_str(&mut buf, self.repo_id.as_str());
@@ -531,6 +548,16 @@ impl AdmissionWitness {
                 buf.push(SIGNER_TAG_AGENT);
                 buf.extend_from_slice(author_key);
                 buf.extend_from_slice(signature);
+            }
+            WitnessSigner::Server {
+                server_key,
+                signature,
+                attestation_digest,
+            } => {
+                buf.push(SIGNER_TAG_SERVER);
+                buf.extend_from_slice(server_key);
+                buf.extend_from_slice(signature);
+                buf.extend_from_slice(attestation_digest);
             }
         }
         buf.extend_from_slice(&self.idempotency_key.0);
@@ -549,6 +576,11 @@ impl AdmissionWitness {
             SIGNER_TAG_AGENT => WitnessSigner::Agent {
                 author_key: r.array()?,
                 signature: r.array()?,
+            },
+            SIGNER_TAG_SERVER => WitnessSigner::Server {
+                server_key: r.array()?,
+                signature: r.array()?,
+                attestation_digest: r.array()?,
             },
             tag => return Err(malformed(format!("unknown witness signer tag {tag}"))),
         };
@@ -735,21 +767,21 @@ impl ObsolescenceMarker {
 // ---------------------------------------------------------------------------------------
 
 /// Bounds-checked little-endian reader; every failure is `EnvelopeMalformed`.
-struct Reader<'a> {
+pub(crate) struct Reader<'a> {
     buf: &'a [u8],
     pos: usize,
 }
 
 impl<'a> Reader<'a> {
-    fn new(buf: &'a [u8]) -> Self {
+    pub(crate) fn new(buf: &'a [u8]) -> Self {
         Self { buf, pos: 0 }
     }
 
-    fn remaining(&self) -> usize {
+    pub(crate) fn remaining(&self) -> usize {
         self.buf.len() - self.pos
     }
 
-    fn take(&mut self, n: usize) -> SynapseResult<&'a [u8]> {
+    pub(crate) fn take(&mut self, n: usize) -> SynapseResult<&'a [u8]> {
         if n > self.remaining() {
             return Err(malformed(format!(
                 "truncated: need {n} bytes at offset {}, {} remain",
@@ -762,29 +794,29 @@ impl<'a> Reader<'a> {
         Ok(out)
     }
 
-    fn array<const N: usize>(&mut self) -> SynapseResult<[u8; N]> {
+    pub(crate) fn array<const N: usize>(&mut self) -> SynapseResult<[u8; N]> {
         Ok(self.take(N)?.try_into().expect("N bytes"))
     }
 
-    fn u8(&mut self) -> SynapseResult<u8> {
+    pub(crate) fn u8(&mut self) -> SynapseResult<u8> {
         Ok(self.take(1)?[0])
     }
 
-    fn u16(&mut self) -> SynapseResult<u16> {
+    pub(crate) fn u16(&mut self) -> SynapseResult<u16> {
         Ok(u16::from_le_bytes(self.array()?))
     }
 
-    fn u32(&mut self) -> SynapseResult<u32> {
+    pub(crate) fn u32(&mut self) -> SynapseResult<u32> {
         Ok(u32::from_le_bytes(self.array()?))
     }
 
-    fn u64(&mut self) -> SynapseResult<u64> {
+    pub(crate) fn u64(&mut self) -> SynapseResult<u64> {
         Ok(u64::from_le_bytes(self.array()?))
     }
 
     /// A `u32` count, refused above `cap` or above what `min_item_bytes` per item could fit
     /// in the bytes that remain (so nothing is reserved beyond the input).
-    fn count(&mut self, cap: usize, min_item_bytes: usize) -> SynapseResult<usize> {
+    pub(crate) fn count(&mut self, cap: usize, min_item_bytes: usize) -> SynapseResult<usize> {
         let n = self.u32()? as usize;
         if n > cap || n.saturating_mul(min_item_bytes) > self.remaining() {
             return Err(malformed(format!(
@@ -795,7 +827,7 @@ impl<'a> Reader<'a> {
         Ok(n)
     }
 
-    fn string(&mut self, cap: usize) -> SynapseResult<String> {
+    pub(crate) fn string(&mut self, cap: usize) -> SynapseResult<String> {
         let len = self.u32()? as usize;
         if len > cap {
             return Err(malformed(format!("string length {len} above cap {cap}")));
@@ -804,12 +836,12 @@ impl<'a> Reader<'a> {
         String::from_utf8(bytes.to_vec()).map_err(|_| malformed("string is not UTF-8"))
     }
 
-    fn repo(&mut self) -> SynapseResult<RepoId> {
+    pub(crate) fn repo(&mut self) -> SynapseResult<RepoId> {
         let s = self.string(MAX_REPO_ID_BYTES)?;
         RepoId::new(s).map_err(|e| malformed(format!("repository id: {}", e.message)))
     }
 
-    fn finish(&self) -> SynapseResult<()> {
+    pub(crate) fn finish(&self) -> SynapseResult<()> {
         if self.pos != self.buf.len() {
             return Err(malformed(format!("{} trailing bytes", self.remaining())));
         }

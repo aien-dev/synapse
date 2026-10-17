@@ -8,9 +8,16 @@ use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+mod derivation;
 mod revision;
 mod revision_state;
 mod tree;
+pub use derivation::{
+    derive_revision_output, DerivationAttestation, DerivationInput, DerivationRule,
+    DerivationTrees, DerivedRevision, MergeTier, ServerKeyRegistry,
+    DOMAIN_DERIVATION_ATTESTATION_V1, DOMAIN_DERIVATION_SIGN_V1, DOMAIN_DERIVED_MERGE_CHANGE_V1,
+    MAX_DERIVATION_INPUTS,
+};
 pub use revision::{
     AdmissionWitness, AuthorshipAttestation, ChainPath, ChangesetEnvelopeV2, ObsolescenceKind,
     ObsolescenceMarker, RevisionContent, WitnessSigner, DOMAIN_ADMISSION_WITNESS_V1,
@@ -143,6 +150,23 @@ pub enum RefusalCode {
     /// or whose mover key is not the audience of its chain's leaf link: the log was written
     /// without the mover's private key (ADR 0003 sections 5.3 and 5.4, step B4, issue #89).
     RevisionStateMoveUnverified,
+    /// A `DerivationAttestation` does not name the revision it is presented with, or its
+    /// signature does not verify under the server key it names (ADR 0003 section 5.1, step B5).
+    DerivationSignatureInvalid,
+    /// The server key a `DerivationAttestation` names is not the server key of the repository
+    /// identity document in effect at the admission `WalSeq`, or no document is in effect
+    /// (step B5).
+    DerivationServerKeyUnregistered,
+    /// A `DerivationAttestation` names inputs that do not fit its rule (kind, count, order,
+    /// duplicates) or that the replica does not hold: a revision not admitted in this
+    /// repository before the derivation, or a tree not in the tree store (step B5).
+    DerivationInputMismatch,
+    /// Recomputing the rule a `DerivationAttestation` names from the inputs it names fails, or
+    /// gives a `ChangesetId` or `TreeDigest` other than the ones it attests (step B5).
+    DerivationRecomputeMismatch,
+    /// A `DerivationAttestation` already admitted (the same attestation digest) is presented
+    /// again (step B5).
+    DerivationAttestationReplayed,
 
     // Git and Radicle canonicality refusals
     GitObjectCorrupt,
