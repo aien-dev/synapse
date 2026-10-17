@@ -1213,8 +1213,9 @@ mod b4_tests {
     /// owner move written straight into the WAL through the store's own framing (valid
     /// CRC32C and hash chain, so a resealed forgery) without the owner's key changes nothing
     /// on replay, whether its signature is broken or it is validly signed by a key that is
-    /// not the chain leaf's audience. Torn-tail recovery keeps both as counted no-ops,
-    /// strict recovery refuses the store, and both survive checkpoint and compaction.
+    /// not the chain leaf's audience. Torn-tail recovery keeps both as counted no-ops
+    /// and strict recovery refuses the store (until a torn-tail compaction drops them: see
+    /// `b89_torn_tail_compaction_drops_unverified_moves_so_strict_recovery_accepts_the_store`).
     #[test]
     fn b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay() {
         const TORN: RecoveryPolicy = RecoveryPolicy::TruncateTornTail;
@@ -1258,15 +1259,135 @@ mod b4_tests {
                 "{err:?}"
             );
         };
-        let mut s = open(&dir, TORN).unwrap();
-        check(&s);
+        check(&open(&dir, TORN).unwrap());
         strict_refuses();
-        s.checkpoint_and_compact(7_000).unwrap();
-        check(&s);
-        drop(s);
         check(&open(&dir, TORN).unwrap());
         strict_refuses();
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Review of PR #100 (note 1): torn-tail recovery keeps unverified kind 9 records as
+    /// no-ops, but compaction must not carry them into the checkpoint, or strict recovery
+    /// refuses the store forever. A torn-tail open followed by `checkpoint_and_compact`
+    /// drops them (and only them), keeps every applied move, and leaves a store strict
+    /// recovery accepts with the same revision states.
+    #[test]
+    fn b89_torn_tail_compaction_drops_unverified_moves_so_strict_recovery_accepts_the_store() {
+        const TORN: RecoveryPolicy = RecoveryPolicy::TruncateTornTail;
+        const STRICT: RecoveryPolicy = RecoveryPolicy::StrictFailClosed;
+        let owner: &[u8] = &[1, 2];
+        let dir = temp_dir("compact-forged");
+        let mut s = open(&dir, TORN).unwrap();
+        let id = admit(&mut s, owner);
+        let honest = signed(owner, id, RevisionState::Draft);
+        s.append_revision_record(moved(bad_signature(honest.clone())), &[])
+            .unwrap();
+        s.append_revision_record(moved(non_leaf_signer(honest.clone(), &[1, 9])), &[])
+            .unwrap();
+        s.advance_revision_state(honest, 6_500).unwrap();
+        // A verified move that is not an owner move is an ordinary no-op and stays.
+        s.append_revision_record(moved(signed(&[1, 9], id, RevisionState::Proposed)), &[])
+            .unwrap();
+        drop(s);
+        assert!(
+            open(&dir, STRICT).is_err(),
+            "strict refuses before compaction"
+        );
+
+        let mut s = open(&dir, TORN).unwrap();
+        assert_eq!(s.state_move_replay_report().unverified(), 2);
+        s.checkpoint_and_compact(7_000).unwrap();
+        let check = |s: &SynapseStore| {
+            assert_eq!(
+                s.get_revision(&repo(), id).unwrap().state,
+                RevisionState::Draft
+            );
+            let report = s.state_move_replay_report();
+            assert_eq!(report.unverified(), 0, "{report:?}");
+            assert_eq!(report.first_unverified, None);
+            assert_eq!(report.not_owner_move, 1, "verified no-ops are kept");
+        };
+        check(&s);
+        let root = s.state_root_digest(None).unwrap();
+        drop(s);
+        let s = open(&dir, STRICT).expect("strict recovery accepts the compacted store");
+        check(&s);
+        assert_eq!(s.state_root_digest(None).unwrap(), root);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Review of PR #100 (note 2): `SignedStateMove::verify` checks only that the mover key
+    /// is the audience of a link whose digest ends the chain; it does not check who issued
+    /// that link. A forger can mint a root link of its own, or append a link of its own
+    /// under the owner's chain, and sign a move that verifies. The store is safe because it
+    /// also requires the chain to be, or dominate, the first admission's chain; this test
+    /// fails if replay or the store call skips that check.
+    #[test]
+    fn b89_a_forger_minted_leaf_link_verifies_but_never_owns_a_revision() {
+        let owner: &[u8] = &[1, 2];
+        let record = admission(path(owner), owner, 1);
+        let id = match &record {
+            WalRecord::RevisionAdmitted { envelope, .. } => envelope.changeset_id(),
+            _ => unreachable!(),
+        };
+        let forger = key_of(&[7]);
+        let forged = |parent: Option<&[u8]>| {
+            let (parent_digest, mut digests) = match parent {
+                None => (ROOT_PARENT, Vec::new()),
+                Some(labels) => (link_of(labels).digest(), path(labels).links().to_vec()),
+            };
+            let link = CapabilityLink::issue(
+                &forger,
+                parent_digest,
+                derived("forged nonce", parent.unwrap_or(&[])),
+                repo(),
+                forger.verifying_key().to_bytes(),
+                caveats(),
+            );
+            digests.push(link.digest().0);
+            let chain = ChainPath::new(digests).unwrap();
+            let to = RevisionState::Proposed;
+            SignedStateMove {
+                repo_id: repo(),
+                changeset_id: id,
+                to,
+                signature: SignedStateMove::sign_statement(&forger, &repo(), id, to, &chain, 6_000),
+                chain,
+                signed_at_ms: 6_000,
+                leaf_link: link,
+                mover_key: forger.verifying_key().to_bytes(),
+            }
+        };
+        let moves = [forged(None), forged(Some(owner))];
+        for m in &moves {
+            assert_eq!(
+                m.verify(),
+                Ok(()),
+                "verify alone accepts a forger-minted leaf"
+            );
+        }
+        let mut log = vec![
+            (WalSeq(1), record),
+            (WalSeq(2), moved(signed(owner, id, RevisionState::Draft))),
+        ];
+        // The revision is `Draft`, so every chain sees it: only ownership can refuse.
+        let shared = RevisionLedger::from_log(log.clone());
+        for m in &moves {
+            let err = shared.plan_move(m).unwrap_err();
+            assert_eq!(err.code, RefusalCode::AuthChainNotDominant);
+        }
+        log.extend(
+            moves
+                .into_iter()
+                .zip(3..)
+                .map(|(m, n)| (WalSeq(n), moved(m))),
+        );
+        let replayed = RevisionLedger::from_log(log);
+        assert_eq!(
+            replayed.get_revision(&repo(), id).unwrap().state,
+            RevisionState::Draft
+        );
+        assert_eq!(replayed.state_move_report().not_owner_move, 2);
     }
 
     /// Issue #89 acceptance 2: a legitimate signed owner move round-trips write, strict
