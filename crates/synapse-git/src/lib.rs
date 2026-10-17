@@ -2,6 +2,20 @@
 //! bidirectional `ChangesetId <-> GitOid` index, explicit ref namespace contract
 //! (`refs/synapse/*` vs human `refs/heads/*`), and GitHub Pull Request projection
 //! builder (`synapse-git`, Gate 3).
+//!
+//! ADR 0003 step H1 (the Git bridge) adds the native Git object layer: [`object`] (object
+//! kinds, IDs and links), [`inflate`] (zlib and DEFLATE decoding), [`pack`] (version 2 packs
+//! and indexes, delta resolution), and [`repo`] (reading a repository's full history and
+//! exporting an object set as a new bare repository with one pack).
+
+pub mod inflate;
+pub mod object;
+pub mod pack;
+pub mod repo;
+
+pub use object::{GitObject, GitTreeEntry, ObjectKind};
+pub use pack::{PackIndexEntry, PackReader, WrittenPack};
+pub use repo::{export_repository, ExportReceipt, GitHistory, GitRepository, ReadLimits};
 
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
