@@ -17,6 +17,7 @@
 //! synapse-bench pmu-verify --evidence <dir>
 //! synapse-bench segments --dir <dir on the store filesystem> --out <raw.json> [--agents 1,4,8,32]
 //!     [--changes N] [--reps N] [--blob-bytes N] [--segment-mib N] [--checkpoint-every N] [--idle-window-s S]
+//!     [--block-device <absolute path that does not exist> [--block-device-mib N] [--block-meta-mib N]]
 //! synapse-bench segments-report --raw <raw.json> --floor <floor.json>   (prints the A2 report)
 //! ```
 
@@ -478,6 +479,8 @@ fn segments(args: &[String]) -> Result<(), String> {
             "--checkpoint-every",
             "--idle-window-s",
             "--block-device",
+            "--block-device-mib",
+            "--block-meta-mib",
         ],
     )?;
     let get = |k: &str| {
@@ -500,6 +503,14 @@ fn segments(args: &[String]) -> Result<(), String> {
         checkpoint_every: num("--checkpoint-every", 1000)? as usize,
         idle_window_s: num("--idle-window-s", 30)?,
         block_device: get("--block-device"),
+        block_device_bytes: num(
+            "--block-device-mib",
+            synapse_bench::segments::DEFAULT_BLOCK_DEVICE_BYTES >> 20,
+        )? << 20,
+        block_meta_bytes: num(
+            "--block-meta-mib",
+            synapse_bench::segments::DEFAULT_BLOCK_META_BYTES >> 20,
+        )? << 20,
     };
     let dir = PathBuf::from(get("--dir").ok_or("missing --dir")?);
     let out = PathBuf::from(get("--out").ok_or("missing --out")?);

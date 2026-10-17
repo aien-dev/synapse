@@ -1,0 +1,15 @@
+mutation M8: exclusive lock not taken (review N4)
+test: blockdev_tests::r1_a_second_opener_of_the_device_is_refused
+@@ -203,7 +203,7 @@
+         // One opener at a time: an exclusive advisory lock (flock) on the opened file, on
+         // top of O_EXCL for block devices. A second store on the same device would
+         // overwrite the first one's slots and metadata.
+-        match if lock { file.try_lock() } else { Ok(()) } {
++        match Ok::<(), fs::TryLockError>(()) {
+             Ok(()) => {}
+             Err(fs::TryLockError::WouldBlock) => {
+                 return Err(refuse(format!(
+---
+test blockdev_tests::r1_a_second_opener_of_the_device_is_refused ... FAILED
+thread 'blockdev_tests::r1_a_second_opener_of_the_device_is_refused' (2403141) panicked at crates/synapse-store/src/blockdev_tests.rs:869:39:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 114 filtered out; finished in 0.01s

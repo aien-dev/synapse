@@ -413,10 +413,14 @@ impl SegmentLog {
         id: u64,
         fault: RotationFault,
     ) -> std::io::Result<()> {
+        // Zero and flush before the header goes in: a valid header then always sits on a
+        // zeroed slot, so data under a valid header past the committed count can only
+        // be acknowledged batches (`BlockDevice::refuse_data_past_segment_count`).
+        dev.zero_segment(id)?;
         dev.write_segment_header(id)?;
         #[cfg(test)]
         self.trace.push(SegEvent::Created(id));
-        dev.zero_segment(id)?;
+        dev.flush()?;
         #[cfg(test)]
         self.trace.push(SegEvent::FileSynced(id));
         match fault {

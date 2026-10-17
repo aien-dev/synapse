@@ -62,11 +62,18 @@ pub struct SegmentsConfig {
     pub segment_bytes: u64,
     pub checkpoint_every: usize,
     pub idle_window_s: u64,
-    /// R1 (issue #47): run every cell on this raw block store device instead of a store
-    /// directory. The bench accepts only a preallocated regular file (opened with
-    /// `O_DIRECT`); its first MiB is zeroed before each cell so the cell formats it anew.
+    /// R1 (issue #47): run every cell on a raw block store device at this absolute path
+    /// instead of a store directory. The path must not exist: for each cell the bench
+    /// creates a regular file there (preallocated, `block_device_bytes`), formats it,
+    /// and removes it afterwards. It never writes to a file it did not create.
     #[serde(default)]
     pub block_device: Option<String>,
+    /// Size of that device file.
+    #[serde(default = "default_block_device_bytes")]
+    pub block_device_bytes: u64,
+    /// Metadata region size of that device.
+    #[serde(default = "default_block_meta_bytes")]
+    pub block_meta_bytes: u64,
 }
 
 /// One measured cell (raw samples).
@@ -258,30 +265,85 @@ fn count_files(dir: &Path, pred: &dyn Fn(&str) -> bool) -> usize {
         .sum()
 }
 
-/// The R1 device of a run: only an existing, absolute, preallocated regular file (this
-/// bench never opens a block device).
-fn block_config(path: &str) -> Result<BlockDeviceConfig, String> {
-    let p = PathBuf::from(path);
-    let meta =
-        std::fs::symlink_metadata(&p).map_err(|e| format!("block device file {path}: {e}"))?;
-    if !meta.file_type().is_file() || !p.is_absolute() {
-        return Err(format!(
-            "--block-device {path}: must be an absolute path to a preallocated regular file"
-        ));
-    }
-    Ok(BlockDeviceConfig::new(p))
+/// Default size of the device file the bench creates for each R1 cell.
+pub const DEFAULT_BLOCK_DEVICE_BYTES: u64 = 512 << 20;
+/// Default metadata region size of that device.
+pub const DEFAULT_BLOCK_META_BYTES: u64 = 64 << 20;
+
+fn default_block_device_bytes() -> u64 {
+    DEFAULT_BLOCK_DEVICE_BYTES
 }
 
-/// Zero the first MiB of the device file (its label area) so the next open formats it.
-fn blank_device_file(path: &Path) -> Result<(), String> {
-    use std::os::unix::fs::FileExt;
-    let f = std::fs::OpenOptions::new()
-        .write(true)
-        .open(path)
-        .map_err(|e| format!("open {}: {e}", path.display()))?;
-    f.write_all_at(&vec![0u8; 1 << 20], 0)
-        .and_then(|_| f.sync_all())
-        .map_err(|e| format!("blank {}: {e}", path.display()))
+fn default_block_meta_bytes() -> u64 {
+    DEFAULT_BLOCK_META_BYTES
+}
+
+/// The R1 device of one cell: a regular file the bench creates itself at the configured
+/// path, preallocated with zeros, and removes after the cell. The bench formats only
+/// a file it created: an existing path (a file, a symbolic link, anything) is refused
+/// before a byte is written, and it never opens a block device.
+struct BenchDevice {
+    path: PathBuf,
+    dev: u64,
+    ino: u64,
+}
+
+impl BenchDevice {
+    fn create(path: &str, bytes: u64) -> Result<Self, String> {
+        use std::os::unix::fs::{FileExt, MetadataExt, OpenOptionsExt};
+        let p = PathBuf::from(path);
+        if !p.is_absolute() {
+            return Err(format!("--block-device {path}: must be an absolute path"));
+        }
+        if bytes == 0 || !bytes.is_multiple_of(4096) {
+            return Err(format!(
+                "block device size {bytes} is not a positive multiple of 4096"
+            ));
+        }
+        // create_new (O_CREAT | O_EXCL) fails on any existing path, a dangling symbolic
+        // link included; O_NOFOLLOW as well.
+        let f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&p)
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::AlreadyExists => format!(
+                    "--block-device {path}: refusing, it already exists; the bench formats \
+                     only a device file it creates itself (name a path that does not exist)"
+                ),
+                _ => format!("create {path}: {e}"),
+            })?;
+        let m = f.metadata().map_err(|e| format!("stat {path}: {e}"))?;
+        let device = Self {
+            path: p,
+            dev: m.dev(),
+            ino: m.ino(),
+        };
+        // Preallocate: every block written once (no sparse holes), then synced.
+        let zeros = vec![0u8; 1 << 20];
+        let mut at = 0u64;
+        while at < bytes {
+            let n = (bytes - at).min(zeros.len() as u64) as usize;
+            f.write_all_at(&zeros[..n], at)
+                .map_err(|e| format!("preallocate {path}: {e}"))?;
+            at += n as u64;
+        }
+        f.sync_all().map_err(|e| format!("sync {path}: {e}"))?;
+        Ok(device)
+    }
+}
+
+impl Drop for BenchDevice {
+    /// Remove the device file, only if the path still is the file this bench created.
+    fn drop(&mut self) {
+        use std::os::unix::fs::MetadataExt;
+        if let Ok(m) = std::fs::symlink_metadata(&self.path) {
+            if m.file_type().is_file() && m.dev() == self.dev && m.ino() == self.ino {
+                let _ = std::fs::remove_file(&self.path);
+            }
+        }
+    }
 }
 
 fn run_cell(
@@ -296,17 +358,23 @@ fn run_cell(
         segment_bytes: cfg.segment_bytes,
         ..Default::default()
     };
-    let block = cfg.block_device.as_deref().map(block_config).transpose()?;
+    let device = match cfg.block_device.as_deref() {
+        Some(p) => Some(BenchDevice::create(p, cfg.block_device_bytes)?),
+        None => None,
+    };
+    let block = device.as_ref().map(|d| BlockDeviceConfig {
+        path: d.path.clone(),
+        format: FormatPolicy::FormatIfBlank,
+        meta_region_bytes: cfg.block_meta_bytes,
+        allow_foreign_signature: false,
+    });
     let shared = match &block {
-        Some(bc) => {
-            blank_device_file(&bc.path)?;
-            SharedStore::open_block_device(
-                bc,
-                FsyncPolicy::GROUP_COMMIT_DEFAULT,
-                RecoveryPolicy::StrictFailClosed,
-                limits,
-            )
-        }
+        Some(bc) => SharedStore::open_block_device(
+            bc,
+            FsyncPolicy::GROUP_COMMIT_DEFAULT,
+            RecoveryPolicy::StrictFailClosed,
+            limits,
+        ),
         None => SharedStore::open(
             dir,
             FsyncPolicy::GROUP_COMMIT_DEFAULT,
@@ -499,6 +567,72 @@ mod tests {
             ed25519_allcore_per_s: ED25519_ALLCORE_PER_S,
             idle_pkg_w: Some(20.0),
         }
+    }
+
+    /// B1 (review of PR #103): `--block-device` never writes to a file the bench did not
+    /// create itself, and never follows a symbolic link to one.
+    #[test]
+    fn block_device_bench_never_writes_to_a_file_it_did_not_create() {
+        let dir = crate::fixture::test_support::temp_dir("r1-bench-victim");
+        let victim = dir.join("victim.img");
+        let mut bytes: Vec<u8> = (0..4u32 << 20).map(|i| (i % 251) as u8).collect();
+        bytes[1080..1082].copy_from_slice(&[0x53, 0xEF]);
+        std::fs::write(&victim, &bytes).unwrap();
+        let link = dir.join("link.img");
+        std::os::unix::fs::symlink(&victim, &link).unwrap();
+        for target in [&victim, &link] {
+            let cfg = SegmentsConfig {
+                agents: vec![1],
+                changes: 4,
+                reps: 1,
+                blob_bytes: 64,
+                segment_bytes: 1 << 20,
+                checkpoint_every: 2,
+                idle_window_s: 0,
+                block_device: Some(target.display().to_string()),
+                block_device_bytes: 8 << 20,
+                block_meta_bytes: 1 << 20,
+            };
+            assert!(
+                run_cell(&dir.join("store"), &cfg, 1, 0).is_err(),
+                "{}",
+                target.display()
+            );
+            assert_eq!(
+                std::fs::read(&victim).unwrap(),
+                bytes,
+                "{}: victim changed",
+                target.display()
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The bench creates its own device file for a cell, formats it, and removes it.
+    #[test]
+    fn block_device_bench_creates_formats_and_removes_its_own_device() {
+        let dir = crate::fixture::test_support::temp_dir("r1-bench-own");
+        let path = dir.join("device.img");
+        let cfg = SegmentsConfig {
+            agents: vec![2],
+            changes: 6,
+            reps: 1,
+            blob_bytes: 64,
+            segment_bytes: 1 << 20,
+            checkpoint_every: 3,
+            idle_window_s: 0,
+            block_device: Some(path.display().to_string()),
+            block_device_bytes: 8 << 20,
+            block_meta_bytes: 1 << 20,
+        };
+        let cell = run_cell(&dir.join("store"), &cfg, 2, 0).unwrap();
+        assert_eq!(cell.accepted, 6);
+        assert_eq!(cell.segment_files, 1);
+        assert!(
+            !path.exists(),
+            "the bench removes the device file it created"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

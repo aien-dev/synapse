@@ -1,0 +1,6 @@
+Review of PR #103 (B1): new bench test on head be66db4 (bench code unchanged), cargo test -p synapse-bench -- block_device_bench
+test segments::tests::block_device_bench_never_writes_to_a_file_it_did_not_create ... FAILED
+thread 'segments::tests::block_device_bench_never_writes_to_a_file_it_did_not_create' (2274552) panicked at crates/synapse-bench/src/segments.rs:527:13:
+assertion `left == right` failed: /tmp/synapse-bench-test-r1-bench-victim-2274550-1792215012737/victim.img: victim changed
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.18s
+(the old bench zeroed the first MiB of the existing file before any check)
