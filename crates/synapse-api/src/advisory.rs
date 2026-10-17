@@ -11,13 +11,17 @@
 //! `read_blob_bytes`, and a read-only `CoordStore::sniff` (no lock taken, nothing written).
 //! Synapse source conflicts at submit stay the only hard refusal.
 
+use crate::tree::ALLOC_OVERHEAD_BYTES;
 use crate::{is_file_dir_prefix_collision, SynapseService, TreeTarget, VirtualTreeEntry};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::mem::size_of;
+use std::sync::Arc;
 use synapse_auth::{AuthenticatedRequest, BoundaryKind, Capability};
 use synapse_coord::{CoordStore, Holder, LockView, PathOracle, Workspace};
 use synapse_core::{
-    validate_repo_relative_path, ChangesetId, RefusalCode, SynapseError, SynapseResult, WalSeq,
+    validate_repo_relative_path, ChangesetId, RefusalCode, SynapseError, SynapseResult, TreeDigest,
+    WalSeq,
 };
 use synapse_crumb::{CrumbContext, CrumbContextDigest, ROOT_DIR};
 
@@ -131,30 +135,189 @@ pub struct ChangesetAdvisory {
     pub paths: Vec<PathAdvisory>,
 }
 
-/// Answers `exists` from a snapshot (files and their ancestor directories), so claim keys
-/// resolve the way `crumb.c` resolves them against a checkout.
-struct SnapshotOracle(BTreeSet<String>);
+/// Most materialized snapshots one service keeps for advisory and Crumb reads.
+pub const SNAPSHOT_VIEW_CACHE_ENTRIES: usize = 4;
 
-impl SnapshotOracle {
-    fn new(tree: &BTreeMap<String, VirtualTreeEntry>) -> Self {
-        let mut set = BTreeSet::new();
+/// The view cache may keep at most `max_bytes / SNAPSHOT_VIEW_CACHE_SHARE` accounted bytes,
+/// where `max_bytes` is the service's configured tree cache bound ([`crate::TreeCacheConfig`]).
+/// A view larger than that is built for the call and not kept.
+pub const SNAPSHOT_VIEW_CACHE_SHARE: usize = 4;
+
+/// A materialized snapshot shared by the advisory and Crumb reads of one service (issue #94):
+/// the virtual tree, and the set of its paths plus every ancestor directory. Keyed by the
+/// snapshot's [`TreeDigest`], which binds every path, mode, blob digest and size of the tree
+/// (the Git blob OID is a function of the blob content), so a view is never stale: a
+/// different tree has a different key. Visibility of the target at the requested
+/// `snapshot_seq` is still checked on every call by resolving the digest.
+pub(crate) struct SnapshotView {
+    tree: BTreeMap<String, VirtualTreeEntry>,
+    paths: BTreeSet<String>,
+    /// Accounted heap bytes, see [`view_bytes`].
+    bytes: usize,
+}
+
+impl SnapshotView {
+    fn new(tree: BTreeMap<String, VirtualTreeEntry>) -> Self {
+        let mut paths = BTreeSet::new();
         for path in tree.keys() {
             let mut p = path.as_str();
-            set.insert(p.to_string());
+            paths.insert(p.to_string());
             while let Some((parent, _)) = p.rsplit_once('/') {
-                if !set.insert(parent.to_string()) {
+                if !paths.insert(parent.to_string()) {
                     break;
                 }
                 p = parent;
             }
         }
-        Self(set)
+        let bytes = view_bytes(&tree, &paths);
+        Self { tree, paths, bytes }
+    }
+
+    pub(crate) fn tree(&self) -> &BTreeMap<String, VirtualTreeEntry> {
+        &self.tree
+    }
+
+    /// Every path of the tree plus its ancestor directories.
+    fn paths(&self) -> &BTreeSet<String> {
+        &self.paths
     }
 }
 
+/// Accounted heap bytes of a view's tree map and path set: every string's text plus its
+/// allocation, and every B-tree slot charged at 11/5 of its size (std B-tree nodes hold 11
+/// entries and, except the root, at least 5) plus a node-header share. An estimate in the
+/// style of [`crate::TreeNode::heap_bytes`], not a measurement.
+fn view_bytes(tree: &BTreeMap<String, VirtualTreeEntry>, paths: &BTreeSet<String>) -> usize {
+    const NODE_SHARE: usize = 8;
+    let text = |s: &str| s.len() + ALLOC_OVERHEAD_BYTES;
+    let tree_slot = (size_of::<(String, VirtualTreeEntry)>() + NODE_SHARE) * 11 / 5;
+    let path_slot = (size_of::<String>() + NODE_SHARE) * 11 / 5;
+    let arc = 2 * size_of::<usize>() + size_of::<SnapshotView>() + ALLOC_OVERHEAD_BYTES;
+    let tree_bytes: usize = tree
+        .iter()
+        .map(|(k, e)| tree_slot + text(k) + text(&e.path))
+        .sum();
+    let path_bytes: usize = paths.iter().map(|p| path_slot + text(p)).sum();
+    arc + tree_bytes + path_bytes
+}
+
+/// The snapshot views one [`SynapseService`] keeps: at most [`SNAPSHOT_VIEW_CACHE_ENTRIES`]
+/// views and at most its byte budget (a share of the tree cache bound), oldest evicted
+/// first. A field of the service, so it is freed with it and never shared between services.
+/// Which calls hit depends on this service's earlier reads; the answers do not, since a view
+/// is a pure function of its key.
+#[derive(Default)]
+pub(crate) struct SnapshotViewCache {
+    /// Oldest first.
+    entries: VecDeque<(TreeDigest, Arc<SnapshotView>)>,
+    /// Sum of the kept views' accounted bytes.
+    bytes: usize,
+    /// Trees materialized for a view (cache misses).
+    builds: u64,
+}
+
+impl SnapshotViewCache {
+    fn get(&self, root: TreeDigest) -> Option<Arc<SnapshotView>> {
+        self.entries
+            .iter()
+            .find(|(d, _)| *d == root)
+            .map(|(_, v)| Arc::clone(v))
+    }
+
+    /// Keep `view` if it fits `budget`, evicting the oldest views to make room.
+    fn insert(&mut self, root: TreeDigest, view: &Arc<SnapshotView>, budget: usize) {
+        if view.bytes > budget {
+            return;
+        }
+        while self.entries.len() >= SNAPSHOT_VIEW_CACHE_ENTRIES || self.bytes + view.bytes > budget
+        {
+            let Some((_, old)) = self.entries.pop_front() else {
+                break;
+            };
+            self.bytes -= old.bytes;
+        }
+        self.bytes += view.bytes;
+        self.entries.push_back((root, Arc::clone(view)));
+    }
+
+    /// Drop every view (the tree cache bound changed).
+    pub(crate) fn clear(&mut self) {
+        self.entries.clear();
+        self.bytes = 0;
+    }
+}
+
+/// Test view of the snapshot view cache.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SnapshotViewStats {
+    pub entries: usize,
+    pub bytes: usize,
+    pub budget: usize,
+    pub builds: u64,
+}
+
+#[cfg(test)]
+impl SynapseService {
+    pub(crate) fn snapshot_view_stats(&self) -> SnapshotViewStats {
+        let c = &self.snapshot_views;
+        assert_eq!(
+            c.bytes,
+            c.entries.iter().map(|(_, v)| v.bytes).sum::<usize>()
+        );
+        SnapshotViewStats {
+            entries: c.entries.len(),
+            bytes: c.bytes,
+            budget: self.snapshot_view_budget(),
+            builds: c.builds,
+        }
+    }
+
+    /// Weak handles to the views this service keeps.
+    pub(crate) fn snapshot_view_handles(&self) -> Vec<std::sync::Weak<SnapshotView>> {
+        self.snapshot_views
+            .entries
+            .iter()
+            .map(|(_, v)| Arc::downgrade(v))
+            .collect()
+    }
+}
+
+impl SynapseService {
+    /// Byte budget of the view cache: [`SNAPSHOT_VIEW_CACHE_SHARE`] of the tree cache bound.
+    fn snapshot_view_budget(&self) -> usize {
+        self.tree_store().config().max_bytes / SNAPSHOT_VIEW_CACHE_SHARE
+    }
+
+    /// The materialized `target` at `snapshot_seq`: from this service's view cache when the
+    /// same tree was materialized before, else built once with `materialize_virtual_tree`.
+    /// Same tree, same errors: the digest lookup runs the same visibility checks.
+    pub(crate) fn snapshot_view(
+        &mut self,
+        target: TreeTarget,
+        snapshot_seq: Option<WalSeq>,
+    ) -> SynapseResult<Arc<SnapshotView>> {
+        let root = self.tree_digest(target, snapshot_seq)?;
+        if let Some(view) = self.snapshot_views.get(root) {
+            return Ok(view);
+        }
+        let view = Arc::new(SnapshotView::new(
+            self.materialize_virtual_tree(target, snapshot_seq)?,
+        ));
+        let budget = self.snapshot_view_budget();
+        self.snapshot_views.builds += 1;
+        self.snapshot_views.insert(root, &view, budget);
+        Ok(view)
+    }
+}
+
+/// Answers `exists` from a snapshot (files and their ancestor directories), so claim keys
+/// resolve the way `crumb.c` resolves them against a checkout.
+struct SnapshotOracle(Arc<SnapshotView>);
+
 impl PathOracle for SnapshotOracle {
     fn exists(&self, rel: &str) -> bool {
-        self.0.contains(rel)
+        self.0.paths().contains(rel)
     }
 }
 
@@ -226,19 +389,20 @@ impl SynapseService {
             _ => None,
         };
 
-        let base_tree = self.materialize_virtual_tree(payload.base, snap)?;
+        let base_view = self.snapshot_view(payload.base, snap)?;
+        let base_tree = base_view.tree();
         let compared_to = payload.latest.or_else(|| {
             visible
                 .last()
                 .map(|cs| TreeTarget::Changeset(cs.changeset_id))
         });
         let latest_tree = match compared_to {
-            Some(t) if t != payload.base => Some(self.materialize_virtual_tree(t, snap)?),
+            Some(t) if t != payload.base => Some(self.snapshot_view(t, snap)?),
             _ => None,
         };
         let canonical_tree = match canonical {
             CanonicalStatus::Promoted(t) if t != payload.base && Some(t) != compared_to => {
-                Some(self.materialize_virtual_tree(t, snap)?)
+                Some(self.snapshot_view(t, snap)?)
             }
             _ => None,
         };
@@ -260,7 +424,7 @@ impl SynapseService {
         let oracle_ws = Workspace::with_oracle(
             ADVISORY_WORKSPACE,
             Holder::default(),
-            Box::new(SnapshotOracle::new(&base_tree)),
+            Box::new(SnapshotOracle(Arc::clone(&base_view))),
         );
         let (coordination, locks) = match coord {
             None => (CoordinationStatus::NotSupplied, Vec::new()),
@@ -284,18 +448,18 @@ impl SynapseService {
 
         let mut out = Vec::with_capacity(payload.paths.len());
         for path in &payload.paths {
-            let dir = context_dir(&base_tree, path);
-            let context = self.resolve_crumb_context(&base_tree, &dir, snap)?;
+            let dir = context_dir(base_tree, path);
+            let context = self.resolve_crumb_context(base_tree, &dir, snap)?;
             let digest = context.digest();
             let staleness = match (&compared_to, &latest_tree) {
                 (None, _) => Staleness::Unknown,
                 (Some(_), None) => Staleness::Current,
-                (Some(_), Some(lt)) => self.staleness_against(lt, &dir, digest, snap)?,
+                (Some(_), Some(lt)) => self.staleness_against(lt.tree(), &dir, digest, snap)?,
             };
             let canonical_staleness = match canonical {
                 CanonicalStatus::Promoted(t) if t == payload.base => Staleness::Current,
                 CanonicalStatus::Promoted(_) => match &canonical_tree {
-                    Some(ct) => self.staleness_against(ct, &dir, digest, snap)?,
+                    Some(ct) => self.staleness_against(ct.tree(), &dir, digest, snap)?,
                     // The canonical changeset is `compared_to`: same answer.
                     None => staleness.clone(),
                 },
@@ -936,5 +1100,164 @@ mod tests {
         let adv = fx.advise(&["src/a.rs"], Some(&store));
         assert_eq!(adv.coordination, CoordinationStatus::Read);
         assert!(adv.paths[0].claims.is_empty(), "{:?}", adv.paths[0].claims);
+    }
+
+    /// Issue #94: repeated advisory calls on one snapshot materialize its tree once; a new
+    /// snapshot costs one more build while the base stays cached.
+    #[test]
+    fn advisory_builds_each_snapshot_once() {
+        let mut fx = Fixture::new("views-once");
+        let b0 = fx.svc.snapshot_view_stats().builds;
+        for _ in 0..5 {
+            fx.advise(&["src/a.rs", "docs/x.md"], None);
+        }
+        assert_eq!(
+            fx.svc.snapshot_view_stats().builds - b0,
+            1,
+            "base built once"
+        );
+        let cs = fx.propose(&bob(), "bob-a", "src/a.rs", b"fn a2() {}\n");
+        for _ in 0..5 {
+            let adv = fx.advise(&["src/a.rs"], None);
+            assert_eq!(adv.compared_to, Some(TreeTarget::Changeset(cs)));
+        }
+        assert_eq!(
+            fx.svc.snapshot_view_stats().builds - b0,
+            2,
+            "latest built once, base still cached"
+        );
+    }
+
+    /// Issue #94: the view cache keeps at most `SNAPSHOT_VIEW_CACHE_ENTRIES` snapshots and
+    /// evicts the oldest first.
+    #[test]
+    fn snapshot_view_cache_is_bounded() {
+        let mut fx = Fixture::new("views-bound");
+        let n = SNAPSHOT_VIEW_CACHE_ENTRIES + 2;
+        let ids: Vec<_> = (0..n)
+            .map(|i| {
+                let path = format!("gen/f{i}.rs");
+                fx.propose(&bob(), &format!("bob-{i}"), &path, path.as_bytes())
+            })
+            .collect();
+        let b0 = fx.svc.snapshot_view_stats().builds;
+        for &cs in &ids {
+            fx.base = TreeTarget::Changeset(cs);
+            fx.advise(&["src/a.rs"], None);
+            assert!(fx.svc.snapshot_view_stats().entries <= SNAPSHOT_VIEW_CACHE_ENTRIES);
+        }
+        // Each base is new; `latest` (the newest changeset) is built once and stays cached
+        // until evicted, so at least one build per base.
+        let built = fx.svc.snapshot_view_stats().builds - b0;
+        assert!(built >= n as u64, "{built} builds for {n} snapshots");
+        assert_eq!(
+            fx.svc.snapshot_view_stats().entries,
+            SNAPSHOT_VIEW_CACHE_ENTRIES
+        );
+        // The first base was evicted: asking again builds it again.
+        let before = fx.svc.snapshot_view_stats().builds;
+        fx.base = TreeTarget::Changeset(ids[0]);
+        fx.advise(&["src/a.rs"], None);
+        assert!(fx.svc.snapshot_view_stats().builds > before);
+    }
+
+    /// Base tree of `files` long-path files under `dir`, registered as `oid` (no `.crumb`).
+    fn long_path_base(fx: &mut Fixture, oid: GitOid, dir: &str, files: usize) -> TreeTarget {
+        let seg = "s".repeat(200);
+        let tree = (0..files)
+            .map(|i| {
+                (
+                    format!("{dir}/{seg}/{seg}/{seg}/f{i}.rs"),
+                    FileMode::Regular644,
+                    format!("{i}\n").into_bytes(),
+                )
+            })
+            .collect();
+        fx.svc.register_base_tree(oid, tree).unwrap();
+        TreeTarget::BaseGitCommit(oid)
+    }
+
+    fn small_tree_cache(fx: &mut Fixture) {
+        fx.svc
+            .set_tree_cache_config(crate::TreeCacheConfig {
+                max_bytes: crate::tree::MIN_TREE_CACHE_BYTES,
+            })
+            .unwrap();
+    }
+
+    /// Review of #98: a view larger than the byte budget (a share of the configured tree
+    /// cache bound) is built for the call and not kept; the answer does not depend on it.
+    #[test]
+    fn snapshot_view_over_the_byte_budget_is_not_kept() {
+        let mut roomy = Fixture::new("views-bytes-roomy");
+        roomy.base = long_path_base(&mut roomy, GitOid([2; 20]), "big", 500);
+        let expected = roomy.advise(&["big/x.rs"], None);
+
+        let mut fx = Fixture::new("views-bytes");
+        small_tree_cache(&mut fx);
+        fx.base = long_path_base(&mut fx, GitOid([2; 20]), "big", 500);
+        let b0 = fx.svc.snapshot_view_stats().builds;
+        for _ in 0..2 {
+            assert_eq!(fx.advise(&["big/x.rs"], None), expected);
+            let s = fx.svc.snapshot_view_stats();
+            assert!(
+                s.bytes <= s.budget,
+                "view cache over its byte budget: {s:?}"
+            );
+        }
+        let s = fx.svc.snapshot_view_stats();
+        assert_eq!(s.entries, 0, "{s:?}");
+        assert_eq!(s.builds - b0, 2, "too big to keep: built on every call");
+    }
+
+    /// Review of #98: views that fit one at a time but not together evict the oldest, so the
+    /// kept bytes never exceed the budget.
+    #[test]
+    fn snapshot_view_cache_evicts_by_bytes() {
+        let mut fx = Fixture::new("views-bytes-evict");
+        small_tree_cache(&mut fx);
+        let a = long_path_base(&mut fx, GitOid([3; 20]), "a", 70);
+        let b = long_path_base(&mut fx, GitOid([4; 20]), "b", 70);
+        fx.base = a;
+        fx.advise(&["a/x.rs"], None);
+        let s = fx.svc.snapshot_view_stats();
+        assert_eq!(s.entries, 1, "{s:?}");
+        assert!(
+            s.bytes <= s.budget && 2 * s.bytes > s.budget,
+            "fixture size: {s:?}"
+        );
+        fx.base = b;
+        fx.advise(&["b/x.rs"], None);
+        let s = fx.svc.snapshot_view_stats();
+        assert!(
+            s.bytes <= s.budget,
+            "view cache over its byte budget: {s:?}"
+        );
+        assert_eq!(s.entries, 1, "oldest view evicted: {s:?}");
+        fx.base = a;
+        let before = s.builds;
+        fx.advise(&["a/x.rs"], None);
+        assert_eq!(
+            fx.svc.snapshot_view_stats().builds - before,
+            1,
+            "a was evicted"
+        );
+    }
+
+    /// Review of #98: views belong to the service that built them and are freed with it; a
+    /// new service on the same thread starts empty.
+    #[test]
+    fn snapshot_views_are_released_with_the_service() {
+        let mut fx = Fixture::new("views-release");
+        fx.advise(&["src/a.rs"], None);
+        let handles = fx.svc.snapshot_view_handles();
+        assert!(!handles.is_empty());
+        drop(fx);
+        assert!(
+            handles.iter().all(|h| h.upgrade().is_none()),
+            "views outlive the service"
+        );
+        let fx2 = Fixture::new("views-release-next");
+        assert_eq!(fx2.svc.snapshot_view_stats().entries, 0);
     }
 }

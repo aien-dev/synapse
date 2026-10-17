@@ -299,6 +299,9 @@ pub struct SynapseService {
     trees: TreeStore,
     base_blobs: BTreeMap<BlobDigest, Vec<u8>>,
     max_page_size: usize,
+    /// Materialized snapshots for advisory and Crumb reads, bounded by a share of the tree
+    /// cache bound (issue #94). Freed with the service.
+    snapshot_views: advisory::SnapshotViewCache,
 }
 
 impl SynapseService {
@@ -332,6 +335,7 @@ impl SynapseService {
             trees: TreeStore::new(TreeCacheConfig::default())?,
             base_blobs: BTreeMap::new(),
             max_page_size: DEFAULT_MAX_PAGE_SIZE,
+            snapshot_views: advisory::SnapshotViewCache::default(),
         })
     }
 
@@ -1204,7 +1208,7 @@ impl SynapseService {
     }
 
     /// Replace the tree store with one bounded by `config`, carrying the pinned base trees over.
-    /// Memoized changeset roots are dropped and rebuilt on demand.
+    /// Memoized changeset roots and snapshot views are dropped and rebuilt on demand.
     pub fn set_tree_cache_config(&mut self, config: TreeCacheConfig) -> SynapseResult<()> {
         let mut next = TreeStore::new(config)?;
         for &root in self.base_roots.values() {
@@ -1212,6 +1216,7 @@ impl SynapseService {
             next.pin(root)?;
         }
         self.trees = next;
+        self.snapshot_views.clear();
         Ok(())
     }
 
