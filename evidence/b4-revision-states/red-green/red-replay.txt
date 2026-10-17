@@ -1,0 +1,6 @@
+# Red (2026-10-17): the replay test (re-review of #88) on commit f303ed9 (test only, implementation of dd8ed8d).
+# Command: cargo test --locked -p synapse-store --lib revision::b4_tests::b4_replay_refuses_a_forged_move_to_verified -- --exact
+thread 'revision::b4_tests::b4_replay_refuses_a_forged_move_to_verified' panicked at crates/synapse-store/src/revision.rs:983:9:
+  left: Verified
+ right: Proposed
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 54 filtered out; finished

@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::fmt;
 
 mod revision;
+mod revision_state;
 mod tree;
 pub use revision::{
     AdmissionWitness, AuthorshipAttestation, ChainPath, ChangesetEnvelopeV2, ObsolescenceKind,
@@ -16,6 +17,7 @@ pub use revision::{
     DOMAIN_AUTHORSHIP_SIGN_V2, DOMAIN_CHANGESET_ID_V2, DOMAIN_OBSOLESCENCE_SIGN_V1,
     ENVELOPE_V2_VERSION, MAX_CHAIN_PATH_DEPTH, MAX_OBSOLESCENCE_SUCCESSORS,
 };
+pub use revision_state::RevisionState;
 pub use tree::{
     tree_entry_order, validate_tree_entry_name, TreeDigest, TreeNodeEncoder, DOMAIN_TREE_V1,
     MAX_TREE_ENTRY_NAME_BYTES, TREE_TAG_DIRECTORY,
@@ -130,6 +132,13 @@ pub enum RefusalCode {
     /// An obsolescence marker names an unknown revision, a revision of another change, itself
     /// as its own successor, or would close a cycle of markers (step B1).
     ObsolescenceMarkerInvalid,
+    /// A revision state move that is not an edge of the state machine: backwards, in place,
+    /// skipping a state, or to `Verified` without its claims and required actions discharged
+    /// (ADR 0003 section 5.3, step B4).
+    RevisionStateMoveInvalid,
+    /// A move of a revision to `Canonical` that does not come from the promotion queue
+    /// (ADR 0003 sections 5.3 and 5.5, step B4).
+    CanonicalOutsidePromotionQueue,
 
     // Git and Radicle canonicality refusals
     GitObjectCorrupt,

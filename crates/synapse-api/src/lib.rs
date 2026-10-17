@@ -16,10 +16,10 @@ use synapse_core::{
     FileMode, GitHubPullRequestProjection, GitOid, IdempotencyKey, MutationOp,
     RadicleCanonicalHead, RefusalCode, RepoId, SynapseError, SynapseResult, TreeDigest, WalSeq,
 };
-use synapse_core::{ChainPath, ChangeId, ChangesetEnvelopeV2, ObsolescenceMarker};
+use synapse_core::{ChainPath, ChangeId, ChangesetEnvelopeV2, ObsolescenceMarker, RevisionState};
 use synapse_store::{
     AdmissionAuthority, CompactionReport, FsyncPolicy, IngestOutcome, RecoveryPolicy, ReviewRecord,
-    RevisionOutcome, StoreLimits, StoredChangeset, SynapseStore,
+    RevisionOutcome, StoreLimits, StoredChangeset, StoredRevision, SynapseStore,
 };
 
 mod advisory;
@@ -237,6 +237,41 @@ pub struct WatchQueryPayload {
     pub subscriber_id: String,
     pub after_seq: Option<WalSeq>,
     pub page: PageRequest,
+}
+
+/// Request payload for `advance_revision_state` (ADR 0003 B4), in its one binary encoding:
+/// `changeset_id [32] | state u8` (the `RevisionState` tag, 1..=5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RevisionStateMovePayload {
+    pub changeset_id: ChangesetId,
+    pub to: RevisionState,
+}
+
+impl RevisionStateMovePayload {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(33);
+        buf.extend_from_slice(&self.changeset_id.0);
+        buf.push(self.to.tag_byte());
+        buf
+    }
+
+    /// Exactly 33 bytes with a known state tag; anything else is `EnvelopeMalformed`.
+    pub fn decode(bytes: &[u8]) -> SynapseResult<Self> {
+        let malformed = || {
+            SynapseError::new(
+                RefusalCode::EnvelopeMalformed,
+                "state move payload must be changeset_id [32] | state u8 (1..=5)",
+            )
+        };
+        let (id, tag) = match bytes {
+            [id @ .., tag] if id.len() == 32 => (id, *tag),
+            _ => return Err(malformed()),
+        };
+        Ok(Self {
+            changeset_id: ChangesetId(id.try_into().map_err(|_| malformed())?),
+            to: RevisionState::from_tag_byte(tag).ok_or_else(malformed)?,
+        })
+    }
 }
 
 /// Exact path index mapping repository paths to touching `ChangesetId`s. Trees live in the
@@ -628,6 +663,77 @@ impl SynapseService {
         }
         let chain = admission_authority(req)?.chain;
         self.store.record_obsolescence(marker, chain, now_ms)
+    }
+
+    /// Move a revision's state (ADR 0003 B4) under an F1 delegation chain granting
+    /// `Propose`. `req.payload` is a [`RevisionStateMovePayload`]. The store applies the
+    /// owner-chain and state-machine rules: any move to `Canonical` is refused
+    /// (`CanonicalOutsidePromotionQueue`; canonical moves only through the promotion queue,
+    /// step E2), another owner's `Private` revision is `ChangesetNotFound`, a chain that does
+    /// not own the revision is `AuthChainNotDominant`, and a move to `Verified` or any move
+    /// that is backwards, in place, or skips a state is `RevisionStateMoveInvalid`.
+    pub fn advance_revision_state(
+        &mut self,
+        req: &ChainedRequest,
+        now_ms: u64,
+    ) -> SynapseResult<WalSeq> {
+        let mv = RevisionStateMovePayload::decode(&req.payload)?;
+        self.auth.authorize_chain(
+            BoundaryKind::Api,
+            "advance_revision_state",
+            &self.repo_id,
+            Capability::Propose,
+            req,
+            self.store.committed_seq().next(),
+            now_ms,
+        )?;
+        let chain = admission_authority(req)?.chain;
+        self.store
+            .advance_revision_state(&self.repo_id, mv.changeset_id, mv.to, chain, now_ms)
+    }
+
+    /// Read an envelope v2 revision (ADR 0003 B4) under an F1 delegation chain granting
+    /// `Read`. `req.payload` is the 32-byte `ChangesetId`. A revision the chain may not see
+    /// is `ChangesetNotFound`, exactly like an unknown one: another owner's `Private`
+    /// revision, or a revision with a mutation path outside the chain's path scope.
+    pub fn read_revision(
+        &mut self,
+        req: &ChainedRequest,
+        now_ms: u64,
+    ) -> SynapseResult<StoredRevision> {
+        let id: [u8; 32] = req.payload.as_slice().try_into().map_err(|_| {
+            SynapseError::new(
+                RefusalCode::EnvelopeMalformed,
+                "read_revision payload must be exactly one 32-byte ChangesetId",
+            )
+        })?;
+        let id = ChangesetId(id);
+        self.auth.authorize_chain(
+            BoundaryKind::Api,
+            "read_revision",
+            &self.repo_id,
+            Capability::Read,
+            req,
+            self.store.committed_seq().next(),
+            now_ms,
+        )?;
+        let viewer = admission_authority(req)?.chain;
+        let rev = self
+            .store
+            .get_revision_visible_to(&self.repo_id, id, &viewer)?;
+        let in_scope = req.chain.leaf().is_some_and(|leaf| {
+            rev.content
+                .mutations
+                .iter()
+                .all(|m| leaf.caveats.paths.covers_path(&m.path))
+        });
+        if !in_scope {
+            return Err(SynapseError::new(
+                RefusalCode::ChangesetNotFound,
+                format!("revision {id} not found"),
+            ));
+        }
+        Ok(rev)
     }
 
     /// Index a committed (or duplicate) submission in the path index.

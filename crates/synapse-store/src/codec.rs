@@ -340,6 +340,19 @@ pub fn encode_record(record: &WalRecord) -> SynapseResult<Vec<u8>> {
             put_chain(&mut w, chain)?;
             w.u64(*recorded_at_ms);
         }
+        WalRecord::RevisionStateMoved {
+            repo_id,
+            changeset_id,
+            to,
+            chain,
+            moved_at_ms,
+        } => {
+            w.repo(repo_id)?;
+            w.raw(&changeset_id.0);
+            w.u8(to.tag_byte());
+            put_chain(&mut w, chain)?;
+            w.u64(*moved_at_ms);
+        }
     }
     Ok(w.0)
 }
@@ -731,6 +744,24 @@ pub fn decode_record(bytes: &[u8], cap: u64) -> Result<WalRecord, CodecRefusal> 
             chain: r.embedded("chain path", ChainPath::decode)?,
             recorded_at_ms: r.u64()?,
         },
+        9 => {
+            let repo_id = r.repo()?;
+            let changeset_id = ChangesetId(r.array()?);
+            let at = r.pos;
+            let tag = r.u8()?;
+            let to = RevisionState::from_tag_byte(tag).ok_or(CodecRefusal::UnknownTag {
+                at,
+                field: "revision state",
+                tag,
+            })?;
+            WalRecord::RevisionStateMoved {
+                repo_id,
+                changeset_id,
+                to,
+                chain: r.embedded("chain path", ChainPath::decode)?,
+                moved_at_ms: r.u64()?,
+            }
+        }
         tag => {
             return Err(CodecRefusal::UnknownTag {
                 at,
@@ -802,7 +833,7 @@ pub struct CheckpointState {
     pub blob_first_visible_seq: BTreeMap<BlobDigest, WalSeq>,
     pub github_projections: BTreeMap<u64, GitHubPullRequestProjection>,
     pub canonical_heads: BTreeMap<RepoId, RadicleCanonicalHead>,
-    /// Revision records (kinds 7 and 8) in sequence order (ADR 0003 B1). Written only when
+    /// Revision records (kinds 7, 8, and 9) in sequence order (ADR 0003 B1, B4). Written only when
     /// non-empty, so checkpoints of stores without revisions keep their exact bytes.
     pub revision_log: Vec<(WalSeq, WalRecord)>,
 }
@@ -1089,7 +1120,7 @@ impl CheckpointState {
                 let tag_at = r.pos + 4 + 1;
                 let bytes = r.bytes()?;
                 let record = decode_record(&bytes, r.cap)?;
-                if !matches!(record.kind_byte(), 7 | 8) {
+                if !matches!(record.kind_byte(), 7..=9) {
                     return Err(CodecRefusal::UnknownTag {
                         at: tag_at,
                         field: "revision record kind",

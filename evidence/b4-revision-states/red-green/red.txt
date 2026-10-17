@@ -1,0 +1,62 @@
+# Red (2026-10-17): each B4 acceptance test run against the B4 commit 6f222e6 with one mutation
+# that removes the behaviour it proves; every mutation is reverted after its run (git checkout).
+
+## order rule lets a revision move backwards
+# mutation: crates/synapse-core/src/revision_state.rs may_move_to: + if to < self { return true; }
+# Command: cargo test --locked -p synapse-core --lib revision_state::tests::b4_property_random_move_sequences_never_move_backwards -- --exact
+thread 'revision_state::tests::b4_property_random_move_sequences_never_move_backwards' panicked at crates/synapse-core/src/revision_state.rs:230:17:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-core --lib`
+# Command: cargo test --locked -p synapse-core --lib revision_state::tests::b4_every_allowed_move_raises_the_rank_and_every_other_pair_is_refused -- --exact
+thread 'revision_state::tests::b4_every_allowed_move_raises_the_rank_and_every_other_pair_is_refused' panicked at crates/synapse-core/src/revision_state.rs:166:25:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-core --lib`
+# Command: cargo test --locked -p synapse-store --test b4_revision_states b4_property_random_operation_sequences_never_move_a_revision_backwards -- --exact
+thread 'b4_property_random_operation_sequences_never_move_a_revision_backwards' panicked at crates/synapse-store/tests/b4_revision_states.rs:260:30:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.05s
+error: test failed, to rerun pass `-p synapse-store --test b4_revision_states`
+# Command: cargo test --locked -p synapse-api --test b4_revision_states b4_api_private_revision_is_invisible_outside_its_owner_chain_with_real_f1_chains -- --exact
+thread 'b4_api_private_revision_is_invisible_outside_its_owner_chain_with_real_f1_chains' panicked at crates/synapse-api/tests/b4_revision_states.rs:301:32:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.12s
+error: test failed, to rerun pass `-p synapse-api --test b4_revision_states`
+
+## revision ledger applies every kind 9 record (forged or illegal moves included)
+# mutation: crates/synapse-store/src/revision.rs apply: - if owned_by(rev, chain) && rev.state.check_owner_move(*to).is_ok() { + if true {
+# Command: cargo test --locked -p synapse-store --lib revision::b4_tests::b4_property_forged_record_sequences_never_move_a_revision_backwards -- --exact
+thread 'revision::b4_tests::b4_property_forged_record_sequences_never_move_a_revision_backwards' panicked at crates/synapse-store/src/revision.rs:918:21:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-store --lib`
+
+## a Private revision is visible to every chain
+# mutation: crates/synapse-store/src/revision.rs visible_to: - rev.state != RevisionState::Private || owned_by(rev, viewer) + true || owned_by(rev, viewer)
+# Command: cargo test --locked -p synapse-store --test b4_revision_states b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain -- --exact
+thread 'b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain' panicked at crates/synapse-store/tests/b4_revision_states.rs:336:24:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.05s
+error: test failed, to rerun pass `-p synapse-store --test b4_revision_states`
+# Command: cargo test --locked -p synapse-api --test b4_revision_states b4_api_private_revision_is_invisible_outside_its_owner_chain_with_real_f1_chains -- --exact
+thread 'b4_api_private_revision_is_invisible_outside_its_owner_chain_with_real_f1_chains' panicked at crates/synapse-api/tests/b4_revision_states.rs:271:45:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.08s
+error: test failed, to rerun pass `-p synapse-api --test b4_revision_states`
+
+## a move to Canonical accepted outside the promotion queue
+# mutation: crates/synapse-core/src/revision_state.rs check_owner_move: - Self::Canonical => Err( + Self::Canonical if false => Err(; crates/synapse-store/src/revision.rs plan_move: Canonical returns Ok(()) after the visibility check; ledger apply: owner move to Canonical applied
+# Command: cargo test --locked -p synapse-core --lib revision_state::tests::b4_owner_moves_never_reach_verified_or_canonical -- --exact
+thread 'revision_state::tests::b4_owner_moves_never_reach_verified_or_canonical' panicked at crates/synapse-core/src/revision_state.rs:182:22:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-core --lib`
+# Command: cargo test --locked -p synapse-store --test b4_revision_states b4_any_move_to_canonical_outside_the_promotion_queue_is_refused -- --exact
+thread 'b4_any_move_to_canonical_outside_the_promotion_queue_is_refused' panicked at crates/synapse-store/tests/b4_revision_states.rs:442:18:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 1.89s
+error: test failed, to rerun pass `-p synapse-store --test b4_revision_states`
+# Command: cargo test --locked -p synapse-api --test b4_revision_states b4_api_move_to_canonical_outside_the_promotion_queue_is_refused -- --exact
+thread 'b4_api_move_to_canonical_outside_the_promotion_queue_is_refused' panicked at crates/synapse-api/tests/b4_revision_states.rs:321:58:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.06s
+error: test failed, to rerun pass `-p synapse-api --test b4_revision_states`
+
+## kind 9 decoder accepts an unknown state tag
+# mutation: crates/synapse-store/src/codec.rs: unknown revision state tag decoded as Private
+# Command: cargo test --locked -p synapse-store --test b4_revision_states b4_state_move_records_round_trip_and_malformed_bytes_are_refused_typed -- --exact
+thread 'b4_state_move_records_round_trip_and_malformed_bytes_are_refused_typed' panicked at crates/synapse-store/tests/b4_revision_states.rs:503:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-store --test b4_revision_states`
+# done

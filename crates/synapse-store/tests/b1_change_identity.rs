@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use synapse_core::{
     encode_did_key_ed25519, BlobDigest, ChainPath, ChangeId, ChangesetEnvelope,
     ChangesetEnvelopeV2, ChangesetId, FileMode, GitOid, IdempotencyKey, MutationOp,
-    ObsolescenceMarker, PathMutation, RefusalCode, RepoId, RevisionContent, TreeDigest, WalSeq,
+    ObsolescenceMarker, PathMutation, RefusalCode, RepoId, RevisionContent, RevisionState,
+    TreeDigest, WalSeq,
 };
 use synapse_store::codec::{decode_record, encode_record};
 use synapse_store::{
@@ -311,6 +312,10 @@ fn b1_prune_by_chain_not_dominating_creating_chain_is_refused() {
     let mut s = open(&dir, FsyncPolicy::EveryCommit);
     let a = admit(&mut s, &key(2), &c.o, b"orchestrator attempt", 1);
     let b = admit(&mut s, &key(3), &c.w1, b"worker attempt", 1);
+    // The owner shares it (ADR 0003 B4), so the other chains see it and are refused for
+    // dominance rather than as an unknown revision.
+    s.advance_revision_state(&repo(), a, RevisionState::Draft, c.o.clone(), 5_500)
+        .unwrap();
     let before = s.committed_seq();
     for (signer, chain) in [(key(3), &c.w1), (key(9), &c.x), (key(4), &c.w2)] {
         let err = s
