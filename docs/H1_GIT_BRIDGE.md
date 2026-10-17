@@ -18,9 +18,24 @@ Code: `crates/synapse-git/src/{object,inflate,pack,repo}.rs`. Tests: `crates/syn
 
 Writer determinism: the pack holds whole objects in object ID order, compressed as zlib stored blocks (the existing `zlib_compress_store`), so the bytes are a function of the object set alone; input order and duplicates do not matter.
 
-Every malformed input is refused with `RefusalCode::GitObjectCorrupt` and never panics: bad zlib header or checksum, truncated or over-declared streams, over-subscribed Huffman codes, distances before the output start, pack or index checksum mismatch, offsets outside the pack, non-monotone fan-out, unsorted names, delta size mismatches, copies past the base, delta chain loops or chains over 4096, reference-delta bases missing from the pack (thin packs), objects over 1 GiB, an object whose content does not hash to its ID, missing objects, shallow repositories, and alternates.
+Every malformed input is refused with `RefusalCode::GitObjectCorrupt` and never panics: bad zlib header or checksum, truncated or over-declared streams, over-subscribed Huffman codes, distances before the output start, pack or index checksum mismatch, offsets outside the pack, non-monotone fan-out, unsorted names, delta size mismatches, copies past the base, delta chain loops or chains over 4096, reference-delta bases missing from the pack (thin packs), an object whose content does not hash to its ID, missing objects, shallow repositories, and alternates. Exceeding a read limit is refused with `QuotaPayloadTooLarge` and a non-regular file with `PathInvalid` (section 1a).
 
 The system `git` binary is used only by the tests, as an independent oracle. `synapse-git` starts no Git process on any cut 1 path.
+
+## 1a. Hostile repositories (review of PR #90, findings B1 and B2)
+
+A repository handed to the bridge is untrusted input. The reader may not hang on it, read outside it, or allocate without bound because of it:
+
+| Threat | Rule | Refusal |
+| :--- | :--- | :--- |
+| A reference, `packed-refs`, `HEAD`, loose object, `.pack` or `.idx` that is a pipe, socket, device or symbolic link (a pipe blocks a reader forever; a link to `/dev/zero` reads without end; a link can lead outside the repository) | Every file is inspected with `symlink_metadata` and opened only if it is a regular file; the opened file must be the inspected one (same device and inode); at most cap + 1 bytes are read even if it grows. The `refs/` walk uses `DirEntry::file_type`, which does not follow links; `refs/`, `objects/` and `objects/pack/` must be real directories | `PathInvalid` |
+| Oversized small files | Loose reference and `HEAD` at most 4 KiB, `packed-refs` at most 64 MiB, every `.pack` and `.idx` together at most 2 GiB (held in memory) | `QuotaPayloadTooLarge` |
+| Delta amplification (a 4 KiB delta copying a 64 KiB base 4,096 times resolves to 256 MiB) | **Total budget**: at `open`, the size every pack entry declares it resolves to is summed from the entry headers and the first 20 inflated bytes of each delta stream (`PackReader::declared_bytes`, nothing resolved); each loose object's declared size is read from the first 64 inflated bytes before it is inflated. The sum may not pass `max_total_object_bytes`, **default 1 GiB** (omega, the largest repository the bridge has read, holds 374,301,457 bytes of objects). A resolved entry always has exactly its declared size (checked on every read), so the budget bounds what a read holds | `QuotaPayloadTooLarge` |
+| One huge object | Per-object cap `max_object_bytes`, default 1 GiB, on every whole entry, delta stream, delta result and loose object, checked against the declared size before allocation. `apply_delta` no longer reserves the declared result size up front: it reserves at most base + delta length and grows as instructions produce bytes, never past the declared size | `QuotaPayloadTooLarge` |
+
+All five limits are fields of `ReadLimits` (`GitRepository::open_with_limits`); `GitRepository::open` uses the defaults. Also from the review: `*.lock` files under `refs/` are skipped as Git skips them, and a detached `HEAD`'s commit is collected with its history (`GitHistory::detached_head`). A symbolic link as `HEAD` is now refused instead of read as "no `HEAD`".
+
+Residual, stated: the file checks assume the repository is not being changed while it is read. An attacker who swaps a regular file for a pipe between the `symlink_metadata` check and the `open` can still block that `open` (the inode check runs after it). Closing that needs `O_NOFOLLOW | O_NONBLOCK`, which `std` does not name portably; not done here.
 
 ## 2. Acceptance status (issue #48)
 
@@ -52,11 +67,13 @@ The fixture (built by Git in the test) covers nested trees, executable files, a 
 
 `green.txt` holds the passing runs and the two real repository runs.
 
+`evidence/h1-git-bridge/red-green/hostile-red.txt` (review findings B1 and B2): `tests/h1_hostile_repo.rs` uses only `GitRepository::open` and `full_history`, so the same file runs unchanged against the reviewed head `b4fe463`. There all 8 cases fail: the pipe cases (a reference, `packed-refs`, a loose object) block until the test's 10 s deadline releases them, the `/dev/zero` link fails with `IoFailure: out of memory` under the run's `ulimit -v 4000000` guard, the link to a file outside the repository and the 1 MiB reference are read as references, the 82 KB delta bomb resolves 5 objects of 256 MiB, and the detached `HEAD` commit is missing. Two further stubs on the fixed code: (A) the total budget check removed: the budget test fails; (B) links followed (`metadata` instead of `symlink_metadata`, and in the `refs/` walk): the outside-link test fails. `hostile-green.txt` holds the passing runs.
+
 ## 4. Limits and what remains
 
 * **Cut 2 remains**: the persistent `GitOid` to (`ChangesetId`, `TreeDigest`) map; imported blobs stored natively; Git trees converted to `TreeDigest` and recomputed at export; commits as revisions whose original commit and tag headers are kept as opaque bridge data; export of imported history from stored headers and of native revisions with deterministic generated message and author fields (section 5.10). It needs a new WAL record kind; open PR #88 claims kind 9, so cut 2 will use kind 10.
 * Exported packs are not compressed beyond zlib stored blocks and hold no deltas: the omega export is 374,712,257 bytes against 50,117 KiB for Git's own pack (`count-objects -v`). Correct and accepted by Git, but large; a native compressor is a later change.
 * SHA-1 object format only. A SHA-256 Git repository (`extensions.objectformat = sha256`) is not read.
 * The existing per-changeset `materialize_changeset_to_git` still writes loose objects; it is a legacy path and is replaced by the cut 2 export.
-* `GitRepository` reads whole pack files into memory, and `full_history` holds every object; fine for the repositories above, not bounded for very large ones.
+* `GitRepository` reads whole pack files into memory and `full_history` holds every object, both bounded by `ReadLimits` (section 1a). A repository larger than the defaults needs the caller to raise them. Peak RSS of the test process for the omega round trip with the defaults: 1,114,576 KiB (`/usr/bin/time -v`).
 * No performance figure is claimed: none is part of this cut's acceptance and no run was measured against a section 6 bound.
