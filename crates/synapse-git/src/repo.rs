@@ -271,7 +271,13 @@ impl GitRepository {
             }
         }
         let hex = oid.to_hex();
-        let path = self.git_dir.join("objects").join(&hex[..2]).join(&hex[2..]);
+        // The fan-out directory must be a real directory too: `O_NOFOLLOW` covers only the
+        // last path component, so a linked `objects/ab` could lead the read outside.
+        let fanout = self.git_dir.join("objects").join(&hex[..2]);
+        if !real_dir(&fanout)? {
+            return Ok(None);
+        }
+        let path = fanout.join(&hex[2..]);
         // An incompressible object stored as zlib grows by 5 bytes per 65,535-byte block plus
         // 6; allow the object cap plus 1/64 and 1 KiB for that and the object header.
         let max_file = self.limits.max_object_bytes / 64 * 65 + 1024;

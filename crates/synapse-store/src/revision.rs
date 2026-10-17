@@ -141,6 +141,9 @@ fn record_digest(record: &WalRecord) -> [u8; 32] {
             h.update(&chain);
             h.update(recorded_at_ms.to_le_bytes());
         }
+        record @ WalRecord::GitBridgeImported { .. } => {
+            crate::git_bridge::record_digest_input(record, &mut h);
+        }
         _ => {}
     }
     h.finalize().into()
@@ -237,6 +240,9 @@ impl RevisionLedger {
                         recorded_at_ms: *recorded_at_ms,
                     });
             }
+            // Git bridge records are kept in the log (checkpoint and state root); their map
+            // lives in `git_bridge::GitBridgeLedger`.
+            WalRecord::GitBridgeImported { .. } => {}
             _ => return,
         }
         self.log.push((seq, record));
@@ -434,6 +440,13 @@ impl crate::SynapseStore {
         for parent in &content.parents {
             let parent_repo = if self.revisions.get_revision(&repo, *parent).is_some() {
                 &repo
+            } else if self
+                .git_bridge
+                .repo(&repo)
+                .is_some_and(|r| r.commit_by_changeset(*parent).is_some())
+            {
+                // An imported Git commit (step H1) of this repository.
+                &repo
             } else if let Some(cs) = self.changesets.get(parent) {
                 &cs.envelope.repo_id
             } else {
@@ -566,7 +579,7 @@ impl crate::SynapseStore {
             .ok_or_else(|| not_found(format!("change {change_id} not found")))
     }
 
-    fn check_binary_codec(&self) -> SynapseResult<()> {
+    pub(crate) fn check_binary_codec(&self) -> SynapseResult<()> {
         if self.codec == crate::RecordCodec::JsonV1 {
             return Err(SynapseError::new(
                 RefusalCode::EnvelopeVersionUnsupported,
@@ -578,7 +591,7 @@ impl crate::SynapseStore {
 
     /// Append one revision record (blobs inline in the segment store, blob files first in
     /// the `wal.log` layout) and apply it.
-    fn append_revision_record(
+    pub(crate) fn append_revision_record(
         &mut self,
         record: WalRecord,
         blobs: &[(BlobDigest, &[u8])],

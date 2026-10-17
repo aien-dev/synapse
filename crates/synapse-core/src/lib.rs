@@ -17,8 +17,9 @@ pub use revision::{
     ENVELOPE_V2_VERSION, MAX_CHAIN_PATH_DEPTH, MAX_OBSOLESCENCE_SUCCESSORS,
 };
 pub use tree::{
-    tree_entry_order, validate_tree_entry_name, TreeDigest, TreeNodeEncoder, DOMAIN_TREE_V1,
-    MAX_TREE_ENTRY_NAME_BYTES, TREE_TAG_DIRECTORY,
+    decode_tree_node, tree_entry_order, validate_tree_entry_name, TreeDigest, TreeNodeEncoder,
+    TreeNodeEntry, TreeNodeEntryKind, DOMAIN_TREE_V1, MAX_TREE_ENTRY_NAME_BYTES,
+    TREE_TAG_DIRECTORY,
 };
 
 /// Current canonical changeset envelope schema version.
@@ -139,6 +140,12 @@ pub enum RefusalCode {
     RadicleQuorumInsufficient,
     StaleBaseHead,
     SplitBrainDivergence,
+    /// A Git object the native model cannot hold without loss, so it could not be exported
+    /// with its original object ID (ADR 0003 step H1): a gitlink or empty subtree, an entry
+    /// name that is not a valid path segment, a mode other than the canonical `100644`,
+    /// `100755`, `120000` and `40000`, or a commit or tag whose links are not written in
+    /// Git's canonical layout.
+    GitObjectNotRepresentable,
 }
 
 /// Structured error pairing a deterministic `RefusalCode` with diagnostic context.

@@ -1,0 +1,35 @@
+# cut 2 red: each stub removes one behaviour; the named test fails by assertion (stub applied, test run, file restored)
+== S1 canonical-form check skipped (legacy/padded modes accepted) (test h1_import_refuses_trees_with_no_native_form_before_writing)
+thread 'h1_import_refuses_trees_with_no_native_form_before_writing' (2687664) panicked at crates/synapse-git/tests/h1_bridge_import.rs:418:18:
+legacy mode 100664: imported instead of refusing: ImportReceipt { blobs: 1, trees: 1, commits: 1, tags: 0, refs: 1, records_written: 3, records_skipped: 0 }
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.05s
+== S2 commit headers dropped on import (test h1_import_then_export_from_the_store_gives_identical_ids)
+thread 'h1_import_then_export_from_the_store_gives_identical_ids_refs_and_fsck_strict_clean' (2687960) panicked at crates/synapse-git/tests/h1_bridge_import.rs:62:29:
+export refused: GitObjectCorrupt: stored commit rebuilds as 13a42cd42dc51afe60fa58c32e89be5093e7548e, not its imported Git ID 13912c94cf6dd0b30ba74d7ec5c8bc88231b7c77
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 1.52s
+== S3 bridge map not rebuilt on checkpoint load (test h1_bridge_map_survives_reopen_and_checkpoint)
+thread 'h1_bridge_map_survives_reopen_and_checkpoint_with_the_same_export' (2688999) panicked at crates/synapse-git/tests/h1_bridge_import.rs:154:5:
+assertion `left == right` failed: a checkpoint load rebuilds the same map
+  left: GitOid(029d08823bd8a8eab510ad6ac75c823cfd3ed31e)
+ right: GitOid(110cae2138cf180d22011dd488d3140f543a60a2)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 3.50s
+== S4 native commit time taken from the clock (test h1_native_revisions_export_deterministically)
+thread 'h1_native_revisions_export_deterministically_on_imported_history' (2690977) panicked at crates/synapse-git/tests/h1_bridge_import.rs:320:5:
+assertion `left == right` failed: two exports give the same pack
+  left: GitOid(6550ec70f1840e943c4439e8e36bb31e275496ea)
+ right: GitOid(1e7e30cc594b42b47ad46b5ebd0fabe4f4df02f6)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 2.83s
+== S5 reference names checked only by the store (after objects are written) (test h1_import_refuses_reference_names)
+thread 'h1_import_refuses_reference_names_that_would_write_outside_before_writing' (2692013) panicked at crates/synapse-git/tests/h1_bridge_import.rs:420:5:
+assertion `left == right` failed: dot-dot path: nothing written
+  left: WalSeq(2)
+ right: WalSeq(0)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.04s
+== S6 compaction drops bridge-held blobs (test h1_bridge_map_survives_reopen_and_checkpoint)
+thread 'h1_bridge_map_survives_reopen_and_checkpoint_with_the_same_export' (2693564) panicked at crates/synapse-git/tests/h1_bridge_import.rs:62:29:
+export refused: BlobNotFound: blob bec6e547ba97d2d4cb34f2a3de81e1110522735fe04188a1eb9ae7330ca23421 is not committed in the WAL
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 2.99s
+== S7 native result trees not remembered (a native child's base is unknown) (test h1_a_native_child_of_a_native_revision)
+thread 'h1_a_native_child_of_a_native_revision_exports_on_its_parents_result_tree' (2695099) panicked at crates/synapse-git/tests/h1_bridge_import.rs:62:29:
+export refused: TreeNodeNotFound: base tree node 9fa91d0179144debfd7d53724f9dff9aef0051e36363d5f40650d13106281885 is not stored in the bridge
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 3.40s

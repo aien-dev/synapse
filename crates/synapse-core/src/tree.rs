@@ -228,10 +228,118 @@ impl TreeNodeEncoder {
     }
 }
 
+/// What one entry of a decoded tree node names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TreeNodeEntryKind {
+    /// A file: its mode, `BlobDigest`, and size in bytes.
+    File {
+        mode: FileMode,
+        blob: crate::BlobDigest,
+        size_bytes: u64,
+    },
+    /// A subdirectory: the `TreeDigest` of its node.
+    Dir(TreeDigest),
+}
+
+/// One entry of a decoded tree node.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeNodeEntry {
+    pub name: String,
+    pub kind: TreeNodeEntryKind,
+}
+
+/// Smallest encoded entry: tag, a one-byte name and a directory digest.
+const MIN_TREE_ENTRY_BYTES: usize = 1 + 2 + 1 + 32;
+
+/// Decode exactly one canonical tree node (version 1). The count is checked against the bytes
+/// that remain before anything is reserved; the node is accepted only if re-encoding its
+/// entries through [`TreeNodeEncoder`] gives back exactly `bytes`, so names, order, duplicates
+/// and tags follow the encoder's rules. Any other input is `TreeNodeMalformed`.
+pub fn decode_tree_node(bytes: &[u8]) -> SynapseResult<Vec<TreeNodeEntry>> {
+    let bad = |msg: &str| SynapseError::new(RefusalCode::TreeNodeMalformed, msg.to_string());
+    let take = |pos: &mut usize, n: usize| -> SynapseResult<&[u8]> {
+        let end = pos
+            .checked_add(n)
+            .filter(|&e| e <= bytes.len())
+            .ok_or_else(|| bad("tree node truncated"))?;
+        let s = &bytes[*pos..end];
+        *pos = end;
+        Ok(s)
+    };
+    let mut pos = 0usize;
+    let count = u32::from_le_bytes(take(&mut pos, 4)?.try_into().expect("4 bytes")) as usize;
+    if count.saturating_mul(MIN_TREE_ENTRY_BYTES) > bytes.len() - pos {
+        return Err(bad(
+            "tree node declares more entries than its bytes can hold",
+        ));
+    }
+    let mut entries = Vec::with_capacity(count);
+    let mut enc = TreeNodeEncoder::new(count as u32);
+    for _ in 0..count {
+        let tag = take(&mut pos, 1)?[0];
+        let len = u16::from_le_bytes(take(&mut pos, 2)?.try_into().expect("2 bytes")) as usize;
+        let name = std::str::from_utf8(take(&mut pos, len)?)
+            .map_err(|_| bad("tree entry name is not UTF-8"))?
+            .to_string();
+        let kind = if tag == TREE_TAG_DIRECTORY {
+            let d = TreeDigest(take(&mut pos, 32)?.try_into().expect("32 bytes"));
+            enc.dir(&name, &d)?;
+            TreeNodeEntryKind::Dir(d)
+        } else {
+            let mode = FileMode::from_tag_byte(tag).ok_or_else(|| bad("unknown tree entry tag"))?;
+            let blob = crate::BlobDigest(take(&mut pos, 32)?.try_into().expect("32 bytes"));
+            let size_bytes = u64::from_le_bytes(take(&mut pos, 8)?.try_into().expect("8 bytes"));
+            enc.file(&name, mode, &blob, size_bytes)?;
+            TreeNodeEntryKind::File {
+                mode,
+                blob,
+                size_bytes,
+            }
+        };
+        entries.push(TreeNodeEntry { name, kind });
+    }
+    if pos != bytes.len() {
+        return Err(bad("tree node has trailing bytes"));
+    }
+    let (_, again) = enc.finish()?;
+    if again != bytes {
+        return Err(bad("tree node is not in its canonical encoding"));
+    }
+    Ok(entries)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::BlobDigest;
+
+    #[test]
+    fn h1_tree_node_decodes_canonically_and_refuses_every_other_form() {
+        let blob = BlobDigest::compute(b"x");
+        let mut enc = TreeNodeEncoder::new(2);
+        enc.file("a", FileMode::Executable755, &blob, 1).unwrap();
+        enc.dir("b", &TreeDigest::empty()).unwrap();
+        let (_, bytes) = enc.finish().unwrap();
+        let entries = decode_tree_node(&bytes).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[1].kind, TreeNodeEntryKind::Dir(TreeDigest::empty()));
+        assert_eq!(decode_tree_node(&0u32.to_le_bytes()).unwrap(), vec![]);
+        for cut in 0..bytes.len() {
+            assert!(
+                decode_tree_node(&bytes[..cut]).is_err(),
+                "truncated at {cut}"
+            );
+        }
+        let mut extra = bytes.clone();
+        extra.push(0);
+        assert!(decode_tree_node(&extra).is_err(), "trailing byte");
+        let mut huge = bytes.clone();
+        huge[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(decode_tree_node(&huge).is_err(), "count over the input");
+        let mut tag = bytes.clone();
+        tag[4] = 9;
+        assert!(decode_tree_node(&tag).is_err(), "unknown tag");
+    }
 
     #[test]
     fn empty_tree_digest_is_the_domain_separated_hash_of_a_zero_count() {

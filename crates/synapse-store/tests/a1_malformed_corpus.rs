@@ -158,6 +158,8 @@ fn length_fields(record: &WalRecord, bin: &[u8]) -> Vec<usize> {
         WalRecord::LeaseUpdated { .. } => vec![],
         // Embedded envelope v2 or marker length first (ADR 0003 B1).
         WalRecord::RevisionAdmitted { .. } | WalRecord::ObsolescenceRecorded { .. } => vec![2],
+        // repo_id length first (ADR 0003 H1, kind 10; not in the v1 fixture).
+        WalRecord::GitBridgeImported { .. } => vec![2],
     }
 }
 
