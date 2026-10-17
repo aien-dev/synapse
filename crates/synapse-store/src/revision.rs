@@ -117,6 +117,10 @@ pub struct StateMoveReplayReport {
     pub not_owner_move: u64,
     /// Sequence of the first unverified move (signature or leaf), for the refusal message.
     pub first_unverified: Option<(WalSeq, StateMoveFault)>,
+    /// Unverified moves this process left out of a checkpoint (`checkpoint_and_compact`
+    /// under `TruncateTornTail`), so they are gone from the store and strict recovery
+    /// accepts it again. Not persisted: a reopened store reports zero.
+    pub dropped_by_compaction: u64,
 }
 
 impl StateMoveReplayReport {
@@ -226,6 +230,37 @@ impl RevisionLedger {
     /// Kind 9 records that changed nothing, by reason (issue #89).
     pub(crate) fn state_move_report(&self) -> StateMoveReplayReport {
         self.state_moves
+    }
+
+    /// The log without kind 9 records that do not verify, and how many were left out
+    /// (review of PR #100): what a checkpoint keeps. Verified moves that changed nothing stay.
+    pub(crate) fn log_without_unverified_moves(&self) -> (Vec<(WalSeq, WalRecord)>, u64) {
+        if self.state_moves.unverified() == 0 {
+            return (self.log.clone(), 0);
+        }
+        let mut dropped = 0;
+        let log = self
+            .log
+            .iter()
+            .filter(|(_, record)| match record {
+                WalRecord::RevisionStateMoved { state_move, .. }
+                    if state_move.verify().is_err() =>
+                {
+                    dropped += 1;
+                    false
+                }
+                _ => true,
+            })
+            .cloned()
+            .collect();
+        (log, dropped)
+    }
+
+    /// Rebuild from the log a checkpoint kept, recording the `dropped` unverified moves.
+    pub(crate) fn rebuild_after_compaction(&mut self, log: Vec<(WalSeq, WalRecord)>, dropped: u64) {
+        let carried = self.state_moves.dropped_by_compaction + dropped;
+        *self = Self::from_log(log);
+        self.state_moves.dropped_by_compaction = carried;
     }
 
     /// Rebuild a ledger from checkpointed records.
@@ -1308,10 +1343,16 @@ mod b4_tests {
             assert_eq!(report.not_owner_move, 1, "verified no-ops are kept");
         };
         check(&s);
+        assert_eq!(s.state_move_replay_report().dropped_by_compaction, 2);
         let root = s.state_root_digest(None).unwrap();
         drop(s);
         let s = open(&dir, STRICT).expect("strict recovery accepts the compacted store");
         check(&s);
+        assert_eq!(
+            s.state_move_replay_report().dropped_by_compaction,
+            0,
+            "not persisted"
+        );
         assert_eq!(s.state_root_digest(None).unwrap(), root);
         let _ = std::fs::remove_dir_all(&dir);
     }

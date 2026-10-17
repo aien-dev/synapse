@@ -147,6 +147,15 @@ impl SignedStateMove {
     /// digest before it as its parent (`ROOT_PARENT` for a one-link chain), and belongs to
     /// the move's repository. A pure function of the move, so replay gives the same verdict
     /// as the live store.
+    ///
+    /// **This binds the signer to the chain; it does not authorize the move.** It never
+    /// checks who issued `leaf_link`, nor its caveats, so anyone can mint a root link of
+    /// their own, or append a link of their own under someone else's chain, and sign a
+    /// move that verifies. Precondition for every caller: the chain must also be, or
+    /// dominate, the chain of the revision's first admission (`ChainPath::dominates`, as
+    /// the store's owner rule does). Dominance pins every digest of the chain, the leaf
+    /// included, to links that were really admitted. A descendant chain (`descends_from`)
+    /// is not enough: its extra links are unchecked.
     pub fn verify(&self) -> Result<(), StateMoveFault> {
         let key = VerifyingKey::from_bytes(&self.mover_key)
             .map_err(|_| StateMoveFault::SignatureInvalid)?;

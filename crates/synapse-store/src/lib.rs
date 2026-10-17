@@ -1678,7 +1678,12 @@ impl SynapseStore {
         //    The first binary checkpoint records the last v1 state root (or the empty
         //    root for a store that never wrote v1) and chains its own root to it; every
         //    later one chains to the previous checkpoint root.
+        //    Unverified kind 9 records (kept as no-ops only under `TruncateTornTail`) are left
+        //    out (review of PR #100): they change no state, and carrying them would make
+        //    strict recovery refuse the store forever. The ledger is rebuilt without them
+        //    only once the checkpoint is durable; the replay report counts them.
         self.sync_wal()?;
+        let (revision_log, dropped_moves) = self.revisions.log_without_unverified_moves();
         let (v1_state_root, prev_checkpoint_root) = match self.checkpoint_chain {
             Some(c) => (c.v1_state_root, c.checkpoint_root),
             None if self.v1_history => (v1_state_root_at_entry, v1_state_root_at_entry),
@@ -1692,7 +1697,7 @@ impl SynapseStore {
             blob_first_visible_seq: std::mem::take(&mut self.blob_first_visible_seq),
             github_projections: std::mem::take(&mut self.github_projections),
             canonical_heads: std::mem::take(&mut self.canonical_heads),
-            revision_log: self.revisions.log().to_vec(),
+            revision_log,
         };
         let encoded = codec::encode_checkpoint_v2(&state, v1_state_root, prev_checkpoint_root);
         self.changesets = state.changesets;
@@ -1700,10 +1705,14 @@ impl SynapseStore {
         self.blob_first_visible_seq = state.blob_first_visible_seq;
         self.github_projections = state.github_projections;
         self.canonical_heads = state.canonical_heads;
+        let revision_log = state.revision_log;
         let (bytes, chain) = encoded?;
-        // Read back what will be written: it must decode to the same chain and root.
+        // Read back what will be written: it must decode to the same chain and root (the
+        // live state, less any unverified kind 9 records left out above).
+        let snap = self.resolve_snapshot_seq(None, None)?;
+        let expected_root = codec::state_root_of(&self.changesets, &revision_log, snap);
         let (_, check) = codec::decode_checkpoint_v2(&bytes)?;
-        if check != chain || chain.state_root != self.state_root_digest(None)? {
+        if check != chain || chain.state_root != expected_root {
             return Err(SynapseError::new(
                 RefusalCode::CheckpointCorrupt,
                 "checkpoint.v2 does not decode back to the state it was written from",
@@ -1742,6 +1751,10 @@ impl SynapseStore {
             &bytes,
         )?;
         self.checkpoint_chain = Some(chain);
+        if dropped_moves > 0 {
+            self.revisions
+                .rebuild_after_compaction(revision_log, dropped_moves);
+        }
         self.codec = RecordCodec::BinaryV2;
         self.binary_seen = true;
         // checkpoint.v1 becomes the tombstone only after checkpoint.v2 is durable.
@@ -2218,7 +2231,7 @@ impl SynapseStore {
                 return Err(SynapseError::new(
                     RefusalCode::RevisionStateMoveUnverified,
                     format!(
-                        "{} WAL kind 9 state move(s) do not verify (first at {seq}: {fault:?}); strict recovery refuses the store",
+                        "{} WAL kind 9 state move(s) do not verify (first at {seq}: {fault:?}); strict recovery refuses the store (open it with TruncateTornTail and run checkpoint_and_compact to drop them)",
                         report.unverified()
                     ),
                 ));
