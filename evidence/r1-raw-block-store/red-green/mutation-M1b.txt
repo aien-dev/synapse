@@ -1,0 +1,20 @@
+mutation M1b: same mutation, flush-failure test
+test: blockdev_tests::r1_failed_device_flush_acknowledges_nothing
+diff --git a/crates/synapse-store/src/wal2.rs b/crates/synapse-store/src/wal2.rs
+index b163102..f00b681 100644
+--- a/crates/synapse-store/src/wal2.rs
++++ b/crates/synapse-store/src/wal2.rs
+@@ -476,7 +476,7 @@ impl SegFile {
+     fn sync_data(&self) -> std::io::Result<()> {
+         match self {
+             SegFile::Fs(f) => f.sync_data(),
+-            SegFile::Block { dev, .. } => dev.flush(),
++            SegFile::Block { .. } => Ok(()),
+         }
+     }
+ 
+---
+test blockdev_tests::r1_failed_device_flush_acknowledges_nothing ... FAILED
+thread 'blockdev_tests::r1_failed_device_flush_acknowledges_nothing' (1697408) panicked at crates/synapse-store/src/blockdev_tests.rs:447:50:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p synapse-store --lib`

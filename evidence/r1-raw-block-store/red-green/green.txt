@@ -1,0 +1,35 @@
+branch feat/47-raw-block-store (final tree, before commit), cargo test -p synapse-store --lib
+test blockdev_a2_suite::r1_suite_stores_are_raw_block_stores ... ok
+test blockdev_a2_suite::segment_tests::a2_checkpoint_keeps_blobs_in_segments_across_reopen ... ok
+test blockdev_a2_suite::segment_tests::a2_crash_after_new_segment_file_before_directory_flush_keeps_every_ack ... ok
+test blockdev_a2_suite::segment_tests::a2_crash_after_segment_index_before_checkpoint_keeps_every_ack ... ok
+test blockdev_a2_suite::segment_tests::a2_crash_between_payload_and_index_keeps_every_ack ... ok
+test blockdev_a2_suite::segment_tests::a2_directory_flush_precedes_every_batch_in_a_new_segment ... ok
+test blockdev_a2_suite::segment_tests::a2_flush_failure_batch_sync_in_new_segment_acks_nothing ... ok
+test blockdev_a2_suite::segment_tests::a2_flush_failure_directory_flush_of_new_segment_acks_nothing ... ok
+test blockdev_a2_suite::segment_tests::a2_pre_a2_stores_replay_and_switch_to_segments ... ok
+test blockdev_a2_suite::segment_tests::a2_segment_index_round_trips_and_refuses_damage ... ok
+test blockdev_a2_suite::segment_tests::a2_torn_segment_crash_mid_batch_keeps_every_ack ... ok
+test blockdev_a2_suite::segment_tests::a2_torn_segment_with_data_after_it_fails_closed_under_both_policies ... ok
+test blockdev_tests::r1_classifies_known_signatures ... ok
+test blockdev_tests::r1_failed_device_flush_acknowledges_nothing ... ok
+test blockdev_tests::r1_full_device_refuses_the_batch_and_keeps_every_ack ... ok
+test blockdev_tests::r1_opens_only_the_configured_path ... ok
+test blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack ... ok
+test blockdev_tests::r1_refuses_a_device_carrying_a_filesystem_or_partition_signature ... ok
+test blockdev_tests::r1_refuses_unknown_label_bytes_and_blank_devices_without_format ... ok
+test blockdev_tests::r1_superblock_falls_back_to_the_older_copy_when_the_newest_is_damaged ... ok
+test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.72s
+test segment_tests::a2_checkpoint_keeps_blobs_in_segments_across_reopen ... ok
+test segment_tests::a2_crash_after_new_segment_file_before_directory_flush_keeps_every_ack ... ok
+test segment_tests::a2_crash_after_segment_index_before_checkpoint_keeps_every_ack ... ok
+test segment_tests::a2_crash_between_payload_and_index_keeps_every_ack ... ok
+test segment_tests::a2_directory_flush_precedes_every_batch_in_a_new_segment ... ok
+test segment_tests::a2_flush_failure_batch_sync_in_new_segment_acks_nothing ... ok
+test segment_tests::a2_flush_failure_directory_flush_of_new_segment_acks_nothing ... ok
+test segment_tests::a2_pre_a2_stores_replay_and_switch_to_segments ... ok
+test segment_tests::a2_segment_index_round_trips_and_refuses_damage ... ok
+test segment_tests::a2_torn_segment_crash_mid_batch_keeps_every_ack ... ok
+test segment_tests::a2_torn_segment_with_data_after_it_fails_closed_under_both_policies ... ok
+R1 power-cut simulation: 56 device writes, 46 flushes, 28 acks; prefix Tally { states: 1465, opened: 1448, strict_torn_refusals: 336, fail_closed: 0, continued: 63 }; suffix Tally { states: 1464, opened: 1208, strict_torn_refusals: 336, fail_closed: 0, continued: 52 }; lost-write Tally { states: 68, opened: 65, strict_torn_refusals: 0, fail_closed: 0, continued: 2 }; hole Tally { states: 1352, opened: 1037, strict_torn_refusals: 28, fail_closed: 297, continued: 44 }
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 19.17s
