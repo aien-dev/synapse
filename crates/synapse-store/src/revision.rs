@@ -944,4 +944,51 @@ mod b4_tests {
         }
         assert!(forged_refused > 0, "the sequences included forged moves");
     }
+
+    /// Kind 9 records carry no signature and the WAL seal is unkeyed, so replay accepts a
+    /// state move only when it is an owner move (`Private -> Draft`, `Private -> Proposed`,
+    /// `Draft -> Proposed`, by a chain that is or dominates the first admission's chain).
+    /// A forged `Proposed -> Verified` record, even naming the owner's chain, is refused on
+    /// replay: `Verified` comes only from B3/E1 evidence records, never from kind 9.
+    #[test]
+    fn b4_replay_refuses_a_forged_move_to_verified() {
+        let mut rng = SplitMix64(0xB4_0004);
+        let mut record = admission(&mut rng, 1);
+        let owner = ChainPath::new(vec![[1; 32], [2; 32]]).unwrap();
+        let id = match &mut record {
+            WalRecord::RevisionAdmitted {
+                envelope, chain, ..
+            } => {
+                *chain = owner.clone();
+                envelope.changeset_id()
+            }
+            _ => unreachable!(),
+        };
+        let mv = |to: RevisionState, chain: &ChainPath| WalRecord::RevisionStateMoved {
+            repo_id: repo(),
+            changeset_id: id,
+            to,
+            chain: chain.clone(),
+            moved_at_ms: 6_000,
+        };
+        let outsider = ChainPath::new(vec![[1; 32], [9; 32]]).unwrap();
+        let log = vec![
+            (WalSeq(1), record),
+            (WalSeq(2), mv(RevisionState::Proposed, &owner)),
+            (WalSeq(3), mv(RevisionState::Verified, &owner)),
+            (WalSeq(4), mv(RevisionState::Verified, &outsider)),
+            (WalSeq(5), mv(RevisionState::Canonical, &owner)),
+        ];
+        let replayed = RevisionLedger::from_log(log);
+        assert_eq!(
+            replayed.get_revision(&repo(), id).unwrap().state,
+            RevisionState::Proposed,
+            "a forged move to Verified or Canonical changes nothing on replay"
+        );
+        assert_eq!(
+            replayed.log().len(),
+            5,
+            "kept in the log, applied as no-ops"
+        );
+    }
 }
