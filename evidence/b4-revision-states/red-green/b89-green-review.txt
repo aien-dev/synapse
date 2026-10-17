@@ -1,0 +1,11 @@
+# PR #100 review fixes green (2026-10-17, commit deffaec on fix/89-signed-state-moves, stacked on PR #88 head cf3879f;
+# workspace 351 passed, 0 failed, 1 ignored; clippy -D warnings and fmt clean)
+# Mutation check: owned_by widened to descendant chains -> b89_a_forger_minted_leaf_link_verifies_but_never_owns_a_revision FAILED (restored).
+
+# Command: nice -n 19 cargo test --locked -j 4 -p synapse-store --lib b89_ -- --test-threads=1
+test revision::b4_tests::b89_a_forger_minted_leaf_link_verifies_but_never_owns_a_revision ... ok
+test revision::b4_tests::b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay ... ok
+test revision::b4_tests::b89_signed_owner_move_round_trips_replay_checkpoint_and_compaction ... ok
+test revision::b4_tests::b89_state_root_record_digest_covers_the_signature_fields ... ok
+test revision::b4_tests::b89_torn_tail_compaction_drops_unverified_moves_so_strict_recovery_accepts_the_store ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 55 filtered out; finished
