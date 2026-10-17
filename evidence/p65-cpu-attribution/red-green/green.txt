@@ -1,0 +1,54 @@
+Issue #65 Stage A parity receipt (2026-10-17T01:54:58Z), branch perf/65-profile-first on main 3d78efe
+rustc: rustc 1.98.1 (48a229cea 2026-09-01)
+
+$ cargo test --locked --workspace -j 4   (exit 0)
+  synapse_api unittests passed 31 failed 0 ignored 0
+  b1_chained_revisions tests/b1_chained_revisions.rs passed 2 failed 0 ignored 0
+  c1_tree_digest tests/c1_tree_digest.rs passed 1 failed 0 ignored 0
+  synapse_auth unittests passed 1 failed 0 ignored 0
+  f1_capability_chains tests/f1_capability_chains.rs passed 11 failed 0 ignored 0
+  synapse_bench unittests passed 74 failed 0 ignored 0
+  synapse_bench unittests passed 0 failed 0 ignored 0
+  verify_qualification unittests passed 6 failed 0 ignored 0
+  wire_transport unittests passed 0 failed 0 ignored 0
+  c1_tree_cache_bound tests/c1_tree_cache_bound.rs passed 2 failed 0 ignored 0
+  c1_tree_parity tests/c1_tree_parity.rs passed 2 failed 0 ignored 1
+  crumb_synapse_qualification tests/crumb_synapse_qualification.rs passed 15 failed 0 ignored 0
+  synapse_coord unittests passed 9 failed 0 ignored 0
+  synapse_coord unittests passed 0 failed 0 ignored 0
+  hostile tests/hostile.rs passed 11 failed 0 ignored 0
+  identity tests/identity.rs passed 9 failed 0 ignored 0
+  plane tests/plane.rs passed 12 failed 0 ignored 0
+  synapse_core unittests passed 13 failed 0 ignored 0
+  synapse_crumb unittests passed 16 failed 0 ignored 0
+  parity tests/parity.rs passed 8 failed 0 ignored 0
+  repo_root tests/repo_root.rs passed 1 failed 0 ignored 0
+  synapse_evidence unittests passed 15 failed 0 ignored 0
+  synapse_git unittests passed 2 failed 0 ignored 0
+  synapse_radicle unittests passed 2 failed 0 ignored 0
+  e0_identity_document tests/e0_identity_document.rs passed 6 failed 0 ignored 0
+  synapse_store unittests passed 53 failed 0 ignored 0
+  a1_malformed_corpus tests/a1_malformed_corpus.rs passed 2 failed 0 ignored 0
+  b1_change_identity tests/b1_change_identity.rs passed 8 failed 0 ignored 0
+  synapse_wire unittests passed 0 failed 0 ignored 0
+  synapse_wire_fuzz unittests passed 0 failed 0 ignored 0
+  g1_fuzz tests/g1_fuzz.rs passed 7 failed 0 ignored 0
+  g1_wire tests/g1_wire.rs passed 8 failed 0 ignored 0
+  synapse_api doctests passed 0 failed 0 ignored 0
+  synapse_auth doctests passed 0 failed 0 ignored 0
+  synapse_bench doctests passed 0 failed 0 ignored 0
+  synapse_coord doctests passed 0 failed 0 ignored 0
+  synapse_core doctests passed 0 failed 0 ignored 0
+  synapse_crumb doctests passed 0 failed 0 ignored 0
+  synapse_evidence doctests passed 0 failed 0 ignored 0
+  synapse_git doctests passed 0 failed 0 ignored 0
+  synapse_radicle doctests passed 0 failed 0 ignored 0
+  synapse_store doctests passed 0 failed 0 ignored 0
+  synapse_wire doctests passed 0 failed 0 ignored 0
+  TOTAL passed 327 failed 0 ignored 1 in 43 test binaries
+
+$ cargo clippy --locked --workspace --all-targets -j 4 -- -D warnings   (exit 0)
+$ cargo fmt --all -- --check   (exit 0)
+
+Production code changed: none. git diff --name-only origin/main -- crates/ Cargo.toml Cargo.lock:
+  (empty = no change to any crate, durability or authority code)
