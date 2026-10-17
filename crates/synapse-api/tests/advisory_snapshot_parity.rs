@@ -7,7 +7,8 @@
 //! an older `snapshot_seq`, a promoted canonical head, with and without claims in the
 //! coordination plane. It runs, then new proposals land (a new snapshot, a `.crumb`
 //! rewrite, a promotion), and it runs again twice (the second time fully warm). The SHA-256
-//! of the whole transcript was recorded on `origin/main` (3d78efe).
+//! of the whole transcript, with the host-dependent claim session names masked, was
+//! recorded on `origin/main` (3d78efe).
 //!
 //! Keys, nonces and grant ids are derived from labels and counters, never literals.
 
@@ -29,9 +30,28 @@ use synapse_core::{
 };
 use synapse_store::{FsyncPolicy, IngestOutcome, RecoveryPolicy, StoreLimits};
 
-/// SHA-256 of the transcript, recorded on `origin/main` 3d78efe (before #94).
+/// SHA-256 of the host-neutral transcript (see [`host_neutral`]), recorded on `origin/main`
+/// 3d78efe (before #94).
 const RECORDED_TRANSCRIPT_SHA256: &str =
-    "9278ca4a986420bc32358186f450ba4c74d6252e96b1fa591d2ac16337694b0f";
+    "644330d80e6c13ef31d1602c29b4bf9586e2b981f6da4a66030073cf9344e516";
+
+/// The transcript with every claim `session: "..."` value replaced by `<session>`. A claim's
+/// session defaults to `agent@hostname` (or `CRUMB_SESSION`), so it differs between hosts;
+/// everything else in the transcript is a function of the corpus alone.
+fn host_neutral(transcript: &[u8]) -> Vec<u8> {
+    const FIELD: &[u8] = b"session: \"";
+    let mut out = Vec::with_capacity(transcript.len());
+    let mut rest = transcript;
+    while let Some(at) = rest.windows(FIELD.len()).position(|w| w == FIELD) {
+        out.extend_from_slice(&rest[..at + FIELD.len()]);
+        rest = &rest[at + FIELD.len()..];
+        let end = rest.iter().position(|&b| b == b'"').unwrap_or(rest.len());
+        out.extend_from_slice(b"<session>");
+        rest = &rest[end..];
+    }
+    out.extend_from_slice(rest);
+    out
+}
 
 const T0: i64 = 1_800_000_000;
 
@@ -379,7 +399,7 @@ fn advisory_and_crumb_answers_match_the_transcript_recorded_on_main() {
     c.pass(&targets, older, &coord);
     c.pass(&targets, older, &coord);
 
-    let digest = hex::encode(Sha256::digest(&c.transcript));
+    let digest = hex::encode(Sha256::digest(host_neutral(&c.transcript)));
     println!(
         "advisory parity transcript: {} bytes, {} answers, sha256 {digest}",
         c.transcript.len(),
