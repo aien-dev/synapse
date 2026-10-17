@@ -1,0 +1,49 @@
+# Issue #89 green (2026-10-17, commit 90b2835 on fix/89-signed-state-moves, stacked on PR #88 head cf3879f;
+# workspace 349 passed, 0 failed, 1 ignored; clippy -D warnings and fmt clean)
+
+# Command: nice -n 19 cargo test --locked -j 4 -p synapse-store --lib b89_ -- --test-threads=1
+test revision::b4_tests::b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay ... ok
+test revision::b4_tests::b89_signed_owner_move_round_trips_replay_checkpoint_and_compaction ... ok
+test revision::b4_tests::b89_state_root_record_digest_covers_the_signature_fields ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 55 filtered out; finished
+
+# Command: nice -n 19 cargo test --locked -j 4 -p synapse-store --lib b4_ -- --test-threads=1
+test revision::b4_tests::b4_property_forged_record_sequences_never_move_a_revision_backwards ... ok
+test revision::b4_tests::b4_replay_refuses_a_forged_move_to_verified ... ok
+test revision::b4_tests::b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay ... ok
+test revision::b4_tests::b89_signed_owner_move_round_trips_replay_checkpoint_and_compaction ... ok
+test revision::b4_tests::b89_state_root_record_digest_covers_the_signature_fields ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished
+
+# Command: nice -n 19 cargo test --locked -j 4 -p synapse-store --test b4_revision_states -- --test-threads=1
+test b4_any_move_to_canonical_outside_the_promotion_queue_is_refused ... ok
+test b4_joining_identical_content_grants_no_ownership_of_a_private_revision ... ok
+test b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain ... ok
+test b4_property_random_operation_sequences_never_move_a_revision_backwards ... ok
+test b4_state_move_records_round_trip_and_malformed_bytes_are_refused_typed ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished
+
+# Command: nice -n 19 cargo test --locked -j 4 -p synapse-store --test b1_change_identity -- --test-threads=1
+test b1_divergence_two_live_successors_is_detected ... ok
+test b1_every_v1_changeset_id_still_resolves_to_its_record ... ok
+test b1_identical_content_two_agents_one_chain_one_change_is_one_revision_two_attestations_two_witnesses ... ok
+test b1_join_from_key_outside_creating_chain_without_change_scope_is_refused ... ok
+test b1_prune_by_chain_not_dominating_creating_chain_is_refused ... ok
+test b1_repeat_same_repo_did_idempotency_key_returns_first_wal_seq ... ok
+test b1_revision_records_round_trip_and_malformed_bytes_are_refused_typed ... ok
+test b1_rewrite_keeps_change_id_and_gets_new_changeset_id ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished
+
+# Command: nice -n 19 cargo test --locked -j 4 -p synapse-auth --lib state_move -- --test-threads=1
+test state_move::tests::a_bad_signature_or_a_signer_that_is_not_the_leaf_is_refused_typed ... ok
+test state_move::tests::a_leaf_link_of_another_repository_is_refused ... ok
+test state_move::tests::a_move_signed_by_the_chain_leaf_verifies_for_root_and_derived_chains ... ok
+test state_move::tests::faults_map_to_auth_signature_invalid ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished
+
+# Command: nice -n 19 cargo test --locked -j 4 -p synapse-api --test b4_revision_states -- --test-threads=1
+test b4_api_joining_identical_content_grants_no_ownership_of_a_private_revision ... ok
+test b4_api_move_to_canonical_outside_the_promotion_queue_is_refused ... ok
+test b4_api_private_revision_is_invisible_outside_its_owner_chain_with_real_f1_chains ... ok
+test b89_api_state_moves_must_be_signed_by_the_request_agent ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished
