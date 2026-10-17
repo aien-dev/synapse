@@ -1,0 +1,15 @@
+mutation M7: mount skips the data-past-count check (review B2)
+test: blockdev_tests::r1_lost_newest_superblock_never_drops_acknowledged_changes
+@@ -843,7 +843,6 @@
+                     names,
+                 }),
+             };
+-            dev.refuse_data_past_segment_count()?;
+             return Ok(Arc::new(dev));
+         }
+         Err(corrupt(
+---
+test blockdev_tests::r1_lost_newest_superblock_never_drops_acknowledged_changes ... FAILED
+thread 'blockdev_tests::r1_lost_newest_superblock_never_drops_acknowledged_changes' (2402692) panicked at crates/synapse-store/src/blockdev_tests.rs:853:17:
+assertion `left == right` failed: TruncateTornTail: acknowledged changes lost
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 114 filtered out; finished in 0.02s
