@@ -1,0 +1,4 @@
+agents 1 rep 0: 4000 accepted in 6.023 s, 4000 batches, 4 segment files
+agents 4 rep 0: 4000 accepted in 2.636 s, 1891 batches, 4 segment files
+agents 8 rep 0: 4000 accepted in 1.362 s, 989 batches, 4 segment files
+agents 32 rep 0: 4000 accepted in 0.522 s, 251 batches, 4 segment files

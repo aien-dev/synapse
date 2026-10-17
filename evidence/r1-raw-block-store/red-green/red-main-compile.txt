@@ -1,0 +1,12 @@
+origin/main 3d78efe + the two R1 test files (blockdev_tests.rs, blockdev_a2_suite.rs; module lines appended to lib.rs)
+$ cargo test -p synapse-store --lib --no-run   (exit 101)
+error[E0432]: unresolved import `super::blockdev`
+  --> crates/synapse-store/src/blockdev_tests.rs:21:12
+   |
+21 | use super::blockdev::*;
+   |            ^^^^^^^^ could not find `blockdev` in the crate root
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `synapse-store` (lib test) due to 1 previous error
+
+Red: main has no raw block store (no blockdev module, no open_block_device), so none of the R1 tests or the A2 suite against the device can build there.
