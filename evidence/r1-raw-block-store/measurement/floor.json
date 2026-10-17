@@ -1,39 +1,39 @@
 {
-  "dir": "/home/drakestapleton/workspace/r1-bench/floor/synapse-floor-1544005",
+  "dir": "/home/drakestapleton/workspace/r1-bench/floor/synapse-floor-2607893",
   "iterations": 300,
   "idle": {
     "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-    "window_s": 5.000342554,
+    "window_s": 5.000199422,
     "valid": true,
     "refusal": null,
-    "samples": 52,
-    "largest_gap_ms": 102.894,
-    "pkg_j": 232.136,
-    "cpu_p_j": 109.236,
-    "cpu_e_j": 9.091,
-    "rest_j": 113.809,
-    "pkg_mean_w": 46.42401945328803,
-    "pkg_edge_sd_j": 3.790505315653192,
-    "sys_total_mean_w": 52.98240384615385,
-    "nvme_temp_k": 317.0,
+    "samples": 51,
+    "largest_gap_ms": 100.45,
+    "pkg_j": 124.956,
+    "cpu_p_j": 39.703,
+    "cpu_e_j": 3.404,
+    "rest_j": 81.849,
+    "pkg_mean_w": 24.99020328073627,
+    "pkg_edge_sd_j": 2.040441553541001,
+    "sys_total_mean_w": 26.46713725490196,
+    "nvme_temp_k": 311.0,
     "loadavg_start": [
-      6.27,
-      7.16,
-      6.81
+      2.35,
+      2.66,
+      3.45
     ],
     "loadavg_end": [
-      6.01,
-      7.09,
-      6.79
+      2.4,
+      2.67,
+      3.45
     ],
-    "machine_busy_cpu_s": 27.640000000130385
+    "machine_busy_cpu_s": 8.0
   },
   "counter_cadence": {
-    "reads": 116028,
+    "reads": 116318,
     "changes": 10,
-    "median_gap_ms": 100.535,
-    "min_gap_ms": 100.518,
-    "max_gap_ms": 100.553
+    "median_gap_ms": 100.528,
+    "min_gap_ms": 100.511,
+    "max_gap_ms": 100.537
   },
   "storage": [
     {
@@ -42,42 +42,42 @@
       "n": 300,
       "latency": {
         "n": 300,
-        "min_ms": 2.586,
-        "p50_ms": 3.698,
-        "p95_ms": 5.049,
-        "p99_ms": 11.584,
-        "max_ms": 11.811,
-        "mean_ms": 3.995
+        "min_ms": 2.59,
+        "p50_ms": 3.896,
+        "p95_ms": 5.484,
+        "p99_ms": 5.969,
+        "max_ms": 15.049,
+        "mean_ms": 4.013
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 1.198839335,
+        "window_s": 1.204358778,
         "valid": true,
         "refusal": null,
-        "samples": 13,
-        "largest_gap_ms": 100.504,
-        "pkg_j": 55.576,
-        "cpu_p_j": 30.844,
-        "cpu_e_j": 2.252,
-        "rest_j": 22.48,
-        "pkg_mean_w": 46.35817192301252,
-        "pkg_edge_sd_j": 3.785128887319943,
-        "sys_total_mean_w": 53.71861538461538,
-        "nvme_temp_k": 317.0,
+        "samples": 14,
+        "largest_gap_ms": 102.271,
+        "pkg_j": 28.577,
+        "cpu_p_j": 8.286,
+        "cpu_e_j": 0.616,
+        "rest_j": 19.675000000000004,
+        "pkg_mean_w": 23.727979172000524,
+        "pkg_edge_sd_j": 1.9373813866262726,
+        "sys_total_mean_w": 26.009285714285713,
+        "nvme_temp_k": 311.0,
         "loadavg_start": [
-          6.01,
-          7.09,
-          6.79
+          2.4,
+          2.67,
+          3.45
         ],
         "loadavg_end": [
-          6.01,
-          7.09,
-          6.79
+          2.45,
+          2.67,
+          3.44
         ],
-        "machine_busy_cpu_s": 7.459999999962747
+        "machine_busy_cpu_s": 1.470000000204891
       },
-      "pkg_j_per_op": 0.18525333333333333,
-      "pkg_j_per_op_above_idle": -0.00026313536468961727,
+      "pkg_j_per_op": 0.09525666666666667,
+      "pkg_j_per_op_above_idle": -0.0050672356171970875,
       "error": null
     },
     {
@@ -86,42 +86,42 @@
       "n": 300,
       "latency": {
         "n": 300,
-        "min_ms": 2.573,
-        "p50_ms": 3.491,
-        "p95_ms": 4.204,
-        "p99_ms": 4.508,
-        "max_ms": 6.215,
-        "mean_ms": 3.499
+        "min_ms": 2.702,
+        "p50_ms": 4.015,
+        "p95_ms": 5.819,
+        "p99_ms": 6.139,
+        "max_ms": 6.356,
+        "mean_ms": 4.193
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 1.050108853,
+        "window_s": 1.2581522729999999,
         "valid": true,
         "refusal": null,
-        "samples": 12,
-        "largest_gap_ms": 100.232,
-        "pkg_j": 51.1,
-        "cpu_p_j": 29.207,
-        "cpu_e_j": 1.762,
-        "rest_j": 20.131,
-        "pkg_mean_w": 48.6616219394924,
-        "pkg_edge_sd_j": 3.9732047935993164,
-        "sys_total_mean_w": 53.61333333333334,
-        "nvme_temp_k": 317.0,
+        "samples": 14,
+        "largest_gap_ms": 100.592,
+        "pkg_j": 29.932,
+        "cpu_p_j": 7.933,
+        "cpu_e_j": 0.774,
+        "rest_j": 21.224999999999998,
+        "pkg_mean_w": 23.790443050767355,
+        "pkg_edge_sd_j": 1.9424815409707323,
+        "sys_total_mean_w": 24.535071428571428,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.01,
-          7.09,
-          6.79
+          2.45,
+          2.67,
+          3.44
         ],
         "loadavg_end": [
-          6.01,
-          7.09,
-          6.79
+          2.45,
+          2.67,
+          3.44
         ],
-        "machine_busy_cpu_s": 6.580000000074506
+        "machine_busy_cpu_s": 1.4299999997019768
       },
-      "pkg_j_per_op": 0.17033333333333334,
-      "pkg_j_per_op_above_idle": 0.007832420600860056,
+      "pkg_j_per_op": 0.09977333333333332,
+      "pkg_j_per_op_above_idle": -0.0050316035346346525,
       "error": null
     },
     {
@@ -130,42 +130,42 @@
       "n": 300,
       "latency": {
         "n": 300,
-        "min_ms": 0.883,
-        "p50_ms": 1.099,
-        "p95_ms": 1.784,
-        "p99_ms": 1.875,
-        "max_ms": 1.939,
-        "mean_ms": 1.178
+        "min_ms": 0.887,
+        "p50_ms": 1.098,
+        "p95_ms": 1.783,
+        "p99_ms": 2.293,
+        "max_ms": 2.438,
+        "mean_ms": 1.194
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 0.353652759,
+        "window_s": 0.358699478,
         "valid": true,
         "refusal": null,
         "samples": 5,
-        "largest_gap_ms": 100.602,
-        "pkg_j": 14.456,
-        "cpu_p_j": 8.3,
-        "cpu_e_j": 0.702,
-        "rest_j": 5.453999999999999,
-        "pkg_mean_w": 40.87625398675315,
-        "pkg_edge_sd_j": 3.337532162131728,
-        "sys_total_mean_w": 55.6362,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.292,
+        "pkg_j": 6.272,
+        "cpu_p_j": 1.238,
+        "cpu_e_j": 0.185,
+        "rest_j": 4.849000000000001,
+        "pkg_mean_w": 17.485389259473635,
+        "pkg_edge_sd_j": 1.4276760546550606,
+        "sys_total_mean_w": 22.0498,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.01,
-          7.09,
-          6.79
+          2.45,
+          2.67,
+          3.44
         ],
         "loadavg_end": [
-          6.01,
-          7.09,
-          6.79
+          2.45,
+          2.67,
+          3.44
         ],
-        "machine_busy_cpu_s": 2.489999999757856
+        "machine_busy_cpu_s": 0.3899999996647239
       },
-      "pkg_j_per_op": 0.04818666666666666,
-      "pkg_j_per_op_above_idle": -0.006539941878416613,
+      "pkg_j_per_op": 0.020906666666666667,
+      "pkg_j_per_op_above_idle": -0.00897324290637996,
       "error": null
     },
     {
@@ -174,42 +174,42 @@
       "n": 300,
       "latency": {
         "n": 300,
-        "min_ms": 0.498,
-        "p50_ms": 1.584,
-        "p95_ms": 2.194,
-        "p99_ms": 2.294,
-        "max_ms": 2.307,
-        "mean_ms": 1.69
+        "min_ms": 1.479,
+        "p50_ms": 1.683,
+        "p95_ms": 2.459,
+        "p99_ms": 2.516,
+        "max_ms": 2.619,
+        "mean_ms": 1.808
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 0.507343961,
+        "window_s": 0.542651267,
         "valid": true,
         "refusal": null,
         "samples": 7,
-        "largest_gap_ms": 100.699,
-        "pkg_j": 24.894,
-        "cpu_p_j": 14.579,
-        "cpu_e_j": 1.194,
-        "rest_j": 9.120999999999999,
-        "pkg_mean_w": 49.06730327672117,
-        "pkg_edge_sd_j": 4.006328536078665,
-        "sys_total_mean_w": 57.153571428571425,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.315,
+        "pkg_j": 13.749,
+        "cpu_p_j": 3.785,
+        "cpu_e_j": 0.295,
+        "rest_j": 9.669,
+        "pkg_mean_w": 25.336714085291174,
+        "pkg_edge_sd_j": 2.0687340422583604,
+        "sys_total_mean_w": 24.320285714285713,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.01,
-          7.09,
-          6.79
+          2.45,
+          2.67,
+          3.44
         ],
         "loadavg_end": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
-        "machine_busy_cpu_s": 3.8999999999068677
+        "machine_busy_cpu_s": 0.6900000004097819
       },
-      "pkg_j_per_op": 0.08298,
-      "pkg_j_per_op_above_idle": 0.004470180283425975,
+      "pkg_j_per_op": 0.04583,
+      "pkg_j_per_op_above_idle": 0.0006267817570696899,
       "error": null
     },
     {
@@ -218,42 +218,42 @@
       "n": 100,
       "latency": {
         "n": 100,
-        "min_ms": 0.782,
-        "p50_ms": 0.894,
-        "p95_ms": 1.518,
-        "p99_ms": 1.804,
-        "max_ms": 1.807,
-        "mean_ms": 1.022
+        "min_ms": 0.789,
+        "p50_ms": 0.802,
+        "p95_ms": 1.521,
+        "p99_ms": 1.873,
+        "max_ms": 2.408,
+        "mean_ms": 1.03
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 0.102389153,
+        "window_s": 0.103107024,
         "valid": true,
         "refusal": null,
         "samples": 3,
-        "largest_gap_ms": 100.196,
-        "pkg_j": 10.035,
-        "cpu_p_j": 5.752,
-        "cpu_e_j": 0.584,
-        "rest_j": 3.6990000000000003,
-        "pkg_mean_w": 98.00842868580034,
-        "pkg_edge_sd_j": 8.002354692405484,
-        "sys_total_mean_w": 58.53366666666666,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.382,
+        "pkg_j": 2.719,
+        "cpu_p_j": 0.911,
+        "cpu_e_j": 0.144,
+        "rest_j": 1.664,
+        "pkg_mean_w": 26.370657347262778,
+        "pkg_edge_sd_j": 2.1531551560856674,
+        "sys_total_mean_w": 28.605666666666668,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
         "loadavg_end": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
-        "machine_busy_cpu_s": 0.8500000000931323
+        "machine_busy_cpu_s": 0.26000000024214387
       },
-      "pkg_j_per_op": 0.10035,
-      "pkg_j_per_op_above_idle": 0.05281683969322316,
+      "pkg_j_per_op": 0.02719,
+      "pkg_j_per_op_above_idle": 0.0014233451056824631,
       "error": null
     },
     {
@@ -262,42 +262,42 @@
       "n": 100,
       "latency": {
         "n": 100,
-        "min_ms": 0.795,
-        "p50_ms": 0.899,
-        "p95_ms": 1.599,
-        "p99_ms": 2.499,
-        "max_ms": 2.81,
-        "mean_ms": 1.08
+        "min_ms": 0.796,
+        "p50_ms": 0.898,
+        "p95_ms": 1.584,
+        "p99_ms": 1.797,
+        "max_ms": 1.799,
+        "mean_ms": 1.062
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 0.108205796,
+        "window_s": 0.106400504,
         "valid": true,
         "refusal": null,
         "samples": 3,
-        "largest_gap_ms": 100.188,
-        "pkg_j": 5.636,
-        "cpu_p_j": 3.449,
-        "cpu_e_j": 0.353,
-        "rest_j": 1.8340000000000003,
-        "pkg_mean_w": 52.085934472493506,
-        "pkg_edge_sd_j": 4.252798741121653,
-        "sys_total_mean_w": 64.35833333333333,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.328,
+        "pkg_j": 3.141,
+        "cpu_p_j": 1.367,
+        "cpu_e_j": 0.109,
+        "rest_j": 1.665,
+        "pkg_mean_w": 29.520536857607365,
+        "pkg_edge_sd_j": 2.410341741138733,
+        "sys_total_mean_w": 34.956,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
         "loadavg_end": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
-        "machine_busy_cpu_s": 1.0800000000745058
+        "machine_busy_cpu_s": 0.22999999998137355
       },
-      "pkg_j_per_op": 0.05636,
-      "pkg_j_per_op_above_idle": 0.006126520215374836,
+      "pkg_j_per_op": 0.03141,
+      "pkg_j_per_op_above_idle": 0.004820297758672072,
       "error": null
     },
     {
@@ -306,42 +306,42 @@
       "n": 300,
       "latency": {
         "n": 300,
-        "min_ms": 2.579,
-        "p50_ms": 3.588,
-        "p95_ms": 4.503,
-        "p99_ms": 5.207,
-        "max_ms": 8.364,
-        "mean_ms": 3.615
+        "min_ms": 2.581,
+        "p50_ms": 3.197,
+        "p95_ms": 3.882,
+        "p99_ms": 4.121,
+        "max_ms": 7.891,
+        "mean_ms": 3.179
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 1.084920487,
+        "window_s": 0.954116058,
         "valid": true,
         "refusal": null,
-        "samples": 12,
-        "largest_gap_ms": 100.924,
-        "pkg_j": 54.934,
-        "cpu_p_j": 33.521,
-        "cpu_e_j": 1.487,
-        "rest_j": 19.925999999999995,
-        "pkg_mean_w": 50.63412541125698,
-        "pkg_edge_sd_j": 4.134259027655702,
-        "sys_total_mean_w": 58.28125,
-        "nvme_temp_k": 317.0,
+        "samples": 11,
+        "largest_gap_ms": 100.217,
+        "pkg_j": 28.14,
+        "cpu_p_j": 10.664,
+        "cpu_e_j": 0.987,
+        "rest_j": 16.489,
+        "pkg_mean_w": 29.493267369366507,
+        "pkg_edge_sd_j": 2.4081151967475023,
+        "sys_total_mean_w": 32.45909090909091,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
         "loadavg_end": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
-        "machine_busy_cpu_s": 6.890000000130385
+        "machine_busy_cpu_s": 1.8900000001303852
       },
-      "pkg_j_per_op": 0.18311333333333332,
-      "pkg_j_per_op_above_idle": 0.01522543402080423,
+      "pkg_j_per_op": 0.09380000000000001,
+      "pkg_j_per_op_above_idle": 0.01432148585721747,
       "error": null
     },
     {
@@ -350,42 +350,42 @@
       "n": 5,
       "latency": {
         "n": 5,
-        "min_ms": 18.4,
-        "p50_ms": 19.262,
+        "min_ms": 16.798,
+        "p50_ms": 17.604,
         "p95_ms": null,
         "p99_ms": null,
-        "max_ms": 19.587,
-        "mean_ms": 19.109
+        "max_ms": 18.492,
+        "mean_ms": 17.671
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 0.095701801,
+        "window_s": 0.088509861,
         "valid": true,
         "refusal": null,
         "samples": 2,
-        "largest_gap_ms": 95.689,
-        "pkg_j": 5.241,
-        "cpu_p_j": 3.291,
-        "cpu_e_j": 0.113,
-        "rest_j": 1.8369999999999997,
-        "pkg_mean_w": 54.76385966863883,
-        "pkg_edge_sd_j": 4.47145041778494,
-        "sys_total_mean_w": 58.4135,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 88.485,
+        "pkg_j": 2.394,
+        "cpu_p_j": 0.602,
+        "cpu_e_j": 0.099,
+        "rest_j": 1.6930000000000003,
+        "pkg_mean_w": 27.04783368714137,
+        "pkg_edge_sd_j": 2.20844637270527,
+        "sys_total_mean_w": 27.8115,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
         "loadavg_end": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
-        "machine_busy_cpu_s": 0.6599999996833503
+        "machine_busy_cpu_s": 0.19999999972060323
       },
-      "pkg_j_per_op": 1.0482,
-      "pkg_j_per_op_above_idle": 0.15962754573225996,
+      "pkg_j_per_op": 0.4788,
+      "pkg_j_per_op_above_idle": 0.03642411625205781,
       "error": null
     },
     {
@@ -394,42 +394,42 @@
       "n": 100,
       "latency": {
         "n": 100,
-        "min_ms": 2.597,
-        "p50_ms": 3.806,
-        "p95_ms": 4.435,
-        "p99_ms": 5.219,
-        "max_ms": 5.399,
-        "mean_ms": 3.749
+        "min_ms": 2.721,
+        "p50_ms": 3.782,
+        "p95_ms": 4.603,
+        "p99_ms": 4.86,
+        "max_ms": 4.968,
+        "mean_ms": 3.771
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 0.375082488,
+        "window_s": 0.377314542,
         "valid": true,
         "refusal": null,
         "samples": 5,
-        "largest_gap_ms": 100.355,
-        "pkg_j": 14.969,
-        "cpu_p_j": 9.296,
-        "cpu_e_j": 0.298,
-        "rest_j": 5.375,
-        "pkg_mean_w": 39.908554728366845,
-        "pkg_edge_sd_j": 3.2585198485478566,
-        "sys_total_mean_w": 59.0812,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.352,
+        "pkg_j": 9.44,
+        "cpu_p_j": 2.889,
+        "cpu_e_j": 0.162,
+        "rest_j": 6.389,
+        "pkg_mean_w": 25.018913795270578,
+        "pkg_edge_sd_j": 2.0427857572363943,
+        "sys_total_mean_w": 26.7194,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
         "loadavg_end": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
-        "machine_busy_cpu_s": 2.349999999627471
+        "machine_busy_cpu_s": 0.4299999997019768
       },
-      "pkg_j_per_op": 0.14969,
-      "pkg_j_per_op_above_idle": -0.024438367194996768,
+      "pkg_j_per_op": 0.0944,
+      "pkg_j_per_op_above_idle": 0.00010832894642096136,
       "error": null
     },
     {
@@ -438,42 +438,42 @@
       "n": 100,
       "latency": {
         "n": 100,
-        "min_ms": 2.92,
-        "p50_ms": 4.02,
-        "p95_ms": 5.087,
-        "p99_ms": 5.89,
-        "max_ms": 6.449,
-        "mean_ms": 4.07
+        "min_ms": 2.758,
+        "p50_ms": 3.756,
+        "p95_ms": 4.902,
+        "p99_ms": 6.782,
+        "max_ms": 6.831,
+        "mean_ms": 3.833
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 0.40719812,
+        "window_s": 0.383482634,
         "valid": true,
         "refusal": null,
-        "samples": 6,
-        "largest_gap_ms": 100.209,
-        "pkg_j": 24.109,
-        "cpu_p_j": 14.358,
-        "cpu_e_j": 0.654,
-        "rest_j": 9.097000000000001,
-        "pkg_mean_w": 59.20705134886183,
-        "pkg_edge_sd_j": 4.8342354993158,
-        "sys_total_mean_w": 56.49216666666666,
-        "nvme_temp_k": 317.0,
+        "samples": 5,
+        "largest_gap_ms": 100.365,
+        "pkg_j": 7.549,
+        "cpu_p_j": 2.39,
+        "cpu_e_j": 0.238,
+        "rest_j": 4.921000000000001,
+        "pkg_mean_w": 19.685376417853647,
+        "pkg_edge_sd_j": 1.607304253945279,
+        "sys_total_mean_w": 27.8932,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
         "loadavg_end": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
-        "machine_busy_cpu_s": 2.5700000002980232
+        "machine_busy_cpu_s": 0.6400000001303852
       },
-      "pkg_j_per_op": 0.24109000000000003,
-      "pkg_j_per_op_above_idle": 0.05205226555777689,
+      "pkg_j_per_op": 0.07549,
+      "pkg_j_per_op_above_idle": -0.020343089782921854,
       "error": null
     },
     {
@@ -482,42 +482,42 @@
       "n": 300,
       "latency": {
         "n": 300,
-        "min_ms": 5.676,
-        "p50_ms": 6.291,
-        "p95_ms": 7.205,
-        "p99_ms": 7.831,
-        "max_ms": 9.292,
-        "mean_ms": 6.309
+        "min_ms": 5.598,
+        "p50_ms": 6.501,
+        "p95_ms": 7.395,
+        "p99_ms": 21.491,
+        "max_ms": 22.962,
+        "mean_ms": 6.958
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 1.893009063,
+        "window_s": 2.08782731,
         "valid": true,
         "refusal": null,
-        "samples": 20,
-        "largest_gap_ms": 100.243,
-        "pkg_j": 77.619,
-        "cpu_p_j": 42.997,
-        "cpu_e_j": 2.174,
-        "rest_j": 32.448,
-        "pkg_mean_w": 41.00297326468743,
-        "pkg_edge_sd_j": 3.3478787478488248,
-        "sys_total_mean_w": 49.07745,
-        "nvme_temp_k": 317.0,
+        "samples": 22,
+        "largest_gap_ms": 100.37,
+        "pkg_j": 49.719,
+        "cpu_p_j": 15.21,
+        "cpu_e_j": 0.626,
+        "rest_j": 33.883,
+        "pkg_mean_w": 23.813751147837987,
+        "pkg_edge_sd_j": 1.9443846391273427,
+        "sys_total_mean_w": 26.236272727272727,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.49,
-          7.17,
-          6.82
+          2.45,
+          2.67,
+          3.44
         ],
         "loadavg_end": [
-          6.49,
-          7.17,
-          6.82
+          2.5,
+          2.68,
+          3.44
         ],
-        "machine_busy_cpu_s": 9.5
+        "machine_busy_cpu_s": 2.4399999999441206
       },
-      "pkg_j_per_op": 0.25873,
-      "pkg_j_per_op_above_idle": -0.03420696521987518,
+      "pkg_j_per_op": 0.16573000000000002,
+      "pkg_j_per_op_above_idle": -0.008187429639909283,
       "error": null
     },
     {
@@ -526,42 +526,42 @@
       "n": 30,
       "latency": {
         "n": 30,
-        "min_ms": 5.953,
-        "p50_ms": 6.764,
-        "p95_ms": 9.917,
+        "min_ms": 5.971,
+        "p50_ms": 6.851,
+        "p95_ms": 7.834,
         "p99_ms": null,
-        "max_ms": 10.344,
-        "mean_ms": 7.129
+        "max_ms": 7.909,
+        "mean_ms": 6.91
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 0.231481027,
+        "window_s": 0.224454307,
         "valid": true,
         "refusal": null,
         "samples": 4,
-        "largest_gap_ms": 100.291,
-        "pkg_j": 8.381,
-        "cpu_p_j": 4.447,
-        "cpu_e_j": 0.22,
-        "rest_j": 3.714,
-        "pkg_mean_w": 36.20599108539466,
-        "pkg_edge_sd_j": 2.9562067930324467,
-        "sys_total_mean_w": 48.243,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.344,
+        "pkg_j": 8.223,
+        "cpu_p_j": 3.169,
+        "cpu_e_j": 0.171,
+        "rest_j": 4.883,
+        "pkg_mean_w": 36.635518871999196,
+        "pkg_edge_sd_j": 2.9912775899500526,
+        "sys_total_mean_w": 30.36525,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.49,
-          7.17,
-          6.82
+          2.5,
+          2.68,
+          3.44
         ],
         "loadavg_end": [
-          6.49,
-          7.17,
-          6.82
+          2.5,
+          2.68,
+          3.44
         ],
-        "machine_busy_cpu_s": 0.8900000001303852
+        "machine_busy_cpu_s": 0.35999999986961484
       },
-      "pkg_j_per_op": 0.27936666666666665,
-      "pkg_j_per_op_above_idle": -0.07884265668383642,
+      "pkg_j_per_op": 0.2741,
+      "pkg_j_per_op_above_idle": 0.08712804136110715,
       "error": null
     },
     {
@@ -570,42 +570,42 @@
       "n": 30,
       "latency": {
         "n": 30,
-        "min_ms": 11.056,
-        "p50_ms": 12.033,
-        "p95_ms": 16.667,
+        "min_ms": 11.17,
+        "p50_ms": 12.401,
+        "p95_ms": 13.064,
         "p99_ms": null,
-        "max_ms": 19.703,
-        "mean_ms": 13.009
+        "max_ms": 14.1,
+        "mean_ms": 12.297
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 0.397875602,
+        "window_s": 0.376731417,
         "valid": true,
         "refusal": null,
         "samples": 5,
-        "largest_gap_ms": 100.201,
-        "pkg_j": 16.785,
-        "cpu_p_j": 8.874,
-        "cpu_e_j": 0.596,
-        "rest_j": 7.3149999999999995,
-        "pkg_mean_w": 42.18655256976526,
-        "pkg_edge_sd_j": 3.444517593434111,
-        "sys_total_mean_w": 47.5682,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.206,
+        "pkg_j": 8.154,
+        "cpu_p_j": 3.045,
+        "cpu_e_j": 0.264,
+        "rest_j": 4.845,
+        "pkg_mean_w": 21.64406691889994,
+        "pkg_edge_sd_j": 1.7672306636652704,
+        "sys_total_mean_w": 31.3502,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          6.49,
-          7.17,
-          6.82
+          2.5,
+          2.68,
+          3.44
         ],
         "loadavg_end": [
-          8.37,
-          7.55,
-          6.95
+          2.5,
+          2.68,
+          3.44
         ],
-        "machine_busy_cpu_s": 1.8900000001303852
+        "machine_busy_cpu_s": 0.7099999999627471
       },
-      "pkg_j_per_op": 0.5595,
-      "pkg_j_per_op_above_idle": -0.05619948957455622,
+      "pkg_j_per_op": 0.2718,
+      "pkg_j_per_op_above_idle": -0.0420198231023275,
       "error": null
     }
   ],
@@ -613,15 +613,15 @@
     {
       "name": "sequential_buffered_1m_writes_then_fsync",
       "bytes": 268435456,
-      "seconds": 0.062433,
-      "seconds_per_gib": 0.249733328,
+      "seconds": 0.059929,
+      "seconds_per_gib": 0.239714832,
       "error": null
     },
     {
       "name": "sequential_odirect_1m_writes_then_fsync",
       "bytes": 268435456,
-      "seconds": 0.038177,
-      "seconds_per_gib": 0.152707472,
+      "seconds": 0.046558,
+      "seconds_per_gib": 0.186233936,
       "error": null
     }
   ],
@@ -629,441 +629,441 @@
     {
       "name": "sha256_request_sized",
       "description": "SHA-256 over a buffer the size of a typical JSON submit request",
-      "n": 134865,
+      "n": 135380,
       "latency": {
-        "n": 134865,
+        "n": 135380,
         "min_ms": 0.02,
         "p50_ms": 0.02,
         "p95_ms": 0.02,
         "p99_ms": 0.022,
-        "max_ms": 0.057,
+        "max_ms": 0.164,
         "mean_ms": 0.02
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 2.817642006,
+        "window_s": 2.831829434,
         "valid": true,
         "refusal": null,
         "samples": 30,
-        "largest_gap_ms": 101.939,
-        "pkg_j": 149.202,
-        "cpu_p_j": 84.309,
-        "cpu_e_j": 3.9,
-        "rest_j": 60.993,
-        "pkg_mean_w": 52.95278806969916,
-        "pkg_edge_sd_j": 4.323577040949985,
-        "sys_total_mean_w": 60.7138,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 103.225,
+        "pkg_j": 83.235,
+        "cpu_p_j": 34.799,
+        "cpu_e_j": 2.22,
+        "rest_j": 46.216,
+        "pkg_mean_w": 29.392660094795808,
+        "pkg_edge_sd_j": 2.399900647177159,
+        "sys_total_mean_w": 34.34296666666666,
+        "nvme_temp_k": 313.0,
         "loadavg_start": [
-          8.37,
-          7.55,
-          6.95
+          2.5,
+          2.68,
+          3.44
         ],
         "loadavg_end": [
-          8.37,
-          7.55,
-          6.95
+          2.46,
+          2.67,
+          3.43
         ],
-        "machine_busy_cpu_s": 19.979999999981374
+        "machine_busy_cpu_s": 8.279999999795109
       },
-      "pkg_j_per_op": 0.0011063063063063063,
-      "pkg_j_per_op_above_idle": 0.00013640108776224002,
+      "pkg_j_per_op": 0.0006148249372137686,
+      "pkg_j_per_op_above_idle": 0.00009208898499015853,
       "error": null
     },
     {
       "name": "sha256_content_12k",
       "description": "SHA-256 over 12 KB (typical content per proposal)",
-      "n": 533493,
+      "n": 536223,
       "latency": {
-        "n": 533493,
+        "n": 536223,
         "min_ms": 0.005,
         "p50_ms": 0.005,
         "p95_ms": 0.005,
         "p99_ms": 0.005,
-        "max_ms": 0.267,
+        "max_ms": 0.644,
         "mean_ms": 0.005
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 3.021454707,
+        "window_s": 3.039621155,
         "valid": true,
         "refusal": null,
         "samples": 32,
-        "largest_gap_ms": 101.383,
-        "pkg_j": 156.388,
-        "cpu_p_j": 81.622,
-        "cpu_e_j": 6.945,
-        "rest_j": 67.821,
-        "pkg_mean_w": 51.75917402888277,
-        "pkg_edge_sd_j": 4.226118862622594,
-        "sys_total_mean_w": 59.26821875,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.827,
+        "pkg_j": 86.992,
+        "cpu_p_j": 34.15,
+        "cpu_e_j": 3.205,
+        "rest_j": 49.63700000000001,
+        "pkg_mean_w": 28.619356019714242,
+        "pkg_edge_sd_j": 2.3367606338450018,
+        "sys_total_mean_w": 31.72425,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          8.37,
-          7.55,
-          6.95
+          2.46,
+          2.67,
+          3.43
         ],
         "loadavg_end": [
-          8.66,
-          7.62,
-          6.97
+          2.46,
+          2.67,
+          3.43
         ],
-        "machine_busy_cpu_s": 22.25
+        "machine_busy_cpu_s": 9.120000000111759
       },
-      "pkg_j_per_op": 0.00029313974128995134,
-      "pkg_j_per_op_above_idle": 0.000030215818961079705,
+      "pkg_j_per_op": 0.0001622310120975788,
+      "pkg_j_per_op_above_idle": 0.000020572130326605965,
       "error": null
     },
     {
       "name": "ed25519_verify",
       "description": "one Ed25519 signature verification (256-byte message)",
-      "n": 125459,
+      "n": 126060,
       "latency": {
-        "n": 125459,
+        "n": 126060,
         "min_ms": 0.023,
         "p50_ms": 0.023,
         "p95_ms": 0.023,
         "p99_ms": 0.025,
-        "max_ms": 0.831,
+        "max_ms": 0.251,
         "mean_ms": 0.023
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 2.995199909,
+        "window_s": 3.001871645,
         "valid": true,
         "refusal": null,
-        "samples": 31,
-        "largest_gap_ms": 100.793,
-        "pkg_j": 137.643,
-        "cpu_p_j": 81.353,
-        "cpu_e_j": 3.483,
-        "rest_j": 52.80700000000001,
-        "pkg_mean_w": 45.95452863977768,
-        "pkg_edge_sd_j": 3.752171551252374,
-        "sys_total_mean_w": 53.46883870967742,
-        "nvme_temp_k": 317.0,
+        "samples": 32,
+        "largest_gap_ms": 100.403,
+        "pkg_j": 87.951,
+        "cpu_p_j": 38.051,
+        "cpu_e_j": 1.929,
+        "rest_j": 47.97099999999999,
+        "pkg_mean_w": 29.29872106507072,
+        "pkg_edge_sd_j": 2.3922305575185385,
+        "sys_total_mean_w": 33.78,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          8.66,
-          7.62,
-          6.97
+          2.46,
+          2.67,
+          3.43
         ],
         "loadavg_end": [
-          8.66,
-          7.62,
-          6.97
+          2.42,
+          2.66,
+          3.43
         ],
-        "machine_busy_cpu_s": 17.770000000018626
+        "machine_busy_cpu_s": 8.09000000031665
       },
-      "pkg_j_per_op": 0.0010971153922795494,
-      "pkg_j_per_op_above_idle": -0.000011208592782523034,
+      "pkg_j_per_op": 0.0006976915754402665,
+      "pkg_j_per_op_above_idle": 0.00010259890027583536,
       "error": null
     },
     {
       "name": "ed25519_sign",
       "description": "one Ed25519 signature (256-byte message)",
-      "n": 301896,
+      "n": 302949,
       "latency": {
-        "n": 301896,
+        "n": 302949,
         "min_ms": 0.009,
         "p50_ms": 0.009,
         "p95_ms": 0.009,
         "p99_ms": 0.01,
-        "max_ms": 1.045,
+        "max_ms": 0.089,
         "mean_ms": 0.009
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 2.994044796,
+        "window_s": 3.000233008,
         "valid": true,
         "refusal": null,
         "samples": 31,
-        "largest_gap_ms": 101.033,
-        "pkg_j": 136.057,
-        "cpu_p_j": 76.241,
-        "cpu_e_j": 5.064,
-        "rest_j": 54.75199999999999,
-        "pkg_mean_w": 45.44253986505818,
-        "pkg_edge_sd_j": 3.7103678428491893,
-        "sys_total_mean_w": 51.944741935483876,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.222,
+        "pkg_j": 92.673,
+        "cpu_p_j": 41.489,
+        "cpu_e_j": 1.976,
+        "rest_j": 49.208000000000006,
+        "pkg_mean_w": 30.88860090296027,
+        "pkg_edge_sd_j": 2.522043702690813,
+        "sys_total_mean_w": 36.21709677419355,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          8.66,
-          7.62,
-          6.97
+          2.42,
+          2.66,
+          3.43
         ],
         "loadavg_end": [
-          8.45,
-          7.6,
-          6.97
+          2.42,
+          2.66,
+          3.43
         ],
-        "machine_busy_cpu_s": 18.610000000335276
+        "machine_busy_cpu_s": 7.84000000031665
       },
-      "pkg_j_per_op": 0.0004506750669104592,
-      "pkg_j_per_op_above_idle": -9.733795259028907e-6,
+      "pkg_j_per_op": 0.0003059029737678619,
+      "pkg_j_per_op_above_idle": 0.000058414344462286216,
       "error": null
     },
     {
       "name": "json_encode_submit_request",
       "description": "serde_json encode of a typical signed submit request",
-      "n": 80421,
+      "n": 80605,
       "latency": {
-        "n": 80421,
+        "n": 80605,
         "min_ms": 0.036,
         "p50_ms": 0.037,
         "p95_ms": 0.037,
         "p99_ms": 0.039,
-        "max_ms": 0.087,
+        "max_ms": 0.088,
         "mean_ms": 0.037
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 2.997359423,
+        "window_s": 2.997249913,
         "valid": true,
         "refusal": null,
         "samples": 31,
-        "largest_gap_ms": 103.75,
-        "pkg_j": 164.29,
-        "cpu_p_j": 102.716,
-        "cpu_e_j": 6.923,
-        "rest_j": 54.650999999999996,
-        "pkg_mean_w": 54.811578064123275,
-        "pkg_edge_sd_j": 4.47534660846098,
-        "sys_total_mean_w": 62.773967741935486,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.348,
+        "pkg_j": 89.355,
+        "cpu_p_j": 38.701,
+        "cpu_e_j": 2.293,
+        "rest_j": 48.361000000000004,
+        "pkg_mean_w": 29.812328832654135,
+        "pkg_edge_sd_j": 2.4341664561355167,
+        "sys_total_mean_w": 33.60883870967742,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          8.45,
-          7.6,
-          6.97
+          2.42,
+          2.66,
+          3.43
         ],
         "loadavg_end": [
-          8.66,
-          7.65,
-          6.99
+          2.39,
+          2.64,
+          3.42
         ],
-        "machine_busy_cpu_s": 25.33999999985099
+        "machine_busy_cpu_s": 7.779999999795109
       },
-      "pkg_j_per_op": 0.002042874373608883,
-      "pkg_j_per_op_above_idle": 0.0003126114800630656,
+      "pkg_j_per_op": 0.001108554059921841,
+      "pkg_j_per_op_above_idle": 0.00017930792619516038,
       "error": null
     },
     {
       "name": "json_decode_submit_request",
       "description": "serde_json decode of a typical signed submit request",
-      "n": 38208,
+      "n": 39127,
       "latency": {
-        "n": 38208,
-        "min_ms": 0.077,
-        "p50_ms": 0.078,
-        "p95_ms": 0.079,
-        "p99_ms": 0.08,
-        "max_ms": 0.132,
-        "mean_ms": 0.078
+        "n": 39127,
+        "min_ms": 0.074,
+        "p50_ms": 0.076,
+        "p95_ms": 0.077,
+        "p99_ms": 0.078,
+        "max_ms": 0.141,
+        "mean_ms": 0.076
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 2.989021067,
+        "window_s": 2.9840555909999997,
         "valid": true,
         "refusal": null,
         "samples": 31,
-        "largest_gap_ms": 102.691,
-        "pkg_j": 217.729,
-        "cpu_p_j": 105.65,
-        "cpu_e_j": 7.296,
-        "rest_j": 104.783,
-        "pkg_mean_w": 72.84291248523343,
-        "pkg_edge_sd_j": 5.947598898901066,
-        "sys_total_mean_w": 83.49651612903226,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.99,
+        "pkg_j": 89.414,
+        "cpu_p_j": 38.961,
+        "cpu_e_j": 2.068,
+        "rest_j": 48.385000000000005,
+        "pkg_mean_w": 29.96391899322361,
+        "pkg_edge_sd_j": 2.446543740916243,
+        "sys_total_mean_w": 33.54854838709677,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          8.66,
-          7.65,
-          6.99
+          2.39,
+          2.64,
+          3.42
         ],
         "loadavg_end": [
-          8.66,
-          7.65,
-          6.99
+          2.35,
+          2.63,
+          3.41
         ],
-        "machine_busy_cpu_s": 26.709999999962747
+        "machine_busy_cpu_s": 7.870000000111759
       },
-      "pkg_j_per_op": 0.005698518634840871,
-      "pkg_j_per_op_above_idle": 0.0020667563818913388,
+      "pkg_j_per_op": 0.0022852250364198638,
+      "pkg_j_per_op_above_idle": 0.00037932486978026404,
       "error": null
     },
     {
       "name": "auth_payload_digest",
       "description": "synapse-auth payload digest: serde_json encode of the payload plus SHA-256",
-      "n": 56334,
+      "n": 56293,
       "latency": {
-        "n": 56334,
+        "n": 56293,
         "min_ms": 0.052,
         "p50_ms": 0.053,
         "p95_ms": 0.054,
         "p99_ms": 0.055,
-        "max_ms": 0.065,
+        "max_ms": 0.087,
         "mean_ms": 0.053
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 3.002737482,
+        "window_s": 2.995106342,
         "valid": true,
         "refusal": null,
-        "samples": 32,
-        "largest_gap_ms": 100.988,
-        "pkg_j": 217.465,
-        "cpu_p_j": 101.722,
-        "cpu_e_j": 9.369,
-        "rest_j": 106.37400000000001,
-        "pkg_mean_w": 72.42224846614147,
-        "pkg_edge_sd_j": 5.913251825570276,
-        "sys_total_mean_w": 84.10471875,
-        "nvme_temp_k": 317.0,
+        "samples": 31,
+        "largest_gap_ms": 102.2,
+        "pkg_j": 89.255,
+        "cpu_p_j": 37.046,
+        "cpu_e_j": 2.059,
+        "rest_j": 50.15,
+        "pkg_mean_w": 29.800277455390596,
+        "pkg_edge_sd_j": 2.433182465302402,
+        "sys_total_mean_w": 32.563645161290324,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          8.66,
-          7.65,
-          6.99
+          2.35,
+          2.63,
+          3.41
         ],
         "loadavg_end": [
-          8.84,
-          7.71,
-          7.01
+          2.35,
+          2.63,
+          3.41
         ],
-        "machine_busy_cpu_s": 30.31000000005588
+        "machine_busy_cpu_s": 7.5799999996088445
       },
-      "pkg_j_per_op": 0.00386027976000284,
-      "pkg_j_per_op_above_idle": 0.0013857680392394445,
+      "pkg_j_per_op": 0.0015855434956388893,
+      "pkg_j_per_op_above_idle": 0.00025592318167441024,
       "error": null
     },
     {
       "name": "envelope_validate",
       "description": "ChangesetEnvelope::validate (canonical bytes, path rules, Ed25519 verify, id digest)",
-      "n": 107409,
+      "n": 107717,
       "latency": {
-        "n": 107409,
+        "n": 107717,
         "min_ms": 0.027,
         "p50_ms": 0.027,
         "p95_ms": 0.027,
         "p99_ms": 0.029,
-        "max_ms": 0.046,
+        "max_ms": 0.062,
         "mean_ms": 0.027
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 2.998208702,
+        "window_s": 2.999099233,
         "valid": true,
         "refusal": null,
         "samples": 31,
-        "largest_gap_ms": 101.985,
-        "pkg_j": 226.607,
-        "cpu_p_j": 117.559,
-        "cpu_e_j": 9.201,
-        "rest_j": 99.84700000000001,
-        "pkg_mean_w": 75.58079590951705,
-        "pkg_edge_sd_j": 6.1711461443916935,
-        "sys_total_mean_w": 88.37251612903225,
-        "nvme_temp_k": 317.0,
+        "largest_gap_ms": 100.31,
+        "pkg_j": 84.736,
+        "cpu_p_j": 33.755,
+        "cpu_e_j": 1.491,
+        "rest_j": 49.49,
+        "pkg_mean_w": 28.253816701903045,
+        "pkg_edge_sd_j": 2.306914473526252,
+        "sys_total_mean_w": 30.801741935483868,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          8.84,
-          7.71,
-          7.01
+          2.35,
+          2.63,
+          3.41
         ],
         "loadavg_end": [
-          8.84,
-          7.71,
-          7.01
+          2.33,
+          2.62,
+          3.4
         ],
-        "machine_busy_cpu_s": 32.99000000022352
+        "machine_busy_cpu_s": 6.819999999832362
       },
-      "pkg_j_per_op": 0.002109758027725796,
-      "pkg_j_per_op_above_idle": 0.0008138805956049731,
+      "pkg_j_per_op": 0.0007866539172089828,
+      "pkg_j_per_op_above_idle": 0.0000908668131142695,
       "error": null
     },
     {
       "name": "blob_digest_12k",
       "description": "BlobDigest::compute over 12 KB of content",
-      "n": 522215,
+      "n": 529784,
       "latency": {
-        "n": 522215,
+        "n": 529784,
         "min_ms": 0.005,
         "p50_ms": 0.005,
         "p95_ms": 0.005,
         "p99_ms": 0.005,
-        "max_ms": 0.034,
+        "max_ms": 0.047,
         "mean_ms": 0.005
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 2.977073533,
+        "window_s": 3.020206937,
         "valid": true,
         "refusal": null,
-        "samples": 31,
-        "largest_gap_ms": 102.653,
-        "pkg_j": 231.906,
-        "cpu_p_j": 113.389,
-        "cpu_e_j": 10.775,
-        "rest_j": 107.742,
-        "pkg_mean_w": 77.89730331796947,
-        "pkg_edge_sd_j": 6.3602881822612085,
-        "sys_total_mean_w": 91.09870967741935,
-        "nvme_temp_k": 317.0,
+        "samples": 32,
+        "largest_gap_ms": 102.19,
+        "pkg_j": 84.124,
+        "cpu_p_j": 32.287,
+        "cpu_e_j": 2.226,
+        "rest_j": 49.611,
+        "pkg_mean_w": 27.853720541268988,
+        "pkg_edge_sd_j": 2.27424675880625,
+        "sys_total_mean_w": 29.9325,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          8.84,
-          7.71,
-          7.01
+          2.33,
+          2.62,
+          3.4
         ],
         "loadavg_end": [
-          9.02,
-          7.76,
-          7.03
+          2.33,
+          2.62,
+          3.4
         ],
-        "machine_busy_cpu_s": 35.15999999968335
+        "machine_busy_cpu_s": 7.620000000111759
       },
-      "pkg_j_per_op": 0.00044408146070105226,
-      "pkg_j_per_op_above_idle": 0.00017942472045065554,
+      "pkg_j_per_op": 0.00015878924240822674,
+      "pkg_j_per_op_above_idle": 0.000016324416544252285,
       "error": null
     },
     {
       "name": "crc32c_request_sized",
       "description": "synapse_store::crc32c over a request-sized buffer",
-      "n": 2054219,
+      "n": 1606784,
       "latency": {
-        "n": 2054219,
+        "n": 1606784,
         "min_ms": 0.001,
         "p50_ms": 0.001,
         "p95_ms": 0.001,
         "p99_ms": 0.001,
-        "max_ms": 0.016,
+        "max_ms": 0.063,
         "mean_ms": 0.001
       },
       "energy": {
         "sensor": "aien_spbm hwmon, SoC package only (GB10 SPBM firmware counters: energy 1 mJ step, update about 0.1 s, sampled at 10 Hz; no published accuracy; not compared with an external meter)",
-        "window_s": 3.070605693,
+        "window_s": 2.40587883,
         "valid": true,
         "refusal": null,
-        "samples": 32,
-        "largest_gap_ms": 102.091,
-        "pkg_j": 230.352,
-        "cpu_p_j": 115.899,
-        "cpu_e_j": 10.511,
-        "rest_j": 103.94200000000001,
-        "pkg_mean_w": 75.01842406048063,
-        "pkg_edge_sd_j": 6.125228675196869,
-        "sys_total_mean_w": 90.6725625,
-        "nvme_temp_k": 317.0,
+        "samples": 26,
+        "largest_gap_ms": 100.352,
+        "pkg_j": 70.767,
+        "cpu_p_j": 29.305,
+        "cpu_e_j": 1.885,
+        "rest_j": 39.577,
+        "pkg_mean_w": 29.4141995505235,
+        "pkg_edge_sd_j": 2.401659336372829,
+        "sys_total_mean_w": 32.63584615384615,
+        "nvme_temp_k": 312.0,
         "loadavg_start": [
-          9.02,
-          7.76,
-          7.03
+          2.33,
+          2.62,
+          3.4
         ],
         "loadavg_end": [
-          9.18,
-          7.82,
-          7.05
+          2.3,
+          2.61,
+          3.39
         ],
-        "machine_busy_cpu_s": 35.77000000001863
+        "machine_busy_cpu_s": 6.350000000093132
       },
-      "pkg_j_per_op": 0.0001121360478118448,
-      "pkg_j_per_op_above_idle": 0.00004274234712793087,
+      "pkg_j_per_op": 0.000044042634230861144,
+      "pkg_j_per_op_above_idle": 6.624162905206959e-6,
       "error": null
     }
   ],

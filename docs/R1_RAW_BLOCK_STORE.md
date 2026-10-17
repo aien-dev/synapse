@@ -238,43 +238,54 @@ recorded mutation of the R1 code (`mutation-M*.txt`, each with its diff and the 
 This section is a performance report. It is not acceptance (section 5 is).
 
 **Method.** The A2 harness (`synapse-bench segments`, `docs/A2_SEGMENT_STORE.md` section 4) unchanged,
-plus `--block-device <file>`: the same workload (N agent threads, 4,000 changesets of one 11,949-byte
+plus `--block-device <path>`: the same workload (N agent threads, 4,000 changesets of one 11,949-byte
 blob each, a checkpoint every 1,000, 16 MiB segments) on the R1 store. Both arms on the same NVMe
-partition (`/dev/nvme0n1p2`, ext4): A2 as files in a directory; R1 on a 512 MiB preallocated regular
-file (written with zeros and synced beforehand) opened with `O_DIRECT`, its first MiB zeroed before each
-cell and formatted by the store. (That was the bench at `57d1135`; review of PR #103 replaced it, see
-below.) The two arms ran interleaved (R1, A2, R1, A2, R1, A2), one repetition
-per invocation, so both saw the same host conditions; the figures are the median and range of the three.
-Agents 1, 4, 8, 32. The bounds are those of A2 (ADR section 6): the flush bound is the cheapest
-`overwrite_*_fdatasync` p50 measured by `synapse-bench floor` in the same session, 0.894 ms (64 KiB);
-fraction of bound = bound / measured, so 1.0 is at the bound.
+partition (`/dev/nvme0n1p2`, ext4): A2 as files in a directory; R1 on a 512 MiB regular file that the
+bench creates for each cell (`O_CREAT | O_EXCL | O_NOFOLLOW`, written with zeros and synced), the store
+opens with `O_DIRECT` and formats, and the bench removes after the cell. The two arms ran interleaved
+(R1, A2, R1, A2, R1, A2), one repetition per invocation, so both saw the same host conditions; the
+figures are the median and range of the three. Agents 1, 4, 8, 32. The bounds are those of A2 (ADR
+section 6): the flush bound is the cheapest `overwrite_*_fdatasync` p50 measured by `synapse-bench
+floor` in the same session, 0.802 ms (64 KiB); fraction of bound = bound / measured, so 1.0 is at the
+bound.
 
-**Results** (run 2026-10-17T04:55:45Z to 05:00:32Z, branch commit `57d1135`; raw samples
+**Results** (run 2026-10-17T05:45:44Z to 05:50:31Z, branch commit `222c24d`; raw samples
 `evidence/r1-raw-block-store/measurement/raw-{r1,a2}-{0,1,2}.json`, per-invocation reports
 `report-*.json`, aggregate `summary.json`):
 
 | Agents | R1 interval per change (ms) median [range] | A2 on ext4 (ms) median [range] | Interval bound (ms) | R1 fraction | A2 fraction | R1 / A2 median |
 | ---: | :--- | :--- | ---: | ---: | ---: | ---: |
-| 1 | 1.3633 [1.2859, 1.4315] | 1.3897 [1.3807, 1.5059] | 0.8940 | 0.656 | 0.643 | 0.981 (calc:5f2162e7) |
-| 4 | 0.5950 [0.5871, 0.6305] | 0.5993 [0.5942, 0.6589] | 0.2235 | 0.376 | 0.373 | 0.993 (calc:b0f09ec1) |
-| 8 | 0.3106 [0.3071, 0.3379] | 0.3271 [0.3213, 0.3404] | 0.1118 | 0.360 | 0.342 | 0.950 (calc:ae089262) |
-| 32 | 0.1124 [0.1093, 0.1398] | 0.1221 [0.1208, 0.1304] | 0.0279 | 0.249 | 0.229 | 0.921 (calc:65de36a4) |
+| 1 | 1.2945 [1.2396, 1.4545] | 1.3858 [1.3796, 1.4494] | 0.8020 | 0.620 | 0.579 | 0.934 (calc:acce0c48) |
+| 4 | 0.5817 [0.5696, 0.6484] | 0.6058 [0.5701, 0.6584] | 0.2005 | 0.345 | 0.331 | 0.960 (calc:aa16356c) |
+| 8 | 0.3271 [0.3170, 0.3271] | 0.3468 [0.3416, 0.3833] | 0.1003 | 0.307 | 0.289 | 0.943 (calc:7358d145) |
+| 32 | 0.1068 [0.1059, 0.1139] | 0.1264 [0.1242, 0.1710] | 0.0251 | 0.235 | 0.198 | 0.845 (calc:c585502f) |
 
 | Agents | R1 latency p50 / p99 (ms) | A2 latency p50 / p99 (ms) | R1 package energy per change (mJ) median [range] | A2 package energy per change (mJ) median [range] | Changes per flush R1 / A2 |
 | ---: | :--- | :--- | :--- | :--- | :--- |
-| 1 | 1.194 / 2.372 | 1.096 / 4.348 | 56.681 [40.692, 90.248] | 110.925 [43.856, 147.317] | 1.00 / 1.00 |
-| 4 | 2.205 / 6.209 | 2.333 / 4.810 | 20.898 [19.154, 44.932] | 26.318 [19.413, 43.467] | 2.25 / 2.19 |
-| 8 | 2.291 / 8.329 | 2.296 / 9.441 | 14.919 [10.854, 26.992] | 12.589 [11.951, 17.155] | 4.02 / 4.04 |
-| 32 | 2.651 / 19.744 | 2.618 / 37.569 | 4.470 [3.433, 11.490] | 4.966 [4.633, 6.851] | 15.81 / 15.94 |
+| 1 | 1.198 / 1.929 | 1.204 / 2.299 | 34.397 [27.943, 37.420] | 37.937 [33.608, 45.635] | 1.00 / 1.00 |
+| 4 | 2.220 / 4.900 | 2.112 / 3.712 | 14.639 [12.228, 17.533] | 16.597 [15.289, 19.674] | 2.31 / 2.19 |
+| 8 | 2.296 / 9.524 | 2.392 / 12.194 | 8.049 [7.626, 11.075] | 9.432 [8.813, 10.506] | 4.02 / 4.09 |
+| 32 | 2.570 / 18.504 | 2.638 / 40.349 | 3.384 [2.774, 3.992] | 4.568 [3.310, 4.648] | 15.94 / 15.81 |
 
-Latency fraction (p50, 1 agent): R1 0.749, A2 0.815. Every cell wrote 4 segments and no blob files.
-Checkpoints (48 per arm): R1 median 29.4 ms [13.4, 55.7], A2 median 39.4 ms [30.7, 60.0].
+Latency fraction (p50, 1 agent): R1 0.669, A2 0.666. Every cell accepted 4,000 changes, wrote 4
+segments and no blob files. Checkpoints (48 per arm): R1 median 29.3 ms [12.1, 131.1], A2 median
+41.7 ms [30.6, 82.9].
 
-**Is R1 lower?** The R1 median is lower than A2's at every agent count (0.92 to 0.99 of A2), but the
-ranges of the three samples overlap at every agent count, so on this run the file-backed R1 is not
-shown to be lower than A2 on ext4; the difference is inside the spread. Energy does not separate the
-arms: the idle window of each invocation read 36.0 to 72.7 W because other sessions' workloads
-(including a GPU test) were running, and package energy per change follows that load, not the store.
+**Is R1 lower?** The R1 median is lower than A2's at every agent count (0.85 to 0.96 of A2). At 8 and
+32 agents all three R1 samples are below all three A2 samples; at 1 and 4 agents the ranges overlap,
+so there the difference is inside the spread. Three samples per arm is a small count; this is the
+file-backed R1 format, not R1 on a raw partition. Package energy per change is also lower for R1 at
+every agent count, but the ranges overlap at 1, 4 and 8 agents, the idle window read 22.6 to 34.4 W
+from other sessions' load, and the meter covers the SoC package only (NVMe unmeasured).
+
+**Did R1 get slower after the review changes?** Not measurably. The rotation order change adds one
+flush per new segment (4 per 4,000-change cell). Against the previous run at `57d1135`, R1's median
+interval is 0.950 of it at 1 agent (calc:54ddff70), 0.978 at 4 (calc:cda8bb34), 1.053 at 8
+(calc:7bfbaa0f) and 0.950 at 32 (calc:64f82441). The two sessions ran under different host load (load
+average 2.4 now, 6 to 8.5 then) and a different flush floor (0.802 vs 0.894 ms), and A2, whose code did
+not change, moved the same way at 8 agents (1.060 of its previous median, calc:b2b6a60a), so the
+cross-session differences are host conditions, not the store. The previous run is kept in
+`evidence/r1-raw-block-store/measurement-57d1135/`.
 
 **This does not decide adoption.** Issue #47 keeps the layer only if it is lower. The R1 arm here is
 the R1 format on a regular file: its `fdatasync` still goes through ext4's block mapping and journal
@@ -291,16 +302,10 @@ target/release/synapse-bench segments --dir <dir> --out raw-a2.json --reps 1
 target/release/synapse-bench segments-report --raw raw-<arm>.json --floor floor.json > report-<arm>.json
 ```
 
-The figures above were taken with the bench and store at `57d1135`. Review changes made after it: the
-bench no longer reuses a file (it blanked the first MiB of whatever path it was given before the store's
-signature check could see it); it now creates a new device file per cell with `O_CREAT | O_EXCL |
-O_NOFOLLOW`, refuses a path that exists, and removes only the file it created. Segment rotation gained
-one flush (zero, header, and commit are each flushed; each cell wrote 4 segments). The measurement was
-not rerun after these changes, so `measurement/run.sh` documents the old invocation; with the current
-bench, `--block-device` names a path that must not exist (`--block-device-mib`, `--block-meta-mib` set
-its size).
-`measurement/run.sh` is the exact sequence; `manifest.json` records the binary's SHA-256, the host, and
-the run window; `SHA256SUMS` seals the files.
+`--block-device` names an absolute path that must not exist; the bench creates the device file there
+for each cell (`--block-device-mib`, `--block-meta-mib` set its size) and removes it afterwards. It
+refuses an existing path or a symlink. `measurement/run.sh` is the exact sequence; `manifest.json`
+records the binary's SHA-256, the host, and the run window; `SHA256SUMS` seals the files.
 
 
 ## 7. Limits
@@ -316,8 +321,6 @@ the run window; `SHA256SUMS` seals the files.
 - 9 of the 11 A2 suite tests touch the device. The other two do not: `a2_segment_index_round_trips_and_refuses_damage`
   is a pure codec test, and the pre-A2 upgrade test copies directory fixtures (there are no pre-A2 raw
   block stores), so in the R1 run it exercises the directory store again.
-- The measurement in section 6 predates the review changes to the bench and the rotation order and was
-  not rerun.
 - A crash during format may leave a device that refuses to open; nothing was acknowledged by then, and
   the device is reformatted only through an explicit `FormatIfBlank` (and override, if the label area is
   no longer zero).
