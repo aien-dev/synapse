@@ -1,0 +1,105 @@
+# Red (2026-10-17, H1 cut 1 working tree on base 3d78efe, before the first commit)
+# Command: cargo test --locked --no-fail-fast -p synapse-git --test h1_git_bridge
+# Each run applies one stub that removes one behaviour under test; every failure is an
+# assertion or a typed refusal from the stubbed path (no compile error). Restored after each run.
+#
+# Red 1 stub: inflate refuses dynamic-Huffman DEFLATE blocks (inflate.rs run).
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ignored
+test h1_native_reader_reads_every_loose_object_exactly_as_git ... FAILED
+test h1_damaged_or_incomplete_repositories_are_refused_typed ... FAILED
+test h1_export_is_deterministic_and_never_overwrites_a_repository ... FAILED
+test h1_native_indexer_resolves_reference_deltas_from_git_pack_objects ... FAILED
+test h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean ... FAILED
+test h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx ... FAILED
+thread 'h1_native_reader_reads_every_loose_object_exactly_as_git' (758242) panicked at crates/synapse-git/tests/h1_git_bridge.rs:260:10:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: GitObjectCorrupt, message: "RED STUB: dynamic Huffman blocks unimplemented" }
+thread 'h1_damaged_or_incomplete_repositories_are_refused_typed' (758238) panicked at crates/synapse-git/tests/h1_git_bridge.rs:443:5:
+thread 'h1_export_is_deterministic_and_never_overwrites_a_repository' (758239) panicked at crates/synapse-git/tests/h1_git_bridge.rs:398:10:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: GitObjectCorrupt, message: "RED STUB: dynamic Huffman blocks unimplemented" }
+thread 'h1_native_indexer_resolves_reference_deltas_from_git_pack_objects' (758241) panicked at crates/synapse-git/tests/h1_git_bridge.rs:317:60:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: GitObjectCorrupt, message: "RED STUB: dynamic Huffman blocks unimplemented" }
+thread 'h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean' (758240) panicked at crates/synapse-git/tests/h1_git_bridge.rs:340:10:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: GitObjectCorrupt, message: "RED STUB: dynamic Huffman blocks unimplemented" }
+thread 'h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx' (758243) panicked at crates/synapse-git/tests/h1_git_bridge.rs:291:10:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: GitObjectCorrupt, message: "RED STUB: dynamic Huffman blocks unimplemented" }
+test result: FAILED. 0 passed; 6 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.33s
+error: test failed, to rerun pass `-p synapse-git --test h1_git_bridge`
+error: 1 target failed:
+#
+# Red 2 stub: pack reader refuses OBJ_OFS_DELTA entries (pack.rs resolve_at).
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ignored
+test h1_damaged_or_incomplete_repositories_are_refused_typed ... ok
+test h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean ... FAILED
+test h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx ... FAILED
+test h1_native_reader_reads_every_loose_object_exactly_as_git ... ok
+test h1_native_indexer_resolves_reference_deltas_from_git_pack_objects ... ok
+test h1_export_is_deterministic_and_never_overwrites_a_repository ... ok
+thread 'h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean' (760615) panicked at crates/synapse-git/tests/h1_git_bridge.rs:340:10:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: GitObjectCorrupt, message: "RED STUB: offset deltas unimplemented" }
+thread 'h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx' (760618) panicked at crates/synapse-git/tests/h1_git_bridge.rs:291:10:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: GitObjectCorrupt, message: "RED STUB: offset deltas unimplemented" }
+test result: FAILED. 4 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.80s
+error: test failed, to rerun pass `-p synapse-git --test h1_git_bridge`
+error: 1 target failed:
+#
+# Red 3 stub: pack reader refuses OBJ_REF_DELTA entries (pack.rs resolve_at).
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ignored
+test h1_damaged_or_incomplete_repositories_are_refused_typed ... ok
+test h1_native_indexer_resolves_reference_deltas_from_git_pack_objects ... FAILED
+test h1_native_reader_reads_every_loose_object_exactly_as_git ... ok
+test h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx ... ok
+test h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean ... ok
+test h1_export_is_deterministic_and_never_overwrites_a_repository ... ok
+thread 'h1_native_indexer_resolves_reference_deltas_from_git_pack_objects' (762378) panicked at crates/synapse-git/tests/h1_git_bridge.rs:317:60:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: GitObjectCorrupt, message: "RED STUB: reference deltas unimplemented" }
+test result: FAILED. 5 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.17s
+error: test failed, to rerun pass `-p synapse-git --test h1_git_bridge`
+error: 1 target failed:
+#
+# Red 4 stub: the history walk does not follow annotated tags to their targets (object.rs object_links).
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ignored
+test h1_damaged_or_incomplete_repositories_are_refused_typed ... ok
+test h1_native_reader_reads_every_loose_object_exactly_as_git ... FAILED
+test h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx ... FAILED
+test h1_native_indexer_resolves_reference_deltas_from_git_pack_objects ... ok
+test h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean ... FAILED
+test h1_export_is_deterministic_and_never_overwrites_a_repository ... ok
+thread 'h1_native_reader_reads_every_loose_object_exactly_as_git' (764295) panicked at crates/synapse-git/tests/h1_git_bridge.rs:218:5:
+assertion `left == right` failed: native reachable set != git object database
+  left: {GitOid(048e62a0ea3c017650134e79d55c6c45c55adf33), GitOid(055e940f4410b8000990908448b9f864ec8a97c7), GitOid(065da59fc6bfe94c11cbb1f4754e33ba27b9e0be), GitOid(08095643742062b6003cf0a23b2b22a28b5eb993), GitOid(09264783560dca1b1e7c4dc54b7cd999c61bcf6c), GitOid(1214ae34249412735b429d46cd385417c6
+thread 'h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx' (764296) panicked at crates/synapse-git/tests/h1_git_bridge.rs:218:5:
+assertion `left == right` failed: native reachable set != git object database
+  left: {GitOid(048e62a0ea3c017650134e79d55c6c45c55adf33), GitOid(055e940f4410b8000990908448b9f864ec8a97c7), GitOid(065da59fc6bfe94c11cbb1f4754e33ba27b9e0be), GitOid(08095643742062b6003cf0a23b2b22a28b5eb993), GitOid(09264783560dca1b1e7c4dc54b7cd999c61bcf6c), GitOid(1214ae34249412735b429d46cd385417c6
+thread 'h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean' (764293) panicked at crates/synapse-git/tests/h1_git_bridge.rs:232:5:
+git fsck --full --strict failed in /tmp/synapse-h1-export-dst-764290-1792201733952236802/exported.git:
+test result: FAILED. 3 passed; 3 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.67s
+error: test failed, to rerun pass `-p synapse-git --test h1_git_bridge`
+error: 1 target failed:
+#
+# Red 5 stub: the pack writer records CRC-32 0 for every entry in the index (pack.rs write_pack).
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ignored
+test h1_damaged_or_incomplete_repositories_are_refused_typed ... ok
+test h1_native_reader_reads_every_loose_object_exactly_as_git ... ok
+test h1_native_indexer_resolves_reference_deltas_from_git_pack_objects ... ok
+test h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx ... ok
+test h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean ... FAILED
+test h1_export_is_deterministic_and_never_overwrites_a_repository ... ok
+thread 'h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean' (769956) panicked at crates/synapse-git/tests/h1_git_bridge.rs:58:5:
+test result: FAILED. 5 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.18s
+error: test failed, to rerun pass `-p synapse-git --test h1_git_bridge`
+error: 1 target failed:
+#
+# Red 6 stub: the pack writer keeps the caller's object order instead of object ID order (pack.rs write_pack).
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ignored
+test h1_damaged_or_incomplete_repositories_are_refused_typed ... ok
+test h1_native_reader_reads_every_loose_object_exactly_as_git ... ok
+test h1_native_indexer_resolves_reference_deltas_from_git_pack_objects ... ok
+test h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx ... ok
+test h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean ... ok
+test h1_export_is_deterministic_and_never_overwrites_a_repository ... FAILED
+thread 'h1_export_is_deterministic_and_never_overwrites_a_repository' (775407) panicked at crates/synapse-git/tests/h1_git_bridge.rs:404:5:
+assertion `left == right` failed
+  left: GitOid(110cae2138cf180d22011dd488d3140f543a60a2)
+test result: FAILED. 5 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 17.01s
+error: test failed, to rerun pass `-p synapse-git --test h1_git_bridge`
+error: 1 target failed:
