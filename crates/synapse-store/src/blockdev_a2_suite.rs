@@ -25,7 +25,7 @@ mod segment_tests;
 fn device_in(dir: &Path) -> Option<Arc<blockdev::BlockDevice>> {
     let mut cfg = blockdev_tests::redirect(dir)?;
     cfg.format = FormatPolicy::OpenExisting;
-    Some(blockdev::BlockDevice::open_path(&cfg, 0).expect("open the test device"))
+    Some(blockdev::BlockDevice::open_path_unlocked(&cfg).expect("open the test device"))
 }
 
 use std::sync::Arc;

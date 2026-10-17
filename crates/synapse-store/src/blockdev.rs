@@ -4,9 +4,12 @@
 //! The device is one byte range opened with `O_DIRECT` (page cache bypassed). On Linux
 //! that is a dedicated partition; tests and benchmarks use a preallocated regular file at
 //! a path the caller names. Nothing else is ever opened: no `/dev` scan, no globbing, no
-//! derived paths. A device that carries a recognisable filesystem or partition
-//! signature, or any other non-zero byte in its label area, is refused unless the caller
-//! sets [`BlockDeviceConfig::allow_foreign_signature`].
+//! derived paths. The opened device is held under an exclusive lock (`flock`, plus
+//! `O_EXCL` for a block device). A device that carries a recognisable filesystem,
+//! partition, or volume signature anywhere it is looked for ([`SIGNATURES`], including
+//! the backup GPT header, MD RAID and ZFS labels near the end), or any other non-zero
+//! byte in its label area, is refused unless the caller sets
+//! [`BlockDeviceConfig::allow_foreign_signature`]. Formatting is never the default.
 //!
 //! On-device layout (little-endian, 4 KiB blocks):
 //!
@@ -38,11 +41,15 @@
 //!   copy whose CRC holds and whose region matches its digest, else the older copy,
 //!   whose region was not touched. One flush suffices because a superblock without its
 //!   region is detected and skipped.
-//! * Segment rotation (the A2 "create, sync, directory flush"): write the slot header,
-//!   zero the whole data area, `fdatasync`; then a superblock-only commit raises
-//!   `segment_count`, `fdatasync`. Only then does a batch go into the slot. A slot past
-//!   `segment_count` is never data: its bytes are ignored (they may be stale from earlier
-//!   use of the device) and the next rotation zeroes it again.
+//! * Segment rotation (the A2 "create, sync, directory flush"): zero the whole data area,
+//!   `fdatasync`; write the slot header, `fdatasync`; then a superblock-only commit
+//!   raises `segment_count`, `fdatasync`. Only then does a batch go into the slot. A slot
+//!   past `segment_count` is never data: without a valid header its bytes are ignored
+//!   (they may be stale from earlier use of the device) and the next rotation zeroes it.
+//!   A valid header always sits on a zeroed slot, so slot `segment_count + 1` with a valid
+//!   header and any non-zero byte means its commit was flushed and the superblock copy
+//!   in use is older than the newest: mount refuses it (`CheckpointCorrupt`) rather than
+//!   drop the changes acknowledged there.
 //! * Batch: one aligned positioned write plus one `fdatasync` (unchanged from A2).
 
 use super::*;
@@ -56,7 +63,8 @@ pub const SUPERBLOCK_MAGIC: [u8; 8] = *b"SYNBLKS1";
 /// Superblock format version.
 pub const SUPERBLOCK_VERSION: u32 = 1;
 /// Label area at the start of the device: superblocks plus zeros. It covers the
-/// offsets of every signature [`classify_label`] knows.
+/// start-of-device offsets of the common signatures; [`classify_device`] also checks the
+/// ones further in and near the end of the device.
 pub const LABEL_BYTES: u64 = 128 * 1024;
 /// Segment header magic.
 pub const SEGMENT_HEADER_MAGIC: [u8; 4] = *b"SBSG";
@@ -142,8 +150,20 @@ impl DirectFile {
     /// Open exactly `path` (absolute; a regular file or a block device, nothing else).
     /// A block device is opened with `O_EXCL`, so the kernel refuses one that is mounted
     /// or held by another opener. The opened file must be the one `path` named when it
-    /// was checked (same device and inode).
+    /// was checked (same device and inode). The opened file is held under an exclusive
+    /// advisory lock (`flock`): a second opener is refused while this one lives.
     pub fn open(path: &Path) -> SynapseResult<Self> {
+        Self::open_with(path, true)
+    }
+
+    /// Test inspection only: open without taking the lock (the A2 suite shim reads the
+    /// device while the store under test holds it).
+    #[cfg(test)]
+    pub(crate) fn open_unlocked(path: &Path) -> SynapseResult<Self> {
+        Self::open_with(path, false)
+    }
+
+    fn open_with(path: &Path, lock: bool) -> SynapseResult<Self> {
         if !path.is_absolute() {
             return Err(refuse(format!(
                 "block device path must be absolute: {}",
@@ -179,6 +199,21 @@ impl DirectFile {
                 "{} changed between the check and the open",
                 path.display()
             )));
+        }
+        // One opener at a time: an exclusive advisory lock (flock) on the opened file, on
+        // top of O_EXCL for block devices. A second store on the same device would
+        // overwrite the first one's slots and metadata.
+        match if lock { file.try_lock() } else { Ok(()) } {
+            Ok(()) => {}
+            Err(fs::TryLockError::WouldBlock) => {
+                return Err(refuse(format!(
+                    "{} is in use: another opener holds its exclusive lock",
+                    path.display()
+                )))
+            }
+            Err(fs::TryLockError::Error(e)) => {
+                return Err(refuse(format!("lock {}: {e}", path.display())))
+            }
         }
         let len = if is_block {
             use std::io::Seek;
@@ -251,56 +286,206 @@ impl BlockIo for DirectFile {
 
 // --- label classification -------------------------------------------------------
 
-/// What the label area of a device holds.
+/// What a device holds before Synapse touches it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeviceLabel {
-    /// Every byte of the label area is zero.
+    /// Every byte of the label area is zero and no known signature is anywhere.
     Blank,
-    /// A Synapse superblock magic is present (valid or not).
+    /// A Synapse superblock magic is present at byte 0 or 4096 (valid or not).
     Synapse,
     /// A recognised filesystem, partition table, or volume signature.
     Foreign(&'static str),
-    /// Non-zero bytes that match no known signature.
+    /// Non-zero bytes in the label area that match no known signature.
     Unknown,
 }
 
-/// Classify the first [`LABEL_BYTES`] of a device.
-pub fn classify_label(label: &[u8]) -> DeviceLabel {
-    let at = |off: usize, sig: &[u8]| label.get(off..off + sig.len()) == Some(sig);
-    if at(0, &SUPERBLOCK_MAGIC) || at(BLOCK as usize, &SUPERBLOCK_MAGIC) {
-        return DeviceLabel::Synapse;
-    }
-    const SIGNATURES: &[(usize, &[u8], &str)] = &[
-        (512, b"EFI PART", "GPT partition table"),
-        (4096, b"EFI PART", "GPT partition table (4 KiB sectors)"),
-        (1080, &[0x53, 0xEF], "ext2/ext3/ext4"),
-        (0, b"XFSB", "XFS"),
-        (0x10040, b"_BHRfS_M", "btrfs"),
-        (3, b"NTFS    ", "NTFS"),
-        (3, b"EXFAT   ", "exFAT"),
-        (54, b"FAT1", "FAT12/FAT16"),
-        (82, b"FAT32   ", "FAT32"),
-        (0, b"LUKS\xba\xbe", "LUKS"),
-        (512, b"LABELONE", "LVM2 physical volume"),
-        (4086, b"SWAPSPACE2", "Linux swap"),
-        (4086, b"SWAP-SPACE", "Linux swap"),
-        (0x8001, b"CD001", "ISO 9660"),
-        (0, b"hsqs", "squashfs"),
-        (1024, &[0x10, 0x20, 0xF5, 0xF2], "F2FS"),
-        (4096, &[0xFC, 0x4E, 0x2B, 0xA9], "Linux MD RAID (1.2)"),
-        (0, &[0xFC, 0x4E, 0x2B, 0xA9], "Linux MD RAID (1.1)"),
-        (510, &[0x55, 0xAA], "MBR or boot sector"),
-    ];
-    for (off, sig, name) in SIGNATURES {
-        if at(*off, sig) {
-            return DeviceLabel::Foreign(name);
+/// Where a signature sits on a device of `len` bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SigAt {
+    /// Byte offset from the start.
+    Start(u64),
+    /// Bytes before the end.
+    End(u64),
+    /// Linux MD RAID 0.90 superblock: `(len & !(64 KiB - 1)) - 64 KiB`.
+    Md090,
+    /// Linux MD RAID 1.0 superblock: `(len - 8 KiB) & !(4 KiB - 1)`.
+    Md10,
+    /// ZFS vdev label `n` (L0 at 0, L1 at 256 KiB, L2 and L3 at 512 KiB and 256 KiB
+    /// below the length rounded down to 256 KiB): any 1 KiB uberblock slot of its
+    /// 128 KiB uberblock array (label offset 128 KiB).
+    ZfsLabel(u8),
+}
+
+/// One recognised signature.
+#[derive(Debug, Clone, Copy)]
+pub struct Signature {
+    pub name: &'static str,
+    pub at: SigAt,
+    pub magic: &'static [u8],
+}
+
+const fn sig(name: &'static str, at: SigAt, magic: &'static [u8]) -> Signature {
+    Signature { name, at, magic }
+}
+
+const MD_MAGIC: &[u8] = &[0xFC, 0x4E, 0x2B, 0xA9];
+const ZFS_UB_LE: &[u8] = &[0x0C, 0xB1, 0xBA, 0, 0, 0, 0, 0];
+const ZFS_UB_BE: &[u8] = &[0, 0, 0, 0, 0, 0xBA, 0xB1, 0x0C];
+const KIB: u64 = 1024;
+
+/// Every signature that makes a device foreign, in the order they are checked (the
+/// first match names the refusal). Each entry is pinned by its own test.
+pub const SIGNATURES: &[Signature] = &[
+    sig("GPT partition table", SigAt::Start(512), b"EFI PART"),
+    sig(
+        "GPT partition table (4 KiB sectors)",
+        SigAt::Start(4096),
+        b"EFI PART",
+    ),
+    sig("GPT backup header", SigAt::End(512), b"EFI PART"),
+    sig(
+        "GPT backup header (4 KiB sectors)",
+        SigAt::End(4096),
+        b"EFI PART",
+    ),
+    sig("ext2/ext3/ext4", SigAt::Start(1080), &[0x53, 0xEF]),
+    sig("XFS", SigAt::Start(0), b"XFSB"),
+    sig("btrfs", SigAt::Start(0x1_0040), b"_BHRfS_M"),
+    sig(
+        "btrfs (mirror at 64 MiB)",
+        SigAt::Start(0x400_0040),
+        b"_BHRfS_M",
+    ),
+    sig(
+        "btrfs (mirror at 256 GiB)",
+        SigAt::Start(0x40_0000_0040),
+        b"_BHRfS_M",
+    ),
+    sig("NTFS", SigAt::Start(3), b"NTFS    "),
+    sig("exFAT", SigAt::Start(3), b"EXFAT   "),
+    sig("FAT12/FAT16", SigAt::Start(54), b"FAT1"),
+    sig("FAT32", SigAt::Start(82), b"FAT32   "),
+    sig("LUKS", SigAt::Start(0), b"LUKS\xba\xbe"),
+    sig(
+        "LVM2 physical volume (sector 0)",
+        SigAt::Start(0),
+        b"LABELONE",
+    ),
+    sig(
+        "LVM2 physical volume (sector 1)",
+        SigAt::Start(512),
+        b"LABELONE",
+    ),
+    sig(
+        "LVM2 physical volume (sector 2)",
+        SigAt::Start(1024),
+        b"LABELONE",
+    ),
+    sig(
+        "LVM2 physical volume (sector 3)",
+        SigAt::Start(1536),
+        b"LABELONE",
+    ),
+    sig(
+        "Linux swap (4 KiB pages)",
+        SigAt::Start(4096 - 10),
+        b"SWAPSPACE2",
+    ),
+    sig(
+        "Linux swap, old (4 KiB pages)",
+        SigAt::Start(4096 - 10),
+        b"SWAP-SPACE",
+    ),
+    sig(
+        "Linux swap (16 KiB pages)",
+        SigAt::Start(16384 - 10),
+        b"SWAPSPACE2",
+    ),
+    sig(
+        "Linux swap (64 KiB pages)",
+        SigAt::Start(65536 - 10),
+        b"SWAPSPACE2",
+    ),
+    sig("ISO 9660", SigAt::Start(0x8001), b"CD001"),
+    sig("squashfs", SigAt::Start(0), b"hsqs"),
+    sig("F2FS", SigAt::Start(1024), &[0x10, 0x20, 0xF5, 0xF2]),
+    sig("Linux MD RAID (1.2)", SigAt::Start(4096), MD_MAGIC),
+    sig("Linux MD RAID (1.1)", SigAt::Start(0), MD_MAGIC),
+    sig("Linux MD RAID (1.0)", SigAt::Md10, MD_MAGIC),
+    sig("Linux MD RAID (0.90)", SigAt::Md090, MD_MAGIC),
+    sig("ZFS label L0", SigAt::ZfsLabel(0), ZFS_UB_LE),
+    sig("ZFS label L0 (big-endian)", SigAt::ZfsLabel(0), ZFS_UB_BE),
+    sig("ZFS label L1", SigAt::ZfsLabel(1), ZFS_UB_LE),
+    sig("ZFS label L1 (big-endian)", SigAt::ZfsLabel(1), ZFS_UB_BE),
+    sig("ZFS label L2", SigAt::ZfsLabel(2), ZFS_UB_LE),
+    sig("ZFS label L2 (big-endian)", SigAt::ZfsLabel(2), ZFS_UB_BE),
+    sig("ZFS label L3", SigAt::ZfsLabel(3), ZFS_UB_LE),
+    sig("ZFS label L3 (big-endian)", SigAt::ZfsLabel(3), ZFS_UB_BE),
+    sig("MBR or boot sector", SigAt::Start(510), &[0x55, 0xAA]),
+];
+
+impl Signature {
+    /// Whether this signature is on `io`.
+    pub fn found(&self, io: &dyn BlockIo) -> std::io::Result<bool> {
+        let len = io.len();
+        let n = self.magic.len() as u64;
+        let at = |off: Option<u64>| -> std::io::Result<bool> {
+            match off.filter(|o| o.checked_add(n).is_some_and(|e| e <= len)) {
+                Some(o) => {
+                    let mut b = vec![0u8; n as usize];
+                    io.read_at(&mut b, o)?;
+                    Ok(b == self.magic)
+                }
+                None => Ok(false),
+            }
+        };
+        match self.at {
+            SigAt::Start(o) => at(Some(o)),
+            SigAt::End(b) => at(len.checked_sub(b)),
+            SigAt::Md090 => at((len & !(64 * KIB - 1)).checked_sub(64 * KIB)),
+            SigAt::Md10 => at(len.checked_sub(8 * KIB).map(|o| o & !(4 * KIB - 1))),
+            SigAt::ZfsLabel(l) => {
+                let end = len & !(256 * KIB - 1);
+                let base = match l {
+                    0 => Some(0),
+                    1 => Some(256 * KIB),
+                    2 => end.checked_sub(512 * KIB),
+                    _ => end.checked_sub(256 * KIB),
+                };
+                let Some(arr) = base.map(|b| b + 128 * KIB) else {
+                    return Ok(false);
+                };
+                if arr + 128 * KIB > len {
+                    return Ok(false);
+                }
+                let mut b = vec![0u8; (128 * KIB) as usize];
+                io.read_at(&mut b, arr)?;
+                Ok(b.chunks(KIB as usize).any(|s| s.starts_with(self.magic)))
+            }
         }
     }
-    if label.iter().all(|b| *b == 0) {
+}
+
+/// Classify a device: its label area (the first [`LABEL_BYTES`]) and every
+/// [`SIGNATURES`] location, including the ones near the end of the device.
+pub fn classify_device(io: &dyn BlockIo) -> std::io::Result<DeviceLabel> {
+    let mut label = vec![0u8; LABEL_BYTES.min(io.len()) as usize];
+    io.read_at(&mut label, 0)?;
+    let at =
+        |off: usize| label.get(off..off + SUPERBLOCK_MAGIC.len()) == Some(&SUPERBLOCK_MAGIC[..]);
+    if at(0) || at(BLOCK as usize) {
+        return Ok(DeviceLabel::Synapse);
+    }
+    for s in SIGNATURES {
+        if s.found(io)? {
+            return Ok(DeviceLabel::Foreign(s.name));
+        }
+    }
+    Ok(if label.iter().all(|b| *b == 0) {
         DeviceLabel::Blank
     } else {
         DeviceLabel::Unknown
-    }
+    })
 }
 
 // --- superblock -----------------------------------------------------------------
@@ -537,11 +722,12 @@ pub struct BlockDeviceConfig {
 }
 
 impl BlockDeviceConfig {
-    /// Open or format-if-blank `path` with default metadata regions, no override.
+    /// Open the existing store at `path`: no formatting (set [`FormatPolicy::FormatIfBlank`]
+    /// to format a blank device deliberately), default metadata regions, no override.
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
-            format: FormatPolicy::FormatIfBlank,
+            format: FormatPolicy::OpenExisting,
             meta_region_bytes: DEFAULT_META_REGION_BYTES,
             allow_foreign_signature: false,
         }
@@ -587,6 +773,13 @@ impl BlockDevice {
         Self::open(Box::new(io), cfg, segment_bytes)
     }
 
+    /// Test inspection only: [`Self::open_path`] without the exclusive lock.
+    #[cfg(test)]
+    pub(crate) fn open_path_unlocked(cfg: &BlockDeviceConfig) -> SynapseResult<Arc<Self>> {
+        let io = DirectFile::open_unlocked(&cfg.path)?;
+        Self::open(Box::new(io), cfg, 0)
+    }
+
     /// Open (or format, per `cfg`) the store on `io`.
     pub fn open(
         io: Box<dyn BlockIo>,
@@ -599,9 +792,7 @@ impl BlockDevice {
                 io.len()
             )));
         }
-        let mut label = vec![0u8; LABEL_BYTES as usize];
-        io.read_at(&mut label, 0).map_err(io_err)?;
-        match classify_label(&label) {
+        match classify_device(io.as_ref()).map_err(io_err)? {
             DeviceLabel::Synapse => {}
             DeviceLabel::Blank if cfg.format == FormatPolicy::FormatIfBlank => {
                 Self::format(io.as_ref(), cfg.meta_region_bytes, segment_bytes)?;
@@ -690,7 +881,7 @@ impl BlockDevice {
             let Some(names) = decode_meta(&meta) else {
                 continue;
             };
-            return Ok(Arc::new(Self {
+            let dev = Self {
                 io,
                 geo: sb.geo,
                 state: Mutex::new(MetaState {
@@ -699,11 +890,43 @@ impl BlockDevice {
                     segment_count: sb.segment_count,
                     names,
                 }),
-            }));
+            };
+            dev.refuse_data_past_segment_count()?;
+            return Ok(Arc::new(dev));
         }
         Err(corrupt(
             "no superblock copy with an intact metadata region (the device carries the Synapse magic but no valid store)",
         ))
+    }
+
+    /// Refuse a mount whose segment count is behind the data on the device. Slot
+    /// `segment_count + 1` can hold a non-zero byte only after the commit that raised the
+    /// count to it was flushed (a rotation zeroes the slot and flushes before that
+    /// commit, and no batch goes in before it). So a valid header there with data means
+    /// the newest superblock copy was lost (damaged) and the copy in use is older:
+    /// mounting it would silently drop every change acknowledged in that slot.
+    fn refuse_data_past_segment_count(&self) -> SynapseResult<()> {
+        let next = self.lock().segment_count + 1;
+        if !self.header_valid(next).map_err(io_err)? {
+            return Ok(());
+        }
+        let start = self.data_offset(next);
+        let mut buf = vec![0u8; (ZERO_CHUNK as u64).min(self.geo.segment_bytes) as usize];
+        let mut at = 0;
+        while at < self.geo.segment_bytes {
+            let n = buf.len().min((self.geo.segment_bytes - at) as usize);
+            self.io.read_at(&mut buf[..n], start + at).map_err(io_err)?;
+            if buf[..n].iter().any(|b| *b != 0) {
+                return Err(corrupt(format!(
+                    "segment slot {next} holds data past the committed segment count {}: the \
+                     newest superblock copy is damaged and the older copy would drop \
+                     acknowledged changes",
+                    next - 1
+                )));
+            }
+            at += n as u64;
+        }
+        Ok(())
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, MetaState> {
@@ -895,14 +1118,14 @@ impl BlockDevice {
         self.io.write_at(data, self.data_offset(id) + offset)
     }
 
-    /// Rotation step 1: write slot `id`'s header (not yet durable).
+    /// Rotation step 2: write slot `id`'s header (not yet durable; the caller flushes).
     pub fn write_segment_header(&self, id: u64) -> std::io::Result<()> {
         self.check_slot(id)?;
         self.io
             .write_at(&segment_header(&self.geo, id), self.geo.slot_offset(id))
     }
 
-    /// Rotation step 2: zero slot `id`'s whole data area, then `fdatasync`.
+    /// Rotation step 1: zero slot `id`'s whole data area, then `fdatasync`.
     pub fn zero_segment(&self, id: u64) -> std::io::Result<()> {
         self.check_slot(id)?;
         let zeros = vec![0u8; ZERO_CHUNK];

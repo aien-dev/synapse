@@ -18,6 +18,11 @@ real raw partition (section 7).
   or a block device; a block device is opened `O_EXCL` (the kernel refuses it while it is mounted or held
   by another exclusive user). After opening, the device and inode numbers are compared with the checked
   path, so a swap between check and open is refused.
+- **One opener.** The open takes an exclusive `flock` on the descriptor (non-blocking); a second opener,
+  in this process or another, is refused with "in use" while the first holds it. This covers regular
+  files, where `O_EXCL` means nothing.
+- **Formatting is never the default.** `BlockDeviceConfig::new` uses `FormatPolicy::OpenExisting`; the
+  caller must ask for `FormatIfBlank`.
 - **`O_DIRECT`.** Every read and write bypasses the page cache. Transfers are 4 KiB aligned in offset,
   length, and buffer address (an aligned bounce buffer in safe Rust). A write that is not block aligned
   is done as read, modify, write of the covering blocks.
@@ -26,19 +31,39 @@ real raw partition (section 7).
 
 ### 1.1 Refusing a disk that is not ours
 
-Before anything is written, the first 128 KiB (the label area) are classified:
+Before anything is written, the device is classified (`classify_device`) from its label area (the first
+128 KiB) and from fixed offsets near its end:
 
 | Label | Meaning | Action |
 | :--- | :--- | :--- |
 | Synapse | The R1 superblock magic at byte 0 or 4096 | Mount (section 4 validates the copies) |
 | Blank | Every byte of the label area is zero | Format only with `FormatPolicy::FormatIfBlank`, else refuse |
-| Foreign | A recognised filesystem, partition table, or volume signature | Refuse (`CapacityRefused`, names the signature) |
+| Foreign | A signature from the table below, at the start or the end of the device | Refuse (`CapacityRefused`, names the signature) |
 | Unknown | Any other non-zero byte | Refuse |
 
-Signatures recognised: GPT header (`EFI PART` at 512 or 4096), MBR boot signature (`55 AA` at 510),
-ext2/3/4 (magic at 1080), XFS (`XFSB`), Btrfs (`_BHRfS_M` at 0x10040), NTFS, exFAT, FAT, LUKS, LVM2,
-Linux swap (`SWAPSPACE2`/`SWAP-SPACE` at 4086), ISO 9660 (`CD001` at 0x8001), SquashFS, F2FS (at 1024),
-MD RAID. A Foreign or Unknown device is formatted only when the caller sets
+The Synapse magic is checked first, then `SIGNATURES` in order (MBR last, so a GPT disk is named GPT).
+`L` is the device length:
+
+| Signature | Where |
+| :--- | :--- |
+| GPT header / backup header | `EFI PART` at 512 and 4096; backup at `L - 512` and `L - 4096` |
+| ext2/3/4 | `53 EF` at 1080 |
+| XFS, LUKS, squashfs | `XFSB`, `LUKS BA BE`, `hsqs` at 0 |
+| btrfs | `_BHRfS_M` at 0x10040 and its mirrors at 64 MiB + 0x40 and 256 GiB + 0x40 |
+| NTFS, exFAT | OEM id at 3 |
+| FAT12/16, FAT32 | `FAT1` at 54, `FAT32` at 82 |
+| LVM2 | `LABELONE` in any of sectors 0 to 3 |
+| Linux swap | `SWAPSPACE2` at page end minus 10 for 4, 16, 64 KiB pages; `SWAP-SPACE` for 4 KiB |
+| ISO 9660 | `CD001` at 0x8001 |
+| F2FS | `10 20 F5 F2` at 1024 |
+| MD RAID 1.2, 1.1 | `FC 4E 2B A9` at 4096, at 0 |
+| MD RAID 1.0 | same magic at `(L - 8 KiB)` rounded down to 4 KiB |
+| MD RAID 0.90 | same magic at `L` rounded down to 64 KiB, minus 64 KiB |
+| ZFS labels L0 to L3 | an uberblock magic (either byte order) in a 1 KiB slot of the uberblock array (label + 128 KiB) of the 256 KiB labels at 0, 256 KiB, and at `L'` - 512 KiB, `L'` - 256 KiB, where `L'` is `L` rounded down to 256 KiB |
+| MBR / boot sector | `55 AA` at 510 |
+
+Each entry has its own test that builds a device with only that signature and expects it named, plus a
+test that the table has exactly that many entries, so deleting or changing one turns a test red. A Foreign or Unknown device is formatted only when the caller sets
 `allow_foreign_signature: true` and `FormatPolicy::FormatIfBlank`; the refusal leaves the device
 byte-for-byte unchanged (tested).
 
@@ -121,9 +146,11 @@ the drive's volatile write cache; on the file-backed test device it is `fdatasyn
    whole new namespace into the region the current superblock does *not* name; write superblock
    generation `g + 1` (naming that region, with its digest) into copy `(g + 1) % 2`; flush. A commit
    that changes only `segment_count` writes only the superblock.
-3. **Segment rotation** (replaces A2's "create file, sync, sync directory"). Write the slot header,
-   zero the whole data area, flush; then a metadata commit raises `segment_count` to the new id, flush.
-   Only then is a batch written into the slot.
+3. **Segment rotation** (replaces A2's "create file, sync, sync directory"). Zero the whole data area,
+   flush; write the slot header, flush; then a metadata commit raises `segment_count` to the new id,
+   flush. Only then is a batch written into the slot. The order matters: a valid header is only ever
+   written over a data area that is already durably zero, so a valid header past `segment_count` with
+   non-zero data can only mean acknowledged batches whose commit record was lost (section 4, step 3).
 4. **Batch** (unchanged from A2). One aligned positioned write of the batch into the active slot, one
    flush. A change is acknowledged only after that flush returned success.
 
@@ -144,8 +171,11 @@ A failed flush acknowledges nothing (tested: the batch and every later ingest re
    index exactly as the A2 files would.
 3. Segments 1..=`segment_count` are data. Slot `segment_count + 1` is listed only if its header is
    valid (a rotation that crashed before its superblock commit); it is then treated as A2 treats a last
-   segment file that is all zero. Slots beyond are ignored; their bytes may be stale and the next
-   rotation zeroes them.
+   segment file that is all zero. If that slot's header is valid and its data area holds any non-zero
+   byte, the superblock in use is older than the data on the device (the newest copy was damaged, so
+   acknowledged batches in that slot would be dropped): mount refuses with `CheckpointCorrupt` and
+   names the slot, under strict and truncating recovery alike. Slots beyond are ignored; their bytes may
+   be stale and the next rotation zeroes them.
 4. From there the A2 rules apply unchanged: index bound to the checkpoint by SHA-256, torn tail accepted
    only in the last segment holding data (strict recovery refuses it as `WalTornFrame`, truncating
    recovery zeroes it on the device and flushes), any damage elsewhere fails closed.
@@ -157,21 +187,27 @@ acknowledged change.
 
 | Test | What it proves |
 | :--- | :--- |
-| A2 crash suite, `segment_tests.rs`, compiled a second time unchanged in `blockdev_a2_suite.rs` (11 tests) | Every A2 crash, damage, and recovery case passes on the device. The suite's file operations get a device meaning (a segment file is a slot's data area, deleting it erases the slot header, small files are named objects); crash children reopen through the same device. |
+| A2 crash suite, `segment_tests.rs`, compiled a second time unchanged in `blockdev_a2_suite.rs` (11 tests, 9 of which touch the device; see section 7) | Every A2 crash, damage, and recovery case passes on the device. The suite's file operations get a device meaning (a segment file is a slot's data area, deleting it erases the slot header, small files are named objects); crash children reopen through the same device. |
 | `r1_suite_stores_are_raw_block_stores` | Control: the stores that suite opens hold only the device file; segments and metadata are on the device. |
 | `r1_power_cut_at_every_write_boundary_keeps_every_ack` | Power-cut simulation, below. |
 | `r1_refuses_a_device_carrying_a_filesystem_or_partition_signature` | ext4, GPT, XFS, LUKS images are refused and left unchanged; the explicit override formats. |
+| `r1_refuses_a_device_whose_signature_is_only_at_its_end` | GPT backup, MD 0.90, MD 1.0, ZFS L2 and L3 placed only at the end of a zeroed device are refused and the device is left unchanged. |
+| `r1_sig_*` (38) and `r1_every_signature_has_a_pin_test` | One test per `SIGNATURES` entry (a sparse 300 GiB device carrying only that magic at its offset), and the table length pinned. |
+| `r1_lost_newest_superblock_never_drops_acknowledged_changes` | 10 acknowledged changes over two slots, newest superblock copy damaged: reopen either refuses with `CheckpointCorrupt` or returns all 10, under both recovery modes; never fewer. |
+| `r1_a_second_opener_of_the_device_is_refused` | A second open while the store holds the device is refused ("in use"). |
 | `r1_refuses_unknown_label_bytes_and_blank_devices_without_format` | Unknown bytes refused; a blank device is not formatted without `FormatIfBlank`. |
 | `r1_opens_only_the_configured_path` | Relative path, directory, symlink, missing path (not created), odd length refused; unaligned writes round-trip through `O_DIRECT`. |
-| `r1_classifies_known_signatures` | Each listed signature is recognised. |
+| `r1_classifies_known_signatures` | Blank, Unknown, Synapse (magic in copy 1 only), and GPT named before MBR on a protective-MBR disk. |
 | `r1_superblock_falls_back_to_the_older_copy_when_the_newest_is_damaged` | Damaged newest superblock or region: mount uses the older copy. |
 | `r1_full_device_refuses_the_batch_and_keeps_every_ack` | Two slots: "device full" refusal, all 16 acknowledged changes kept. |
 | `r1_failed_device_flush_acknowledges_nothing` | A flush error acknowledges nothing. |
+| bench `block_device_bench_never_writes_to_a_file_it_did_not_create` | `--block-device` on an existing file carrying an ext4 magic, or on a symlink to it, is refused and the file is unchanged. |
+| bench `block_device_bench_creates_formats_and_removes_its_own_device` | The bench creates its device file, formats it, runs, and removes it. |
 
 ### 5.1 Power-cut simulation
 
 An in-memory device records every write and flush of a workload: format, 20 commits across three
-segments, a checkpoint, 6 more commits, reopen, 2 more commits (56 device writes, 46 flushes, 28
+segments, a checkpoint, 6 more commits, reopen, 2 more commits (56 device writes, 50 flushes, 28
 acknowledgements). The bytes outside the label area start as pseudo-random garbage (a disk used before).
 For every write the device image is cut while that write is in flight, four ways, at every 512-byte
 sector boundary:
@@ -185,7 +221,7 @@ Each image is recovered with truncating and with strict recovery. Required: ever
 before the cut is present and readable, nothing beyond what was written appears, and the recovered store
 keeps working (every 23rd image commits again and reopens).
 
-Result: prefix 1,465 images, 1,448 opened; suffix 1,464, 1,208 opened; lost write 68, 65 opened; every
+Result: prefix 1,465 images, 1,448 opened; suffix 1,464, 1,208 opened; lost write 64, 61 opened; every
 image that did not open was cut before the first acknowledgement (the format had not completed, nothing
 promised). No acknowledged change was lost in any image. Strict recovery refused 336 + 336 images as
 `WalTornFrame` (a torn tail), never any other way. Hole images: 1,352, 1,037 opened, 297 failed closed
@@ -206,7 +242,8 @@ plus `--block-device <file>`: the same workload (N agent threads, 4,000 changese
 blob each, a checkpoint every 1,000, 16 MiB segments) on the R1 store. Both arms on the same NVMe
 partition (`/dev/nvme0n1p2`, ext4): A2 as files in a directory; R1 on a 512 MiB preallocated regular
 file (written with zeros and synced beforehand) opened with `O_DIRECT`, its first MiB zeroed before each
-cell and formatted by the store. The two arms ran interleaved (R1, A2, R1, A2, R1, A2), one repetition
+cell and formatted by the store. (That was the bench at `57d1135`; review of PR #103 replaced it, see
+below.) The two arms ran interleaved (R1, A2, R1, A2, R1, A2), one repetition
 per invocation, so both saw the same host conditions; the figures are the median and range of the three.
 Agents 1, 4, 8, 32. The bounds are those of A2 (ADR section 6): the flush bound is the cheapest
 `overwrite_*_fdatasync` p50 measured by `synapse-bench floor` in the same session, 0.894 ms (64 KiB);
@@ -249,13 +286,19 @@ same drive, is owed (section 7).
 ```sh
 cargo build --release -p synapse-bench
 target/release/synapse-bench floor --dir <scratch-dir> --out floor.json --iterations 300
-head -c 512M /dev/zero > <device-file> && sync            # a preallocated regular file
-target/release/synapse-bench segments --dir <dir> --out raw-r1.json --reps 1 --block-device <device-file>
+target/release/synapse-bench segments --dir <dir> --out raw-r1.json --reps 1 --block-device <new-absolute-path>
 target/release/synapse-bench segments --dir <dir> --out raw-a2.json --reps 1
 target/release/synapse-bench segments-report --raw raw-<arm>.json --floor floor.json > report-<arm>.json
 ```
 
-`--block-device` accepts only an absolute path to an existing regular file (never a block device).
+The figures above were taken with the bench and store at `57d1135`. Review changes made after it: the
+bench no longer reuses a file (it blanked the first MiB of whatever path it was given before the store's
+signature check could see it); it now creates a new device file per cell with `O_CREAT | O_EXCL |
+O_NOFOLLOW`, refuses a path that exists, and removes only the file it created. Segment rotation gained
+one flush (zero, header, and commit are each flushed; each cell wrote 4 segments). The measurement was
+not rerun after these changes, so `measurement/run.sh` documents the old invocation; with the current
+bench, `--block-device` names a path that must not exist (`--block-device-mib`, `--block-meta-mib` set
+its size).
 `measurement/run.sh` is the exact sequence; `manifest.json` records the binary's SHA-256, the host, and
 the run window; `SHA256SUMS` seals the files.
 
@@ -270,8 +313,11 @@ the run window; `SHA256SUMS` seals the files.
   writes durable. No physical power cut was run; the simulation models torn, lost, and holed writes.
 - The lost-write model drops one unflushed write at a time, not every subset.
 - NVMe energy is UNMEASURED; the meter is the SoC package (`aien_spbm`), uncalibrated.
-- The pre-A2 upgrade test of the suite copies directory fixtures (there are no pre-A2 raw block stores),
-  so in the R1 run it exercises the directory store again.
+- 9 of the 11 A2 suite tests touch the device. The other two do not: `a2_segment_index_round_trips_and_refuses_damage`
+  is a pure codec test, and the pre-A2 upgrade test copies directory fixtures (there are no pre-A2 raw
+  block stores), so in the R1 run it exercises the directory store again.
+- The measurement in section 6 predates the review changes to the bench and the rotation order and was
+  not rerun.
 - A crash during format may leave a device that refuses to open; nothing was acknowledged by then, and
   the device is reformatted only through an explicit `FormatIfBlank` (and override, if the label area is
   no longer zero).

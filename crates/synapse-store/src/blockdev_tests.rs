@@ -241,6 +241,7 @@ fn r1_refuses_a_device_carrying_a_filesystem_or_partition_signature() {
         }
         let before = fs::read(&path).unwrap();
         let cfg = BlockDeviceConfig {
+            format: FormatPolicy::FormatIfBlank,
             meta_region_bytes: TEST_META_BYTES,
             ..BlockDeviceConfig::new(&path)
         };
@@ -253,7 +254,7 @@ fn r1_refuses_a_device_carrying_a_filesystem_or_partition_signature() {
         .err()
         .unwrap_or_else(|| panic!("{name}: a device with a signature was opened"));
         assert_eq!(err.code, RefusalCode::IoFailure, "{name}: {err:?}");
-        assert!(err.message.contains("signature"), "{name}: {}", err.message);
+        assert!(err.message.contains("carries a"), "{name}: {}", err.message);
         assert_eq!(
             fs::read(&path).unwrap(),
             before,
@@ -273,9 +274,12 @@ fn r1_refuses_a_device_carrying_a_filesystem_or_partition_signature() {
         .unwrap_or_else(|e| panic!("{name}: override refused: {e:?}"));
         assert_eq!(commit(&mut s, &key(1), name).unwrap(), WalSeq(1));
         drop(s);
-        let mut label = vec![0u8; LABEL_BYTES as usize];
-        label.copy_from_slice(&fs::read(&path).unwrap()[..LABEL_BYTES as usize]);
-        assert_eq!(classify_label(&label), DeviceLabel::Synapse, "{name}");
+        let dev = DirectFile::open(&path).unwrap();
+        assert_eq!(
+            classify_device(&dev).unwrap(),
+            DeviceLabel::Synapse,
+            "{name}"
+        );
     }
     let _ = fs::remove_dir_all(&dir);
 }
@@ -339,22 +343,131 @@ fn r1_opens_only_the_configured_path() {
 
 #[test]
 fn r1_classifies_known_signatures() {
-    let mut label = vec![0u8; LABEL_BYTES as usize];
-    assert_eq!(classify_label(&label), DeviceLabel::Blank);
-    label[510] = 0x55;
-    label[511] = 0xAA;
-    assert!(matches!(classify_label(&label), DeviceLabel::Foreign(_)));
-    label[512..520].copy_from_slice(b"EFI PART");
+    let label = |patches: Vec<(u64, Vec<u8>)>| {
+        classify_device(&SparseIo {
+            len: LABEL_BYTES,
+            patches,
+        })
+        .unwrap()
+    };
+    assert_eq!(label(vec![]), DeviceLabel::Blank);
+    assert_eq!(label(vec![(100 * 1024, vec![1])]), DeviceLabel::Unknown);
     assert_eq!(
-        classify_label(&label),
+        label(vec![(4096, SUPERBLOCK_MAGIC.to_vec())]),
+        DeviceLabel::Synapse
+    );
+    // A GPT disk carries a protective MBR too: the GPT name wins.
+    assert_eq!(
+        label(vec![(510, vec![0x55, 0xAA]), (512, b"EFI PART".to_vec())]),
         DeviceLabel::Foreign("GPT partition table")
     );
-    let mut label = vec![0u8; LABEL_BYTES as usize];
-    label[0x10040..0x10048].copy_from_slice(b"_BHRfS_M");
-    assert_eq!(classify_label(&label), DeviceLabel::Foreign("btrfs"));
-    let mut label = vec![0u8; LABEL_BYTES as usize];
-    label[4096..4104].copy_from_slice(&SUPERBLOCK_MAGIC);
-    assert_eq!(classify_label(&label), DeviceLabel::Synapse);
+}
+
+/// A sparse read-only device: zeros except for `patches`.
+#[derive(Debug)]
+struct SparseIo {
+    len: u64,
+    patches: Vec<(u64, Vec<u8>)>,
+}
+
+impl BlockIo for SparseIo {
+    fn len(&self) -> u64 {
+        self.len
+    }
+    fn read_at(&self, buf: &mut [u8], off: u64) -> std::io::Result<()> {
+        buf.fill(0);
+        let end = off + buf.len() as u64;
+        for (at, bytes) in &self.patches {
+            for (i, b) in bytes.iter().enumerate() {
+                let p = at + i as u64;
+                if p >= off && p < end {
+                    buf[(p - off) as usize] = *b;
+                }
+            }
+        }
+        Ok(())
+    }
+    fn write_at(&self, _: &[u8], _: u64) -> std::io::Result<()> {
+        Err(std::io::Error::other("read-only"))
+    }
+    fn flush(&self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Large enough for every offset (btrfs's 256 GiB mirror) and not a multiple of 64 KiB,
+/// so the MD RAID and ZFS end rounding is exercised.
+const PIN_LEN: u64 = (300 << 30) + (12 << 20) + 3 * 4096;
+const PIN_ZFS_END: u64 = PIN_LEN & !(256 * 1024 - 1);
+const PIN_MD: &[u8] = &[0xFC, 0x4E, 0x2B, 0xA9];
+const PIN_ZFS_LE: &[u8] = &[0x0C, 0xB1, 0xBA, 0, 0, 0, 0, 0];
+const PIN_ZFS_BE: &[u8] = &[0, 0, 0, 0, 0, 0xBA, 0xB1, 0x0C];
+
+/// A device carrying only `magic` at `off` is refused as `name`.
+fn pinned(name: &str, off: u64, magic: &[u8]) {
+    let io = SparseIo {
+        len: PIN_LEN,
+        patches: vec![(off, magic.to_vec())],
+    };
+    match classify_device(&io).unwrap() {
+        DeviceLabel::Foreign(n) => assert_eq!(n, name),
+        other => panic!("{name}: classified {other:?}"),
+    }
+}
+
+// One test per signature, written independently of `SIGNATURES`: deleting or moving an
+// entry turns its test red.
+macro_rules! pin {
+    ($($t:ident: $name:expr, $off:expr, $magic:expr;)*) => {
+        $(#[test] fn $t() { pinned($name, $off, $magic) })*
+    };
+}
+
+pin! {
+    r1_sig_gpt: "GPT partition table", 512, b"EFI PART";
+    r1_sig_gpt_4k: "GPT partition table (4 KiB sectors)", 4096, b"EFI PART";
+    r1_sig_gpt_backup: "GPT backup header", PIN_LEN - 512, b"EFI PART";
+    r1_sig_gpt_backup_4k: "GPT backup header (4 KiB sectors)", PIN_LEN - 4096, b"EFI PART";
+    r1_sig_ext: "ext2/ext3/ext4", 1080, &[0x53, 0xEF];
+    r1_sig_xfs: "XFS", 0, b"XFSB";
+    r1_sig_btrfs: "btrfs", 0x1_0040, b"_BHRfS_M";
+    r1_sig_btrfs_64m: "btrfs (mirror at 64 MiB)", 64 * 1024 * 1024 + 0x40, b"_BHRfS_M";
+    r1_sig_btrfs_256g: "btrfs (mirror at 256 GiB)", (256 << 30) + 0x40, b"_BHRfS_M";
+    r1_sig_ntfs: "NTFS", 3, b"NTFS    ";
+    r1_sig_exfat: "exFAT", 3, b"EXFAT   ";
+    r1_sig_fat16: "FAT12/FAT16", 54, b"FAT1";
+    r1_sig_fat32: "FAT32", 82, b"FAT32   ";
+    r1_sig_luks: "LUKS", 0, b"LUKS\xba\xbe";
+    r1_sig_lvm0: "LVM2 physical volume (sector 0)", 0, b"LABELONE";
+    r1_sig_lvm1: "LVM2 physical volume (sector 1)", 512, b"LABELONE";
+    r1_sig_lvm2: "LVM2 physical volume (sector 2)", 1024, b"LABELONE";
+    r1_sig_lvm3: "LVM2 physical volume (sector 3)", 1536, b"LABELONE";
+    r1_sig_swap: "Linux swap (4 KiB pages)", 4086, b"SWAPSPACE2";
+    r1_sig_swap_old: "Linux swap, old (4 KiB pages)", 4086, b"SWAP-SPACE";
+    r1_sig_swap_16k: "Linux swap (16 KiB pages)", 16374, b"SWAPSPACE2";
+    r1_sig_swap_64k: "Linux swap (64 KiB pages)", 65526, b"SWAPSPACE2";
+    r1_sig_iso9660: "ISO 9660", 0x8001, b"CD001";
+    r1_sig_squashfs: "squashfs", 0, b"hsqs";
+    r1_sig_f2fs: "F2FS", 1024, &[0x10, 0x20, 0xF5, 0xF2];
+    r1_sig_md_1_2: "Linux MD RAID (1.2)", 4096, PIN_MD;
+    r1_sig_md_1_1: "Linux MD RAID (1.1)", 0, PIN_MD;
+    r1_sig_md_1_0: "Linux MD RAID (1.0)", (PIN_LEN - 8192) & !4095, PIN_MD;
+    r1_sig_md_0_90: "Linux MD RAID (0.90)", (PIN_LEN & !0xFFFF) - 0x10000, PIN_MD;
+    r1_sig_zfs_l0: "ZFS label L0", 128 * 1024 + 5 * 1024, PIN_ZFS_LE;
+    r1_sig_zfs_l0_be: "ZFS label L0 (big-endian)", 255 * 1024, PIN_ZFS_BE;
+    r1_sig_zfs_l1: "ZFS label L1", 384 * 1024, PIN_ZFS_LE;
+    r1_sig_zfs_l1_be: "ZFS label L1 (big-endian)", 400 * 1024, PIN_ZFS_BE;
+    r1_sig_zfs_l2: "ZFS label L2", PIN_ZFS_END - 512 * 1024 + 192 * 1024, PIN_ZFS_LE;
+    r1_sig_zfs_l2_be: "ZFS label L2 (big-endian)", PIN_ZFS_END - 384 * 1024, PIN_ZFS_BE;
+    r1_sig_zfs_l3: "ZFS label L3", PIN_ZFS_END - 128 * 1024, PIN_ZFS_LE;
+    r1_sig_zfs_l3_be: "ZFS label L3 (big-endian)", PIN_ZFS_END - 1024, PIN_ZFS_BE;
+    r1_sig_mbr: "MBR or boot sector", 510, &[0x55, 0xAA];
+}
+
+/// The pinned list and `SIGNATURES` have the same size: a new entry needs a pin test.
+#[test]
+fn r1_every_signature_has_a_pin_test() {
+    assert_eq!(SIGNATURES.len(), 38);
 }
 
 // --- superblock and metadata commits ----------------------------------------------
@@ -706,4 +819,123 @@ fn w_before(w: &Workload, i: usize, at: usize, end: usize) -> Vec<u8> {
         }
     }
     v
+}
+
+// --- review of PR #103 ----------------------------------------------------------------
+
+/// Reviewer's scenario (B2): 10 acknowledged changes across two slots, then one damaged
+/// byte in the newest superblock copy (the rotation commit that raised the segment
+/// count). Recovery may refuse loudly; it must never open with fewer changes.
+#[test]
+fn r1_lost_newest_superblock_never_drops_acknowledged_changes() {
+    let io = MemIo::new(vec![0u8; 4 << 20]);
+    let cfg = mem_cfg(FormatPolicy::FormatIfBlank, 256 * 1024);
+    let dev = BlockDevice::open(Box::new(io.clone()), &cfg, SEG).unwrap();
+    let mut s = SynapseStore::open_on_device(dev, cfg.path.clone(), TRUNCATE, limits()).unwrap();
+    for i in 0..10 {
+        commit(&mut s, &key(8), &format!("lost-sb-{i}")).unwrap();
+    }
+    drop(s);
+    let reopen_dev = |io: &MemIo| {
+        BlockDevice::open(
+            Box::new(MemIo::new(io.rec().image.clone())),
+            &mem_cfg(FormatPolicy::OpenExisting, 256 * 1024),
+            SEG,
+        )
+    };
+    let dev = reopen_dev(&io).unwrap();
+    assert_eq!(
+        dev.segment_count(),
+        2,
+        "8 batches per slot: 10 changes use 2 slots"
+    );
+    let newest = (dev.generation() % 2 * BLOCK) as usize;
+    drop(dev);
+    io.rec().image[newest + 40] ^= 0xFF;
+    for policy in [TRUNCATE, STRICT] {
+        let opened = reopen_dev(&io)
+            .and_then(|dev| SynapseStore::open_on_device(dev, cfg.path.clone(), policy, limits()));
+        match opened {
+            Ok(s) => {
+                assert_eq!(
+                    s.committed_seq(),
+                    WalSeq(10),
+                    "{policy:?}: acknowledged changes lost"
+                );
+                assert_eq!(check_readable(&s).unwrap(), 10, "{policy:?}");
+            }
+            Err(e) => assert_eq!(e.code, RefusalCode::CheckpointCorrupt, "{policy:?}: {e:?}"),
+        }
+    }
+}
+
+/// N4: a second opener of the same device (here a device file) is refused while the
+/// first holds it.
+#[test]
+fn r1_a_second_opener_of_the_device_is_refused() {
+    let dir = temp_dir("lock");
+    let path = dir.join("dev.img");
+    make_device_file(&path, TEST_DEVICE_BYTES);
+    let first = DirectFile::open(&path).unwrap();
+    let err = DirectFile::open(&path).unwrap_err();
+    assert!(err.message.contains("in use"), "{}", err.message);
+    drop(first);
+    DirectFile::open(&path).unwrap();
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// N1: a device whose label area is zero but that carries a signature near its end
+/// (backup GPT header, MD RAID 0.90 or 1.0 superblock, ZFS label L2 or L3) is refused
+/// and left unchanged, even with `FormatIfBlank`.
+#[test]
+fn r1_refuses_a_device_whose_signature_is_only_at_its_end() {
+    let dir = temp_dir("endsig");
+    let len = TEST_DEVICE_BYTES;
+    let md = [0xFC, 0x4E, 0x2B, 0xA9];
+    let zfs_le = 0x00ba_b10c_u64.to_le_bytes();
+    let zfs_end = len & !(256 * 1024 - 1);
+    let cases: [(&str, u64, &[u8]); 5] = [
+        ("gpt-backup", len - 512, b"EFI PART"),
+        ("md-0.90", (len & !0xFFFF) - 0x10000, &md),
+        ("md-1.0", (len - 8192) & !4095, &md),
+        ("zfs-l2", zfs_end - 512 * 1024 + 128 * 1024, &zfs_le),
+        (
+            "zfs-l3",
+            zfs_end - 256 * 1024 + 128 * 1024 + 3 * 1024,
+            &zfs_le,
+        ),
+    ];
+    for (name, off, sig) in cases {
+        let path = dir.join(format!("{name}.img"));
+        make_device_file(&path, len);
+        {
+            use std::os::unix::fs::FileExt;
+            let f = OpenOptions::new().write(true).open(&path).unwrap();
+            f.write_all_at(sig, off).unwrap();
+            f.write_all_at(b"user data that must survive", 2 << 20)
+                .unwrap();
+        }
+        let before = fs::read(&path).unwrap();
+        let cfg = BlockDeviceConfig {
+            format: FormatPolicy::FormatIfBlank,
+            meta_region_bytes: TEST_META_BYTES,
+            ..BlockDeviceConfig::new(&path)
+        };
+        let opened = SynapseStore::open_block_device(
+            &cfg,
+            FsyncPolicy::GROUP_COMMIT_DEFAULT,
+            STRICT,
+            limits(),
+        );
+        assert!(
+            opened.is_err(),
+            "{name}: a device with an end signature was formatted"
+        );
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            before,
+            "{name}: refused device changed"
+        );
+    }
+    let _ = fs::remove_dir_all(&dir);
 }
