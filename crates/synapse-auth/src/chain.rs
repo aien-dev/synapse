@@ -11,7 +11,7 @@
 //! encoding of `docs/F1_CAPABILITY_CHAINS.md` (ADR 0003 principle P5); there is no serde form.
 
 use crate::{AuditOutcome, BoundaryKind, Capability, PolicyEnforcer};
-use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use synapse_core::{
@@ -513,7 +513,7 @@ impl CapabilityLink {
     /// Verify the issuer's Ed25519 signature over `signable_bytes()`.
     pub fn verify_signature(&self) -> SynapseResult<()> {
         let invalid = |msg: &str| SynapseError::new(RefusalCode::AuthGrantSignatureInvalid, msg);
-        let key = VerifyingKey::from_bytes(&self.issuer_key)
+        let key = crate::key_cache::verifying_key(&self.issuer_key)
             .map_err(|_| invalid("link issuer key is not a valid Ed25519 key"))?;
         key.verify_strict(
             &self.signable_bytes(),
@@ -1010,7 +1010,7 @@ impl PolicyEnforcer {
                 ),
             ));
         }
-        let agent_key = VerifyingKey::from_bytes(&req.agent_key).map_err(|_| {
+        let agent_key = crate::key_cache::verifying_key(&req.agent_key).map_err(|_| {
             SynapseError::new(RefusalCode::DidKeyInvalid, "invalid agent Ed25519 key")
         })?;
         agent_key
