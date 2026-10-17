@@ -279,17 +279,19 @@ impl RevisionLedger {
                 repo_id,
                 changeset_id,
                 to,
+                chain,
                 ..
             } => {
-                // Applied as recorded: who may move (owner chain, evidence for `Verified`) is
-                // checked when the record is written, never re-derived at replay, so a later
-                // change to those rules cannot change what an old log means. Replay keeps only
-                // the permanent rules: an edge of the state machine (never backwards, in
-                // place, or skipping) and never `Canonical`, which only the promotion queue's
-                // own record reaches (E2). Any other record stays in the log but changes
-                // nothing, so no record sequence, forged or not, breaks either rule.
+                // Kind 9 is permanently the owner-move record: `Verified` and `Canonical` come
+                // only from the evidence-bearing records of B3, E1, and E2. Kind 9 records are
+                // unsigned and the WAL seal is unkeyed, so replay accepts one only when it is
+                // an owner move (`Private -> Draft`, `Private -> Proposed`, `Draft -> Proposed`,
+                // by a chain that is or dominates the first admission's chain). Both rules are
+                // pure functions of the log that never change, so an old log keeps its
+                // meaning. Any other record stays in the log but changes nothing: no record
+                // sequence, forged or not, moves a revision backwards or past `Proposed`.
                 if let Some(rev) = self.revisions.get_mut(&(repo_id.clone(), *changeset_id)) {
-                    if *to != RevisionState::Canonical && rev.state.check_move(*to).is_ok() {
+                    if owned_by(rev, chain) && rev.state.check_owner_move(*to).is_ok() {
                         rev.state = *to;
                     }
                 }
@@ -875,10 +877,9 @@ mod b4_tests {
 
     /// Property (acceptance 1, replay side): the ledger applies any sequence of revision
     /// records, including forged moves no store call would write (backwards, in place,
-    /// skipping, to `Verified` or `Canonical`, by chains that do not own the revision). Moves
-    /// are applied as recorded along the edges of the state machine (authority is checked at
-    /// write time), so no revision ever moves backwards or reaches `Canonical`, every edge
-    /// record moves its revision, and rebuilding from the log gives the same states.
+    /// skipping, to `Verified` or `Canonical`, by chains that do not own the revision).
+    /// Only owner moves apply, so no revision ever moves backwards or past `Proposed`, every
+    /// owner-move record moves its revision, and rebuilding from the log gives the same states.
     #[test]
     fn b4_property_forged_record_sequences_never_move_a_revision_backwards() {
         let mut rng = SplitMix64(0xB4_0003);
@@ -909,21 +910,24 @@ mod b4_tests {
                 };
                 let target = match &record {
                     WalRecord::RevisionStateMoved {
-                        changeset_id, to, ..
-                    } => Some((*changeset_id, *to)),
+                        changeset_id,
+                        to,
+                        chain,
+                        ..
+                    } => Some((*changeset_id, *to, chain.clone())),
                     _ => None,
                 };
-                let from = target.map(|(id, _)| ledger.get_revision(&repo(), id).unwrap().state);
+                let before = target.as_ref().map(|(id, to, chain)| {
+                    let rev = ledger.get_revision(&repo(), *id).unwrap();
+                    let legal = owned_by(rev, chain) && rev.state.check_owner_move(*to).is_ok();
+                    (rev.state, legal)
+                });
                 ledger.apply(WalSeq(seq), record);
-                if let (Some((id, to)), Some(from)) = (target, from) {
+                if let (Some((id, to, _)), Some((from, legal))) = (target, before) {
                     let now = ledger.get_revision(&repo(), id).unwrap().state;
-                    let edge = from.check_move(to).is_ok() && to != RevisionState::Canonical;
-                    assert_eq!(
-                        now,
-                        if edge { to } else { from },
-                        "{id}: {from:?} -> {to:?}"
-                    );
-                    if !edge {
+                    let want = if legal { to } else { from };
+                    assert_eq!(now, want, "{id}: {from:?} -> {to:?}");
+                    if !legal {
                         forged_refused += 1;
                     }
                 }
@@ -931,7 +935,7 @@ mod b4_tests {
                     let now = ledger.get_revision(&repo(), *id).unwrap().state;
                     let before = last.insert(*id, now).unwrap_or(RevisionState::Private);
                     assert!(now.rank() >= before.rank(), "{id}: {before:?} -> {now:?}");
-                    assert!(now < RevisionState::Canonical, "{id} reached {now:?}");
+                    assert!(now <= RevisionState::Proposed, "{id} reached {now:?}");
                 }
             }
             let rebuilt = RevisionLedger::from_log(ledger.log().to_vec());
