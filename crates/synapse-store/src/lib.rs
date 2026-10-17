@@ -28,6 +28,7 @@ use synapse_core::{
 #[cfg(test)]
 mod a1_tests;
 pub mod codec;
+pub mod git_bridge;
 #[cfg(test)]
 mod group_tests;
 mod revision;
@@ -323,6 +324,13 @@ pub enum WalRecord {
         chain: ChainPath,
         recorded_at_ms: u64,
     },
+    /// One Git bridge entry of an import into `repo_id` (ADR 0003 section 5.10, step H1 cut 2;
+    /// `git_bridge`). Binary codec only. Kind 10: open PR #88 claims kind 9.
+    #[serde(skip)]
+    GitBridgeImported {
+        repo_id: RepoId,
+        entry: git_bridge::GitBridgeEntry,
+    },
 }
 
 impl WalRecord {
@@ -336,12 +344,15 @@ impl WalRecord {
             Self::LeaseUpdated { .. } => 6,
             Self::RevisionAdmitted { .. } => 7,
             Self::ObsolescenceRecorded { .. } => 8,
+            Self::GitBridgeImported { .. } => 10,
         }
     }
 
-    /// Blob digests the upserts of this record reference (ingest and revision records).
+    /// Blob digests the upserts of this record reference (ingest and revision records), and the
+    /// blobs a Git bridge objects entry maps.
     pub fn upsert_blobs(&self) -> Vec<BlobDigest> {
         let mutations = match self {
+            Self::GitBridgeImported { entry, .. } => return entry.blobs(),
             Self::ChangesetIngest { envelope, .. } => &envelope.mutations,
             Self::RevisionAdmitted { envelope, .. } => &envelope.content.mutations,
             _ => return Vec::new(),
@@ -467,6 +478,8 @@ pub struct SynapseStore {
     /// `checkpoint.v1` is not yet the tombstone although `checkpoint.v2` exists.
     /// Envelope v2 revisions, changes, witnesses, and markers (ADR 0003 B1).
     revisions: revision::RevisionLedger,
+    /// The Git bridge map (step H1 cut 2), derived from the kind 10 records in `revisions`.
+    git_bridge: git_bridge::GitBridgeLedger,
     tombstone_pending: bool,
 }
 
@@ -610,6 +623,7 @@ impl SynapseStore {
             binary_seen: false,
             tombstone_pending: false,
             revisions: revision::RevisionLedger::default(),
+            git_bridge: git_bridge::GitBridgeLedger::default(),
         };
 
         store.recover(recovery_policy)?;
@@ -1646,6 +1660,7 @@ impl SynapseStore {
                 }
             }
         }
+        retained_blobs.extend(self.git_bridge.blob_digests());
         for stored in self.changesets.values() {
             for m in &stored.envelope.mutations {
                 if let MutationOp::Upsert { blob_digest, .. } = &m.op {
@@ -2132,6 +2147,13 @@ impl SynapseStore {
                 self.revisions.apply(seq, record);
             }
             record @ WalRecord::ObsolescenceRecorded { .. } => self.revisions.apply(seq, record),
+            record @ WalRecord::GitBridgeImported { .. } => {
+                for digest in record.upsert_blobs() {
+                    self.blob_first_visible_seq.entry(digest).or_insert(seq);
+                }
+                self.git_bridge.apply(&record);
+                self.revisions.apply(seq, record);
+            }
         }
     }
 
@@ -2216,6 +2238,7 @@ impl SynapseStore {
         self.github_projections = s.github_projections;
         self.canonical_heads = s.canonical_heads;
         self.revisions = revision::RevisionLedger::from_log(s.revision_log);
+        self.git_bridge = git_bridge::GitBridgeLedger::from_log(self.revisions.log());
     }
 
     /// Admit a replayed (not checkpoint-covered) frame written with `codec`: the codec

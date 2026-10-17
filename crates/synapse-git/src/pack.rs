@@ -352,15 +352,40 @@ impl PackReader {
     /// the trailing checksum. Every `OBJ_REF_DELTA` base must be in the pack (a self-contained
     /// pack, as `gitformat-pack` requires on disk).
     pub fn index(data: Vec<u8>) -> SynapseResult<Self> {
+        Self::index_with_limits(data, &crate::repo::ReadLimits::default())
+    }
+
+    /// [`Self::index`] under `limits`: no entry may declare more than `max_object_bytes`, and
+    /// the sizes every entry declares it resolves to (whole sizes, and delta result sizes read
+    /// from the first bytes of each delta stream) must fit `max_total_object_bytes` before any
+    /// entry is resolved, as when a repository is opened. Each entry is resolved once, plus
+    /// once more for each reference delta base it waits on (no repeated rounds over the pack).
+    pub fn index_with_limits(
+        data: Vec<u8>,
+        limits: &crate::repo::ReadLimits,
+    ) -> SynapseResult<Self> {
+        let max = limits.max_object_bytes;
         let count = check_pack_framing(&data)?;
         let body_end = data.len() - 20;
-        let mut offsets = Vec::with_capacity(count as usize);
+        let mut offsets = Vec::with_capacity((count as usize).min(body_end / 2));
         let mut pos = 12usize;
+        let mut declared = 0u64;
         for _ in 0..count {
             if pos >= body_end {
                 return Err(corrupt("pack holds fewer entries than its header declares"));
             }
-            let (_, next) = read_raw_entry(&data[..body_end], pos as u64, MAX_PACK_OBJECT_BYTES)?;
+            let size = declared_object_size(&data[..body_end], pos as u64, max)?;
+            declared = declared.saturating_add(size);
+            if declared > limits.max_total_object_bytes {
+                return Err(SynapseError::new(
+                    RefusalCode::QuotaPayloadTooLarge,
+                    format!(
+                        "pack entries declare over the {} byte budget",
+                        limits.max_total_object_bytes
+                    ),
+                ));
+            }
+            let (_, next) = read_raw_entry(&data[..body_end], pos as u64, max)?;
             offsets.push((pos as u64, crc32(&data[pos..next])));
             pos = next;
         }
@@ -375,38 +400,36 @@ impl PackReader {
             entries: Vec::with_capacity(offsets.len()),
             cache: HashMap::new(),
             cache_bytes: 0,
-            max_object_bytes: MAX_PACK_OBJECT_BYTES,
+            max_object_bytes: max,
         };
-        // Whole objects and offset deltas resolve by position alone; reference deltas need
-        // their base's ID first, so repeat until every entry is resolved or nothing moves.
-        let mut pending: Vec<(u64, u32)> = offsets;
-        while !pending.is_empty() {
-            let mut next_round = Vec::new();
-            for (offset, crc) in pending.iter().copied() {
-                match reader.resolve_at(offset) {
-                    Ok((kind, payload)) => {
-                        let oid = GitOid::compute_git_object(kind.name(), &payload);
-                        if reader.by_oid.insert(oid, offset).is_some() {
-                            return Err(corrupt(format!("pack holds object {oid} twice")));
-                        }
-                        reader.entries.push(PackIndexEntry {
-                            oid,
-                            offset,
-                            crc32: crc,
-                        });
+        // Whole objects and offset deltas resolve by position alone; an entry whose chain
+        // reaches a reference delta with an unresolved base waits on that base's ID and is
+        // retried once that ID resolves.
+        let mut waiting: HashMap<GitOid, Vec<(u64, u32)>> = HashMap::new();
+        let mut ready: Vec<(u64, u32)> = offsets.into_iter().rev().collect();
+        while let Some((offset, crc)) = ready.pop() {
+            match reader.try_resolve_at(offset)? {
+                Ok((kind, payload)) => {
+                    let oid = GitOid::compute_git_object(kind.name(), &payload);
+                    if reader.by_oid.insert(oid, offset).is_some() {
+                        return Err(corrupt(format!("pack holds object {oid} twice")));
                     }
-                    Err(e) if e.message.starts_with(MISSING_REF_BASE) => {
-                        next_round.push((offset, crc))
+                    reader.entries.push(PackIndexEntry {
+                        oid,
+                        offset,
+                        crc32: crc,
+                    });
+                    if let Some(w) = waiting.remove(&oid) {
+                        ready.extend(w);
                     }
-                    Err(e) => return Err(e),
                 }
+                Err(base) => waiting.entry(base).or_default().push((offset, crc)),
             }
-            if next_round.len() == pending.len() {
-                return Err(corrupt(
-                    "pack has reference deltas whose base is not in the pack (thin pack)",
-                ));
-            }
-            pending = next_round;
+        }
+        if !waiting.is_empty() {
+            return Err(corrupt(
+                "pack has reference deltas whose base is not in the pack (thin pack)",
+            ));
         }
         reader.entries.sort_by_key(|e| e.oid);
         Ok(reader)
@@ -463,6 +486,17 @@ impl PackReader {
     }
 
     fn resolve_at(&mut self, offset: u64) -> SynapseResult<(ObjectKind, std::sync::Arc<Vec<u8>>)> {
+        self.try_resolve_at(offset)?
+            .map_err(|base| corrupt(format!("pack reference delta base not found: {base}")))
+    }
+
+    /// Resolve the entry at `offset`, or name the reference delta base its chain reaches that
+    /// is not (yet) indexed.
+    #[allow(clippy::type_complexity)]
+    fn try_resolve_at(
+        &mut self,
+        offset: u64,
+    ) -> SynapseResult<Result<(ObjectKind, std::sync::Arc<Vec<u8>>), GitOid>> {
         let body_end = self.data.len() - 20;
         let mut chain: Vec<(u64, Vec<u8>)> = Vec::new();
         let mut at = offset;
@@ -483,10 +517,9 @@ impl PackReader {
                     at = base;
                 }
                 RawEntry::RefDelta(base_oid, delta) => {
-                    let base = *self
-                        .by_oid
-                        .get(&base_oid)
-                        .ok_or_else(|| corrupt(format!("{MISSING_REF_BASE} {base_oid}")))?;
+                    let Some(&base) = self.by_oid.get(&base_oid) else {
+                        return Ok(Err(base_oid));
+                    };
                     chain.push((at, delta));
                     at = base;
                 }
@@ -503,11 +536,9 @@ impl PackReader {
             )?);
             self.remember(at, kind, payload.clone());
         }
-        Ok((kind, payload))
+        Ok(Ok((kind, payload)))
     }
 }
-
-const MISSING_REF_BASE: &str = "pack reference delta base not found:";
 
 fn read_size_encoding(data: &[u8], pos: &mut usize) -> SynapseResult<u64> {
     let mut value = 0u64;
@@ -734,6 +765,87 @@ pub fn apply_delta_limited(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn refusal(r: SynapseResult<PackReader>, case: &str) -> SynapseError {
+        match r {
+            Ok(p) => panic!(
+                "{case}: indexed {} entries instead of refusing",
+                p.entries().len()
+            ),
+            Err(e) => e,
+        }
+    }
+
+    /// A pack whose first entry is a reference delta on the blob stored after it (legal on
+    /// disk: the base is in the pack), or with the base left out (a thin pack).
+    fn ref_delta_before_base_pack(with_base: bool) -> (Vec<u8>, GitObject, GitObject) {
+        let base = GitObject::new(ObjectKind::Blob, b"hello base object\n".repeat(4));
+        let mut result = base.payload.clone();
+        result.push(b'!');
+        let target = GitObject::new(ObjectKind::Blob, result.clone());
+        // Sizes (one byte each, both under 128), copy the whole base, insert one byte.
+        let delta = vec![
+            base.payload.len() as u8,
+            result.len() as u8,
+            0x90,
+            base.payload.len() as u8,
+            0x01,
+            b'!',
+        ];
+        let mut pack = Vec::new();
+        pack.extend_from_slice(PACK_SIGNATURE);
+        pack.extend_from_slice(&PACK_VERSION.to_be_bytes());
+        pack.extend_from_slice(&(1 + u32::from(with_base)).to_be_bytes());
+        encode_entry_header(OBJ_REF_DELTA, delta.len() as u64, &mut pack);
+        pack.extend_from_slice(&base.oid().0);
+        pack.extend_from_slice(&zlib_compress_store(&delta));
+        if with_base {
+            encode_entry_header(base.kind.pack_type(), base.payload.len() as u64, &mut pack);
+            pack.extend_from_slice(&zlib_compress_store(&base.payload));
+        }
+        let sum: [u8; 20] = Sha1::digest(&pack).into();
+        pack.extend_from_slice(&sum);
+        (pack, base, target)
+    }
+
+    #[test]
+    fn indexer_resolves_a_reference_delta_stored_before_its_base_within_the_budget() {
+        let (pack, base, target) = ref_delta_before_base_pack(true);
+        let declared = (base.payload.len() + target.payload.len()) as u64;
+        let fits = crate::repo::ReadLimits {
+            max_total_object_bytes: declared,
+            ..Default::default()
+        };
+        let mut reader = PackReader::index_with_limits(pack.clone(), &fits).unwrap();
+        assert_eq!(reader.entries().len(), 2);
+        assert_eq!(reader.read(base.oid()).unwrap().unwrap(), base);
+        assert_eq!(reader.read(target.oid()).unwrap().unwrap(), target);
+        // One byte short of what the entries declare: refused before anything is resolved.
+        let short = crate::repo::ReadLimits {
+            max_total_object_bytes: declared - 1,
+            ..Default::default()
+        };
+        let err = refusal(
+            PackReader::index_with_limits(pack, &short),
+            "one byte short",
+        );
+        assert_eq!(err.code, RefusalCode::QuotaPayloadTooLarge);
+        // The per-object cap applies to the delta result as well.
+        let (pack, _, _) = ref_delta_before_base_pack(true);
+        let capped = crate::repo::ReadLimits {
+            max_object_bytes: base.payload.len() as u64,
+            ..Default::default()
+        };
+        let err = refusal(
+            PackReader::index_with_limits(pack, &capped),
+            "delta result over the cap",
+        );
+        assert_eq!(err.code, RefusalCode::QuotaPayloadTooLarge);
+        let (thin, _, _) = ref_delta_before_base_pack(false);
+        let err = refusal(PackReader::index(thin), "thin pack");
+        assert_eq!(err.code, RefusalCode::GitObjectCorrupt);
+        assert!(err.message.contains("thin pack"), "{}", err.message);
+    }
 
     #[test]
     fn crc32_matches_the_ieee_check_value() {

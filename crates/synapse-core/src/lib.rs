@@ -17,8 +17,9 @@ pub use revision::{
     ENVELOPE_V2_VERSION, MAX_CHAIN_PATH_DEPTH, MAX_OBSOLESCENCE_SUCCESSORS,
 };
 pub use tree::{
-    tree_entry_order, validate_tree_entry_name, TreeDigest, TreeNodeEncoder, DOMAIN_TREE_V1,
-    MAX_TREE_ENTRY_NAME_BYTES, TREE_TAG_DIRECTORY,
+    decode_tree_node, tree_entry_order, validate_tree_entry_name, TreeDigest, TreeNodeEncoder,
+    TreeNodeEntry, TreeNodeEntryKind, DOMAIN_TREE_V1, MAX_TREE_ENTRY_NAME_BYTES,
+    TREE_TAG_DIRECTORY,
 };
 
 /// Current canonical changeset envelope schema version.
@@ -139,6 +140,12 @@ pub enum RefusalCode {
     RadicleQuorumInsufficient,
     StaleBaseHead,
     SplitBrainDivergence,
+    /// A Git object the native model cannot hold without loss, so it could not be exported
+    /// with its original object ID (ADR 0003 step H1): a gitlink or empty subtree, an entry
+    /// name that is not a valid path segment, a mode other than the canonical `100644`,
+    /// `100755`, `120000` and `40000`, or a commit or tag whose links are not written in
+    /// Git's canonical layout.
+    GitObjectNotRepresentable,
 }
 
 /// Structured error pairing a deterministic `RefusalCode` with diagnostic context.
@@ -312,6 +319,31 @@ impl fmt::Display for BlobDigest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.to_hex())
     }
+}
+
+/// The Git tree payload a canonical tree node (C1, version 1) stands for: per entry, in the
+/// node's order (which is Git's tree order), `{mode} {name}\0{oid}`, where a file's mode is
+/// [`FileMode::git_octal_str`] and a directory's is `40000`. `blob_oid` and `tree_oid` give
+/// the Git ID of each entry. Both the Git bridge's export and the store's check of a mapped
+/// tree's Git ID use this one function.
+pub fn git_tree_payload_of_node(
+    node: &[u8],
+    blob_oid: &mut dyn FnMut(BlobDigest) -> SynapseResult<GitOid>,
+    tree_oid: &mut dyn FnMut(TreeDigest) -> SynapseResult<GitOid>,
+) -> SynapseResult<Vec<u8>> {
+    let mut out = Vec::with_capacity(node.len());
+    for e in decode_tree_node(node)? {
+        let (mode, oid) = match e.kind {
+            TreeNodeEntryKind::File { mode, blob, .. } => (mode.git_octal_str(), blob_oid(blob)?),
+            TreeNodeEntryKind::Dir(child) => ("40000", tree_oid(child)?),
+        };
+        out.extend_from_slice(mode.as_bytes());
+        out.push(b' ');
+        out.extend_from_slice(e.name.as_bytes());
+        out.push(0);
+        out.extend_from_slice(&oid.0);
+    }
+    Ok(out)
 }
 
 /// 20-byte standard Git SHA-1 object identifier (`blob`, `tree`, or `commit`).

@@ -97,7 +97,7 @@ Every error path returns a typed `RefusalCode`:
 * Capacity & Backpressure: `BackpressureOverCapacity`, `QuotaPayloadTooLarge`, `QuotaTooManyPaths`, `QuotaRateLimitExceeded`, `PaginationLimitExceeded`
 * Schema & Path Validation: `EnvelopeVersionUnsupported`, `PathInvalid`, `PathDuplicate`, `MutationsUnsorted`, `BaseTreeNotFound`, `ParentChangesetNotFound`, `ChangesetNotFound`, `VisibilitySeqAhead`, `IdempotencyKeyConflict`
 * Auth & Security: `AuthSignatureInvalid`, `AuthGrantSignatureInvalid`, `AuthGrantExpired`, `AuthCapabilityDenied`, `AuthCrossRepoDenied`, `AuthReplayDetected`, `AuthSelfReviewRefused`
-* Git & Radicle Canonicality: `GitObjectCorrupt`, `GitRefNonFastForward`, `RadicleIdentityInvalid`, `RadicleSignatureInvalid`, `RadicleQuorumInsufficient`, `StaleBaseHead`, `SplitBrainDivergence`
+* Git & Radicle Canonicality: `GitObjectCorrupt`, `GitObjectNotRepresentable`, `GitRefNonFastForward`, `RadicleIdentityInvalid`, `RadicleSignatureInvalid`, `RadicleQuorumInsufficient`, `StaleBaseHead`, `SplitBrainDivergence`
 
 ## 6. Schema and Storage Upgrades
 

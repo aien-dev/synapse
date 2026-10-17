@@ -1,0 +1,10 @@
+# Re-review N1/N3 red run: 28d783c + working tree, one stub at a time
+## stub N1: fan-out directory check removed (if !real_dir(&fanout)? -> if false)
+test h1_hostile_linked_object_fanout_directory_is_refused ... FAILED
+thread 'h1_hostile_linked_object_fanout_directory_is_refused' (2242811) panicked at crates/synapse-git/tests/h1_hostile_repo.rs:80:18:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.02s
+## stub N3: indexer total budget check removed (declared > max_total_object_bytes -> false)
+test pack::tests::indexer_resolves_a_reference_delta_stored_before_its_base_within_the_budget ... FAILED
+thread 'pack::tests::indexer_resolves_a_reference_delta_stored_before_its_base_within_the_budget' (2249045) panicked at crates/synapse-git/src/pack.rs:771:22:
+one byte short: indexed 2 entries instead of refusing
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
