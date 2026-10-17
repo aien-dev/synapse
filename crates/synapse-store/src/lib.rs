@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+pub use synapse_auth::{SignedStateMove, StateMoveFault};
 use synapse_core::{
     BlobDigest, ChainPath, ChangesetEnvelope, ChangesetEnvelopeV2, ChangesetId, EvidenceAttachment,
     GitHubPullRequestProjection, IdempotencyKey, MutationOp, ObsolescenceMarker,
@@ -39,8 +40,8 @@ pub mod wal2;
 
 pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
 pub use revision::{
-    AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome, StoredRevision,
-    DOMAIN_STATE_ROOT_REVISIONS_V1,
+    AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome, StateMoveReplayReport,
+    StoredRevision, DOMAIN_STATE_ROOT_REVISIONS_V1,
 };
 pub use shared::{GroupCommitStats, SharedStore};
 
@@ -323,14 +324,12 @@ pub enum WalRecord {
         chain: ChainPath,
         recorded_at_ms: u64,
     },
-    /// A move of revision `changeset_id` of `repo_id` to state `to`, asked for under `chain` at
-    /// server time `moved_at_ms` (ADR 0003 B4). Binary codec only.
+    /// A move of a revision to another state, signed by its mover (the audience of the
+    /// chain's leaf link) and recorded at server time `moved_at_ms` (ADR 0003 B4, issue
+    /// #89). Binary codec only.
     #[serde(skip)]
     RevisionStateMoved {
-        repo_id: RepoId,
-        changeset_id: ChangesetId,
-        to: RevisionState,
-        chain: ChainPath,
+        state_move: SignedStateMove,
         moved_at_ms: u64,
     },
 }
@@ -2209,7 +2208,24 @@ impl SynapseStore {
         self.recover_v2(recovery_policy, &mut overlap)?;
         overlap.close(self.committed_seq, self.last_frame_sha256)?;
 
-        // 3. A store with v1 history keeps writing v1 JSON until its first binary
+        // 3. A state move that does not verify was written without the mover's key: the
+        //    unkeyed seal cannot tell a forgery from a store's write, so strict recovery
+        //    refuses the store instead of hiding it as a no-op (issue #89). It checks the
+        //    records themselves, so a forgery inside a resealed checkpoint is refused too.
+        if recovery_policy == RecoveryPolicy::StrictFailClosed {
+            let report = self.revisions.state_move_report();
+            if let Some((seq, fault)) = report.first_unverified {
+                return Err(SynapseError::new(
+                    RefusalCode::RevisionStateMoveUnverified,
+                    format!(
+                        "{} WAL kind 9 state move(s) do not verify (first at {seq}: {fault:?}); strict recovery refuses the store",
+                        report.unverified()
+                    ),
+                ));
+            }
+        }
+
+        // 4. A store with v1 history keeps writing v1 JSON until its first binary
         //    checkpoint (the migration checkpoint); every other store writes binary v2.
         self.codec = if self.checkpoint_chain.is_some() || !self.v1_history {
             RecordCodec::BinaryV2

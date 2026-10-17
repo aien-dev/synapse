@@ -18,6 +18,7 @@
 //! huge length is refused without allocating it.
 
 use super::*;
+use synapse_auth::CapabilityLink;
 use synapse_core::{FileMode, GitOid, PathMutation};
 
 /// Codec version byte that starts every binary record and checkpoint content.
@@ -341,17 +342,18 @@ pub fn encode_record(record: &WalRecord) -> SynapseResult<Vec<u8>> {
             w.u64(*recorded_at_ms);
         }
         WalRecord::RevisionStateMoved {
-            repo_id,
-            changeset_id,
-            to,
-            chain,
+            state_move: m,
             moved_at_ms,
         } => {
-            w.repo(repo_id)?;
-            w.raw(&changeset_id.0);
-            w.u8(to.tag_byte());
-            put_chain(&mut w, chain)?;
+            w.repo(&m.repo_id)?;
+            w.raw(&m.changeset_id.0);
+            w.u8(m.to.tag_byte());
+            put_chain(&mut w, &m.chain)?;
             w.u64(*moved_at_ms);
+            w.u64(m.signed_at_ms);
+            w.bytes(&m.leaf_link.encode(), "leaf link")?;
+            w.raw(&m.mover_key);
+            w.raw(&m.signature);
         }
     }
     Ok(w.0)
@@ -754,12 +756,20 @@ pub fn decode_record(bytes: &[u8], cap: u64) -> Result<WalRecord, CodecRefusal> 
                 field: "revision state",
                 tag,
             })?;
+            let chain = r.embedded("chain path", ChainPath::decode)?;
+            let moved_at_ms = r.u64()?;
             WalRecord::RevisionStateMoved {
-                repo_id,
-                changeset_id,
-                to,
-                chain: r.embedded("chain path", ChainPath::decode)?,
-                moved_at_ms: r.u64()?,
+                state_move: SignedStateMove {
+                    repo_id,
+                    changeset_id,
+                    to,
+                    chain,
+                    signed_at_ms: r.u64()?,
+                    leaf_link: r.embedded("leaf link", CapabilityLink::decode)?,
+                    mover_key: r.array()?,
+                    signature: r.array()?,
+                },
+                moved_at_ms,
             }
         }
         tag => {

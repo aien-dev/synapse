@@ -1,8 +1,9 @@
 //! ADR 0003 step B4 acceptance tests (issue #28): the revision state machine (`Private`,
 //! `Draft`, `Proposed`, `Verified`, `Canonical`). Over random operation sequences no revision
 //! moves backwards; a `Private` revision is invisible to every key outside its owner chain;
-//! any move to `Canonical` outside the promotion queue is refused. Chains here are plain
-//! link-digest paths; `synapse-api` tests the same rules with real signed F1 chains.
+//! any move to `Canonical` outside the promotion queue is refused. Chains here are digests of
+//! real F1 links from the shared fixture (`common`), and every state move carries its leaf
+//! link and the leaf key's signature (issue #89).
 //!
 //! The property tests use a seeded SplitMix64 generator (no new dependency, as in F1); the
 //! seed and case counts are fixed so every run checks the same sequences.
@@ -12,9 +13,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use synapse_core::{
     BlobDigest, ChainPath, ChangeId, ChangesetEnvelopeV2, ChangesetId, FileMode, IdempotencyKey,
-    MutationOp, ObsolescenceMarker, PathMutation, RefusalCode, RepoId, RevisionContent,
-    RevisionState, TreeDigest,
+    MutationOp, ObsolescenceMarker, PathMutation, RefusalCode, RevisionContent, RevisionState,
+    TreeDigest,
 };
+mod common;
+use common::{key_of, mv, path, repo, signed};
 use synapse_store::codec::{decode_record, encode_record};
 use synapse_store::{
     AdmissionAuthority, FsyncPolicy, RecoveryPolicy, RevisionOutcome, StoreLimits, SynapseStore,
@@ -59,14 +62,6 @@ fn open(dir: &Path, policy: FsyncPolicy) -> SynapseStore {
     SynapseStore::open(dir, policy, STRICT, limits).unwrap()
 }
 
-fn repo() -> RepoId {
-    RepoId::new("aien-spark/synapse").unwrap()
-}
-
-fn path(links: &[u8]) -> ChainPath {
-    ChainPath::new(links.iter().map(|b| [*b; 32]).collect()).unwrap()
-}
-
 /// The delegation tree: root `R` = [1]; orchestrator `O` = [1,2] under it; workers
 /// `W1` = [1,2,3] and `W2` = [1,2,4] under `O`; `W1s` = [1,2,3,5], a sub-delegate of `W1`;
 /// outsider `X` = [1,9] beside `O`. Each chain presents its own key.
@@ -78,10 +73,6 @@ const TREE: [&[u8]; 6] = [
     &[1, 2, 3, 5],
     &[1, 9],
 ];
-
-fn key_of(links: &[u8]) -> SigningKey {
-    SigningKey::from_bytes(&[*links.last().unwrap(); 32])
-}
 
 fn auth(chain: &ChainPath) -> AdmissionAuthority {
     AdmissionAuthority {
@@ -238,15 +229,14 @@ fn b4_property_random_operation_sequences_never_move_a_revision_backwards() {
                         known[i].0
                     };
                     let to = RevisionState::ALL[rng.below(5) as usize];
-                    let chain = path(TREE[rng.below(TREE.len() as u64) as usize]);
+                    let labels = TREE[rng.below(TREE.len() as u64) as usize];
+                    let chain = path(labels);
                     let (cur, owners) = (known[i].4, &known[i].3);
                     let owner = !unknown && chain.dominates(&owners[0]);
                     let visible = !unknown && (cur != RevisionState::Private || owner);
                     let expected = model_move(cur, to, owner, visible);
                     let before = s.committed_seq();
-                    let got = s
-                        .advance_revision_state(&repo(), id, to, chain, 6_000)
-                        .map_err(|e| e.code);
+                    let got = mv(&mut s, labels, id, to, 6_000).map_err(|e| e.code);
                     match (&expected, &got) {
                         (Ok(want), Ok(_)) => {
                             known[i].4 = *want;
@@ -311,8 +301,7 @@ fn b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain() {
     let o: &[u8] = &[1, 2];
     // O creates the change (Draft, so the change itself is visible); W1 adds a Private one.
     let shared = admit(&mut s, o, b"orchestrator draft", 1);
-    s.advance_revision_state(&repo(), shared, RevisionState::Draft, path(o), 5_100)
-        .unwrap();
+    mv(&mut s, o, shared, RevisionState::Draft, 5_100).unwrap();
     let p = admit(&mut s, w1, b"worker private attempt", 1);
     assert_eq!(state(&s, p), RevisionState::Private);
     let unknown = ChangesetId([0xEE; 32]);
@@ -320,7 +309,8 @@ fn b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain() {
         .get_revision_visible_to(&repo(), unknown, &path(o))
         .unwrap_err();
 
-    let check = |s: &mut SynapseStore, viewer: &ChainPath| {
+    let check = |s: &mut SynapseStore, labels: &[u8]| {
+        let viewer = &path(labels);
         let owner = viewer.dominates(&path(w1));
         let read = s.get_revision_visible_to(&repo(), p, viewer);
         let listed = s
@@ -343,10 +333,15 @@ fn b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain() {
         );
         assert!(!listed, "{viewer:?} must not see it in the change");
         let before = s.committed_seq();
-        let leaf = viewer.links().last().unwrap()[0];
-        let signer = SigningKey::from_bytes(&[leaf; 32]);
+        let signer = key_of(labels);
         // Not nameable as a parent.
-        let (env, blobs) = revision(&signer, ChangeId([0x77; 16]), b"child", [leaf; 32], vec![p]);
+        let (env, blobs) = revision(
+            &signer,
+            ChangeId([0x77; 16]),
+            b"child",
+            common::derived("idempotency", labels),
+            vec![p],
+        );
         assert_eq!(
             s.admit_revision(env, &blobs, auth(viewer), 5_200)
                 .unwrap_err()
@@ -367,7 +362,7 @@ fn b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain() {
         }
         // Not movable.
         assert_eq!(
-            s.advance_revision_state(&repo(), p, RevisionState::Draft, viewer.clone(), 6_000)
+            mv(s, labels, p, RevisionState::Draft, 6_000)
                 .unwrap_err()
                 .code,
             RefusalCode::ChangesetNotFound,
@@ -378,7 +373,7 @@ fn b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain() {
 
     // The fixed tree: R, O, W1 own it; W2, the sub-delegate W1s, and X do not.
     for links in TREE {
-        check(&mut s, &path(links));
+        check(&mut s, links);
     }
     // Random chains over the same link alphabet.
     let mut rng = SplitMix64(0xB4_0002);
@@ -387,23 +382,22 @@ fn b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain() {
         let links: Vec<u8> = (0..len)
             .map(|_| [1u8, 2, 3, 4, 5, 9][rng.below(6) as usize])
             .collect();
-        check(&mut s, &path(&links));
+        check(&mut s, &links);
     }
     // The same after replay and after a checkpoint.
     drop(s);
     let mut s = open(&dir, FsyncPolicy::EveryCommit);
     for links in TREE {
-        check(&mut s, &path(links));
+        check(&mut s, links);
     }
     s.checkpoint_and_compact(9_000).unwrap();
     drop(s);
     let mut s = open(&dir, FsyncPolicy::EveryCommit);
     for links in TREE {
-        check(&mut s, &path(links));
+        check(&mut s, links);
     }
     // Once its owner moves it to Draft, it is visible to every chain.
-    s.advance_revision_state(&repo(), p, RevisionState::Draft, path(w1), 9_100)
-        .unwrap();
+    mv(&mut s, w1, p, RevisionState::Draft, 9_100).unwrap();
     for links in TREE {
         let viewer = path(links);
         assert_eq!(
@@ -430,22 +424,18 @@ fn b4_any_move_to_canonical_outside_the_promotion_queue_is_refused() {
     let private = admit(&mut s, w1, b"private", 1);
     let draft = admit(&mut s, w1, b"draft", 2);
     let proposed = admit(&mut s, w1, b"proposed", 3);
-    s.advance_revision_state(&repo(), draft, RevisionState::Draft, path(w1), 5_100)
-        .unwrap();
-    s.advance_revision_state(&repo(), proposed, RevisionState::Proposed, path(w1), 5_101)
-        .unwrap();
+    mv(&mut s, w1, draft, RevisionState::Draft, 5_100).unwrap();
+    mv(&mut s, w1, proposed, RevisionState::Proposed, 5_101).unwrap();
     let before = s.committed_seq();
     for id in [private, draft, proposed, ChangesetId([0xEE; 32])] {
         for links in TREE {
-            let err = s
-                .advance_revision_state(&repo(), id, RevisionState::Canonical, path(links), 6_000)
-                .unwrap_err();
+            let err = mv(&mut s, links, id, RevisionState::Canonical, 6_000).unwrap_err();
             assert_eq!(err.code, RefusalCode::CanonicalOutsidePromotionQueue);
         }
     }
     for id in [private, draft, proposed] {
         assert_eq!(
-            s.advance_revision_state(&repo(), id, RevisionState::Verified, path(w1), 6_000)
+            mv(&mut s, w1, id, RevisionState::Verified, 6_000)
                 .unwrap_err()
                 .code,
             RefusalCode::RevisionStateMoveInvalid
@@ -462,9 +452,7 @@ fn b4_any_move_to_canonical_outside_the_promotion_queue_is_refused() {
         RevisionState::Proposed,
     ] {
         assert_eq!(
-            s.advance_revision_state(&repo(), proposed, to, path(w1), 6_000)
-                .unwrap_err()
-                .code,
+            mv(&mut s, w1, proposed, to, 6_000).unwrap_err().code,
             RefusalCode::RevisionStateMoveInvalid
         );
     }
@@ -509,8 +497,8 @@ fn b4_joining_identical_content_grants_no_ownership_of_a_private_revision() {
     assert_eq!(s.get_revision(&repo(), p).unwrap().witnesses.len(), 2);
     let check = |s: &mut SynapseStore| {
         assert_eq!(state(s, p), RevisionState::Private);
-        for viewer in [w1, x] {
-            let viewer = path(viewer);
+        for labels in [w1, x] {
+            let viewer = path(labels);
             assert_eq!(
                 s.get_revision_visible_to(&repo(), p, &viewer)
                     .unwrap_err()
@@ -524,9 +512,7 @@ fn b4_joining_identical_content_grants_no_ownership_of_a_private_revision() {
             let before = s.committed_seq();
             for to in [RevisionState::Draft, RevisionState::Proposed] {
                 assert_eq!(
-                    s.advance_revision_state(&repo(), p, to, viewer.clone(), 6_000)
-                        .unwrap_err()
-                        .code,
+                    mv(s, labels, p, to, 6_000).unwrap_err().code,
                     RefusalCode::ChangesetNotFound,
                     "{viewer:?}"
                 );
@@ -550,8 +536,7 @@ fn b4_joining_identical_content_grants_no_ownership_of_a_private_revision() {
     let mut s = open(&dir, FsyncPolicy::EveryCommit);
     check(&mut s);
     // The owner shares it: the joiner reads it now, but moving it stays the owner's.
-    s.advance_revision_state(&repo(), p, RevisionState::Draft, path(o), 9_100)
-        .unwrap();
+    mv(&mut s, o, p, RevisionState::Draft, 9_100).unwrap();
     assert_eq!(
         s.get_revision_visible_to(&repo(), p, &path(w1))
             .unwrap()
@@ -559,47 +544,75 @@ fn b4_joining_identical_content_grants_no_ownership_of_a_private_revision() {
         RevisionState::Draft
     );
     assert_eq!(
-        s.advance_revision_state(&repo(), p, RevisionState::Proposed, path(w1), 9_200)
+        mv(&mut s, w1, p, RevisionState::Proposed, 9_200)
             .unwrap_err()
             .code,
         RefusalCode::AuthChainNotDominant
     );
-    s.advance_revision_state(&repo(), p, RevisionState::Proposed, path(o), 9_300)
-        .unwrap();
+    mv(&mut s, o, p, RevisionState::Proposed, 9_300).unwrap();
 }
 
-/// The kind 9 record round-trips byte for byte; truncated, extended, and unknown-state bytes
-/// are refused typed, never a panic.
+/// The kind 9 v2 record (issue #89) round-trips byte for byte and its move verifies after
+/// decoding; truncated, extended, unknown-state, and malformed-leaf-link bytes are refused
+/// typed, never a panic; the unsigned layout of #88 is refused (truncated).
 #[test]
 fn b4_state_move_records_round_trip_and_malformed_bytes_are_refused_typed() {
+    let w1: &[u8] = &[1, 2, 3];
+    let id = ChangesetId(common::derived("codec revision", &[]));
     let record = WalRecord::RevisionStateMoved {
-        repo_id: repo(),
-        changeset_id: ChangesetId([3; 32]),
-        to: RevisionState::Proposed,
-        chain: path(&[1, 2, 3]),
-        moved_at_ms: 7,
+        state_move: signed(w1, id, RevisionState::Proposed, 7),
+        moved_at_ms: 8,
     };
     let bytes = encode_record(&record).unwrap();
     assert_eq!(record.kind_byte(), 9);
-    assert_eq!(decode_record(&bytes, 1 << 20).unwrap(), record);
-    assert_eq!(
-        encode_record(&decode_record(&bytes, 1 << 20).unwrap()).unwrap(),
-        bytes
-    );
+    let decoded = decode_record(&bytes, 1 << 20).unwrap();
+    assert_eq!(decoded, record);
+    assert_eq!(encode_record(&decoded).unwrap(), bytes);
+    match &decoded {
+        WalRecord::RevisionStateMoved { state_move, .. } => {
+            assert_eq!(state_move.verify(), Ok(()))
+        }
+        other => panic!("decoded {other:?}"),
+    }
     for cut in 0..bytes.len() {
-        assert!(decode_record(&bytes[..cut], 1 << 20).is_err(), "cut {cut}");
+        let err = decode_record(&bytes[..cut], 1 << 20).unwrap_err();
+        assert!(
+            matches!(err.kind(), "Truncated" | "EmbeddedMalformed"),
+            "cut {cut}: {err:?}"
+        );
     }
     let mut longer = bytes.clone();
     longer.push(0);
-    assert!(decode_record(&longer, 1 << 20).is_err());
+    assert_eq!(
+        decode_record(&longer, 1 << 20).unwrap_err().kind(),
+        "TrailingBytes"
+    );
     // The state tag sits after the codec byte, kind, repo string, and changeset ID.
     let tag_at = 2 + 4 + repo().as_str().len() + 32;
     assert_eq!(bytes[tag_at], RevisionState::Proposed.tag_byte());
     for bad in [0u8, 6, 0xFF] {
         let mut b = bytes.clone();
         b[tag_at] = bad;
-        assert!(decode_record(&b, 1 << 20).is_err(), "state tag {bad}");
+        assert_eq!(
+            decode_record(&b, 1 << 20).unwrap_err().kind(),
+            "UnknownTag",
+            "state tag {bad}"
+        );
     }
+    // #88's unsigned layout ends after `moved_at_ms`: `repo | id | to | chain | moved_at_ms`.
+    let v1_len = tag_at + 1 + 4 + (1 + 32 * w1.len()) + 8;
+    assert_eq!(
+        decode_record(&bytes[..v1_len], 1 << 20).unwrap_err().kind(),
+        "Truncated"
+    );
+    // The leaf link is decoded strictly by `CapabilityLink::decode` (its version first).
+    let link_at = v1_len + 8 + 4;
+    let mut b = bytes.clone();
+    b[link_at] ^= 0x02;
+    assert_eq!(
+        decode_record(&b, 1 << 20).unwrap_err().kind(),
+        "EmbeddedMalformed"
+    );
     for i in 2..bytes.len() {
         let mut b = bytes.clone();
         b[i] ^= 0x41;

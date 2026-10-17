@@ -1,7 +1,7 @@
 //! ADR 0003 step B1 acceptance tests (issue #27): change identity bound to its creating
 //! chain, admission witnesses, obsolescence markers, envelope v2 with a native base, and v1
-//! identities unchanged. Chains here are plain link-digest paths; `synapse-api` tests the
-//! same rules with real signed F1 capability chains.
+//! identities unchanged. Chains here are digests of real F1 links from the shared fixture
+//! (`common`); `synapse-api` tests the same rules end to end through the request path.
 
 use ed25519_dalek::SigningKey;
 use std::path::{Path, PathBuf};
@@ -11,6 +11,7 @@ use synapse_core::{
     ObsolescenceMarker, PathMutation, RefusalCode, RepoId, RevisionContent, RevisionState,
     TreeDigest, WalSeq,
 };
+mod common;
 use synapse_store::codec::{decode_record, encode_record};
 use synapse_store::{
     AdmissionAuthority, FsyncPolicy, IngestOutcome, RecordCodec, RecoveryPolicy, RevisionOutcome,
@@ -57,7 +58,7 @@ struct Chains {
 }
 
 fn chains() -> Chains {
-    let p = |v: &[u8]| ChainPath::new(v.iter().map(|b| [*b; 32]).collect()).unwrap();
+    let p = common::path;
     Chains {
         r: p(&[1]),
         o: p(&[1, 2]),
@@ -314,8 +315,7 @@ fn b1_prune_by_chain_not_dominating_creating_chain_is_refused() {
     let b = admit(&mut s, &key(3), &c.w1, b"worker attempt", 1);
     // The owner shares it (ADR 0003 B4), so the other chains see it and are refused for
     // dominance rather than as an unknown revision.
-    s.advance_revision_state(&repo(), a, RevisionState::Draft, c.o.clone(), 5_500)
-        .unwrap();
+    common::mv(&mut s, &[1, 2], a, RevisionState::Draft, 5_500).unwrap();
     let before = s.committed_seq();
     for (signer, chain) in [(key(3), &c.w1), (key(9), &c.x), (key(4), &c.w2)] {
         let err = s

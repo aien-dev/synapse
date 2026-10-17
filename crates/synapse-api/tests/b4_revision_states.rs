@@ -248,11 +248,9 @@ impl Fx {
         id: ChangesetId,
         to: RevisionState,
     ) -> Result<WalSeq, RefusalCode> {
-        let payload = RevisionStateMovePayload {
-            changeset_id: id,
-            to,
-        }
-        .encode();
+        let payload = RevisionStateMovePayload::sign_new(&who.0, &repo(), &who.1, id, to, NOW)
+            .unwrap()
+            .encode();
         let req = self.request(who, Capability::Propose, RequestScope::default(), payload);
         self.svc
             .advance_revision_state(&req, NOW)
@@ -340,11 +338,10 @@ fn b4_api_move_to_canonical_outside_the_promotion_queue_is_refused() {
         }
     }
     // Asking with the canonical reference in the request scope changes nothing.
-    let payload = RevisionStateMovePayload {
-        changeset_id: rev,
-        to: RevisionState::Canonical,
-    }
-    .encode();
+    let payload =
+        RevisionStateMovePayload::sign_new(&p.0, &repo(), &p.1, rev, RevisionState::Canonical, NOW)
+            .unwrap()
+            .encode();
     let scope = RequestScope {
         paths: vec![],
         reference: Some(ReferenceKind::CanonicalViaPromotionQueue),
@@ -364,10 +361,18 @@ fn b4_api_move_to_canonical_outside_the_promotion_queue_is_refused() {
         fx.svc.store().get_revision(&repo(), rev).unwrap().state,
         RevisionState::Proposed
     );
-    // Payloads: exactly changeset_id [32] | state 1..=5.
-    let mut bad_tag = rev.0.to_vec();
-    bad_tag.push(6);
-    for payload in [vec![], rev.0.to_vec(), bad_tag, vec![0; 34]] {
+    // Payloads: exactly changeset_id [32] | state 1..=5 | signed_at_ms u64 | signature [64].
+    let good =
+        RevisionStateMovePayload::sign_new(&w.0, &repo(), &w.1, rev, RevisionState::Draft, NOW)
+            .unwrap()
+            .encode();
+    assert_eq!(good.len(), RevisionStateMovePayload::LEN);
+    let mut bad_tag = good.clone();
+    bad_tag[32] = 6;
+    let mut longer = good.clone();
+    longer.push(0);
+    let v1_layout = good[..33].to_vec();
+    for payload in [vec![], v1_layout, bad_tag, good[..104].to_vec(), longer] {
         let req = fx.request(&w, Capability::Propose, RequestScope::default(), payload);
         assert_eq!(
             fx.svc.advance_revision_state(&req, NOW).unwrap_err().code,
@@ -412,5 +417,59 @@ fn b4_api_joining_identical_content_grants_no_ownership_of_a_private_revision() 
     assert_eq!(
         fx.mv(&w, rev, RevisionState::Proposed).unwrap_err(),
         RefusalCode::AuthChainNotDominant
+    );
+}
+
+/// Issue #89: the request agent must sign the move itself. A payload signed by another key
+/// (even the owner's ancestor `O`), or whose signature covers another state, chain, or time,
+/// is `AuthSignatureInvalid` and writes nothing. The agent's own signed move is recorded with
+/// its signature and the chain's leaf link, and still applies after a reopen (strict recovery).
+#[test]
+fn b89_api_state_moves_must_be_signed_by_the_request_agent() {
+    let mut fx = Fx::new("signed");
+    let (o, w) = (fx.o.clone(), fx.w.clone());
+    let rev = fx.submit(&w, b"worker attempt", 1);
+    let before = fx.svc.store().committed_seq();
+    let signed = |by: &Agent, chain_of: &Agent, to: RevisionState| {
+        RevisionStateMovePayload::sign_new(&by.0, &repo(), &chain_of.1, rev, to, NOW).unwrap()
+    };
+    let mut other_state = signed(&w, &w, RevisionState::Proposed);
+    other_state.to = RevisionState::Draft;
+    let mut other_time = signed(&w, &w, RevisionState::Draft);
+    other_time.signed_at_ms += 1;
+    let mut flipped = signed(&w, &w, RevisionState::Draft);
+    flipped.signature[0] ^= 1;
+    for payload in [
+        signed(&o, &w, RevisionState::Draft),
+        signed(&w, &o, RevisionState::Draft),
+        other_state,
+        other_time,
+        flipped,
+    ] {
+        let req = fx.request(
+            &w,
+            Capability::Propose,
+            RequestScope::default(),
+            payload.encode(),
+        );
+        assert_eq!(
+            fx.svc.advance_revision_state(&req, NOW).unwrap_err().code,
+            RefusalCode::AuthSignatureInvalid
+        );
+    }
+    assert_eq!(fx.svc.store().committed_seq(), before, "nothing written");
+    assert_eq!(
+        fx.svc.store().get_revision(&repo(), rev).unwrap().state,
+        RevisionState::Private
+    );
+    fx.mv(&w, rev, RevisionState::Draft).unwrap();
+    assert_eq!(
+        fx.svc.store().get_revision(&repo(), rev).unwrap().state,
+        RevisionState::Draft
+    );
+    assert_eq!(
+        fx.svc.store().state_move_replay_report(),
+        Default::default(),
+        "a store's own writes are never counted"
     );
 }

@@ -205,10 +205,15 @@ impl Fx {
     /// The owner shares a revision (ADR 0003 B4): `Private` -> `Draft`, so chains outside
     /// its owner chain see it and are refused for dominance rather than as unknown.
     fn share(&mut self, who: &(SigningKey, CapabilityChain), rev: ChangesetId) {
-        let payload = RevisionStateMovePayload {
-            changeset_id: rev,
-            to: RevisionState::Draft,
-        }
+        let payload = RevisionStateMovePayload::sign_new(
+            &who.0,
+            &repo(),
+            &who.1,
+            rev,
+            RevisionState::Draft,
+            NOW,
+        )
+        .unwrap()
         .encode();
         let req = self.request(who, vec![], payload);
         self.svc.advance_revision_state(&req, NOW).unwrap();
