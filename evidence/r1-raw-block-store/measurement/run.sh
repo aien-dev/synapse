@@ -1,6 +1,8 @@
 #!/bin/bash
-# R1 (issue #47) measurement: R1 raw block store on a preallocated O_DIRECT file vs the
+# R1 (issue #47) measurement at 222c24d: R1 raw block store on an O_DIRECT device file vs the
 # A2 store on ext4, same NVMe, same session, invocations interleaved R1/A2 x3.
+# The bench creates the device file itself for every cell (the path must not exist) and
+# removes it after the cell.
 set -eu
 B=~/workspace/r1-bench
 BIN=~/workspace/synapse-47/target/release/synapse-bench
