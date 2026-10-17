@@ -11,8 +11,10 @@ use synapse_core::{
 };
 
 mod chain;
+mod digest;
 mod state_move;
 pub use chain::*;
+pub use digest::payload_digest;
 pub use state_move::*;
 
 /// Current capability grant schema version.
@@ -207,11 +209,8 @@ impl<T: Serialize> AuthenticatedRequest<T> {
         declared_payload_bytes_len: u64,
         payload: T,
     ) -> SynapseResult<Self> {
-        let serialized = serde_json::to_vec(&payload).map_err(|e| {
-            SynapseError::new(RefusalCode::IoFailure, format!("serialize payload: {e}"))
-        })?;
-        let payload_sha256: [u8; 32] = Sha256::digest(&serialized).into();
-        let effective_len = declared_payload_bytes_len.max(serialized.len() as u64);
+        let (payload_sha256, serialized_len) = payload_digest(&payload)?;
+        let effective_len = declared_payload_bytes_len.max(serialized_len);
 
         let mut req = Self {
             grant,
@@ -528,10 +527,7 @@ impl PolicyEnforcer {
         }
 
         // 6. Verify payload digest and agent's Ed25519 signature over the request
-        let serialized_payload = serde_json::to_vec(&req.payload).map_err(|e| {
-            SynapseError::new(RefusalCode::IoFailure, format!("serialize payload: {e}"))
-        })?;
-        let actual_payload_sha256: [u8; 32] = Sha256::digest(&serialized_payload).into();
+        let (actual_payload_sha256, serialized_payload_len) = payload_digest(&req.payload)?;
         if actual_payload_sha256 != req.payload_sha256 {
             return Err(SynapseError::new(
                 RefusalCode::AuthSignatureInvalid,
@@ -560,7 +556,7 @@ impl PolicyEnforcer {
             })?;
 
         // 7. Enforce payload byte quota
-        let effective_bytes = req.payload_bytes_len.max(serialized_payload.len() as u64);
+        let effective_bytes = req.payload_bytes_len.max(serialized_payload_len);
         if effective_bytes > req.grant.max_bytes_per_op {
             return Err(SynapseError::new(
                 RefusalCode::QuotaPayloadTooLarge,
