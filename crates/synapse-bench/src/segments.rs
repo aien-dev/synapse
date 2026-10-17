@@ -36,7 +36,12 @@ use synapse_core::{
     BlobDigest, ChangesetEnvelope, FileMode, GitOid, IdempotencyKey, MutationOp, PathMutation,
     RepoId, SYNAPSE_ENVELOPE_VERSION,
 };
-use synapse_store::{FsyncPolicy, IngestOutcome, RecoveryPolicy, SharedStore, StoreLimits};
+use synapse_core::{RefusalCode, SynapseError};
+use synapse_store::blockdev::BlockDevice;
+use synapse_store::{
+    BlockDeviceConfig, FormatPolicy, FsyncPolicy, IngestOutcome, RecoveryPolicy, SharedStore,
+    StoreLimits,
+};
 
 /// Memory bandwidth, bytes per second: NVIDIA DGX Spark specification, 273 GB/s (A0).
 pub const MEMORY_BW_BPS: f64 = 273e9;
@@ -57,6 +62,11 @@ pub struct SegmentsConfig {
     pub segment_bytes: u64,
     pub checkpoint_every: usize,
     pub idle_window_s: u64,
+    /// R1 (issue #47): run every cell on this raw block store device instead of a store
+    /// directory. The bench accepts only a preallocated regular file (opened with
+    /// `O_DIRECT`); its first MiB is zeroed before each cell so the cell formats it anew.
+    #[serde(default)]
+    pub block_device: Option<String>,
 }
 
 /// One measured cell (raw samples).
@@ -248,6 +258,32 @@ fn count_files(dir: &Path, pred: &dyn Fn(&str) -> bool) -> usize {
         .sum()
 }
 
+/// The R1 device of a run: only an existing, absolute, preallocated regular file (this
+/// bench never opens a block device).
+fn block_config(path: &str) -> Result<BlockDeviceConfig, String> {
+    let p = PathBuf::from(path);
+    let meta =
+        std::fs::symlink_metadata(&p).map_err(|e| format!("block device file {path}: {e}"))?;
+    if !meta.file_type().is_file() || !p.is_absolute() {
+        return Err(format!(
+            "--block-device {path}: must be an absolute path to a preallocated regular file"
+        ));
+    }
+    Ok(BlockDeviceConfig::new(p))
+}
+
+/// Zero the first MiB of the device file (its label area) so the next open formats it.
+fn blank_device_file(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::FileExt;
+    let f = std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .map_err(|e| format!("open {}: {e}", path.display()))?;
+    f.write_all_at(&vec![0u8; 1 << 20], 0)
+        .and_then(|_| f.sync_all())
+        .map_err(|e| format!("blank {}: {e}", path.display()))
+}
+
 fn run_cell(
     dir: &Path,
     cfg: &SegmentsConfig,
@@ -260,12 +296,24 @@ fn run_cell(
         segment_bytes: cfg.segment_bytes,
         ..Default::default()
     };
-    let shared = SharedStore::open(
-        dir,
-        FsyncPolicy::GROUP_COMMIT_DEFAULT,
-        RecoveryPolicy::StrictFailClosed,
-        limits,
-    )
+    let block = cfg.block_device.as_deref().map(block_config).transpose()?;
+    let shared = match &block {
+        Some(bc) => {
+            blank_device_file(&bc.path)?;
+            SharedStore::open_block_device(
+                bc,
+                FsyncPolicy::GROUP_COMMIT_DEFAULT,
+                RecoveryPolicy::StrictFailClosed,
+                limits,
+            )
+        }
+        None => SharedStore::open(
+            dir,
+            FsyncPolicy::GROUP_COMMIT_DEFAULT,
+            RecoveryPolicy::StrictFailClosed,
+            limits,
+        ),
+    }
     .map_err(|e| format!("open store: {e:?}"))?;
     // Prepare every agent's changesets before timing (signing is the agent's own work).
     let per_agent = cfg.changes.div_ceil(agents);
@@ -348,9 +396,24 @@ fn run_cell(
     }
     let batches = shared.stats().batches - batches_before;
     drop(shared);
-    let segment_files = count_files(dir, &|n| {
-        synapse_store::segment::parse_segment_file_name(n).is_some()
-    });
+    let segment_files = match &block {
+        Some(bc) => {
+            let cfg = BlockDeviceConfig {
+                format: FormatPolicy::OpenExisting,
+                ..bc.clone()
+            };
+            BlockDevice::open_path(&cfg, 0)
+                .and_then(|d| {
+                    d.list_segments()
+                        .map_err(|e| SynapseError::new(RefusalCode::IoFailure, e.to_string()))
+                })
+                .map_err(|e| format!("reopen device: {e:?}"))?
+                .len()
+        }
+        None => count_files(dir, &|n| {
+            synapse_store::segment::parse_segment_file_name(n).is_some()
+        }),
+    };
     let blob_files = count_files(&dir.join("blobs"), &|_| true);
     Ok(CellRaw {
         agents,
