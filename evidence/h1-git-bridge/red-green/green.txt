@@ -1,0 +1,39 @@
+# Green (2026-10-17, H1 cut 1 working tree on base 3d78efe, git 2.43.0 as oracle)
+# Command: cargo test --locked -p synapse-git
+test object::tests::commit_and_tag_links_parse_and_keep_parent_order ... ok
+test inflate::tests::output_over_the_declared_size_is_refused ... ok
+test object::tests::tree_entries_parse_and_re_encode_exactly ... ok
+test object::tests::loose_encoding_round_trips_and_ids_match_git_known_values ... ok
+test inflate::tests::every_truncation_and_bit_flip_is_refused_or_exact_without_panic ... ok
+test pack::tests::crc32_matches_the_ieee_check_value ... ok
+test pack::tests::delta_copy_and_insert_apply_and_bad_deltas_are_refused ... ok
+test pack::tests::large_offsets_use_the_eight_byte_table ... ok
+test inflate::tests::stored_blocks_round_trip_and_report_consumed_length ... ok
+test pack::tests::written_pack_indexes_back_to_the_same_entries_and_objects ... ok
+test tests::test_advance_human_branch_requires_publish_capability_and_rejects_bypass ... ok
+test tests::test_git_materialization_fsck_clone_fetch_and_human_branch_protection ... ok
+test pack::tests::every_truncation_and_bit_flip_of_a_pack_is_refused_without_panic ... ok
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ignored
+test h1_damaged_or_incomplete_repositories_are_refused_typed ... ok
+test h1_native_indexer_resolves_reference_deltas_from_git_pack_objects ... ok
+test h1_native_reader_reads_every_loose_object_exactly_as_git ... ok
+test h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx ... ok
+test h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean ... ok
+test h1_export_is_deterministic_and_never_overwrites_a_repository ... ok
+test result: ok. 6 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.80s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+#
+# Real repository: git clone --mirror https://github.com/aien-dev/synapse (full history, every ref)
+# synapse.git refs/heads/main = 3d78efe83d5d08b67848e4b32a83112a95dd2a9d
+# Command: SYNAPSE_H1_REAL_REPO=<mirror> cargo test --locked --release -p synapse-git --test h1_git_bridge -- --ignored --nocapture
+real repository synapse.git: 1784 objects (165 commits), 69 refs, pack 70129220 bytes
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 1.75s
+#
+# Real repository: git clone --mirror https://github.com/aien-dev/omega (full history, every ref)
+# omega.git refs/heads/main = f4a9849fb127f8d2d664dfc56890752ad180c507
+# Command: SYNAPSE_H1_REAL_REPO=<mirror> cargo test --locked --release -p synapse-git --test h1_git_bridge -- --ignored --nocapture
+real repository omega.git: 29635 objects (2412 commits), 631 refs, pack 374712257 bytes
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 11.52s
