@@ -4,7 +4,7 @@
 
 use ed25519_dalek::SigningKey;
 use std::path::PathBuf;
-use synapse_api::{SynapseService, TreeTarget};
+use synapse_api::{RevisionStateMovePayload, SynapseService, TreeTarget};
 use synapse_auth::{
     Capability, CapabilityChain, CapabilityLink, ChainQuotas, ChainedRequest, ChangeScope,
     LinkCaveats, OperationSet, PathScope, ReferenceKind, ReferenceScope, RequestScope, ROOT_PARENT,
@@ -12,7 +12,7 @@ use synapse_auth::{
 use synapse_core::{
     encode_did_key_ed25519, BlobDigest, ChangeId, ChangesetEnvelopeV2, ChangesetId, FileMode,
     GitOid, IdempotencyKey, MutationOp, ObsolescenceMarker, PathMutation, RefusalCode, RepoId,
-    RevisionContent, TreeDigest, WalSeq,
+    RevisionContent, RevisionState, TreeDigest, WalSeq,
 };
 use synapse_store::{FsyncPolicy, RecoveryPolicy, RevisionOutcome, StoreLimits};
 
@@ -202,6 +202,18 @@ impl Fx {
             .map_err(|e| e.code)
     }
 
+    /// The owner shares a revision (ADR 0003 B4): `Private` -> `Draft`, so chains outside
+    /// its owner chain see it and are refused for dominance rather than as unknown.
+    fn share(&mut self, who: &(SigningKey, CapabilityChain), rev: ChangesetId) {
+        let payload = RevisionStateMovePayload {
+            changeset_id: rev,
+            to: RevisionState::Draft,
+        }
+        .encode();
+        let req = self.request(who, vec![], payload);
+        self.svc.advance_revision_state(&req, NOW).unwrap();
+    }
+
     fn mark(
         &mut self,
         who: &(SigningKey, CapabilityChain),
@@ -235,6 +247,7 @@ fn b1_api_join_and_prune_follow_the_creating_chain_of_real_f1_chains() {
     );
     // V's grant names C explicitly.
     fx.submit(&v, b"scoped attempt", 1).unwrap();
+    fx.share(&o, a);
     // Pruning needs a chain that is or dominates the creating chain.
     assert_eq!(
         fx.mark(&w, a, vec![]).unwrap_err(),

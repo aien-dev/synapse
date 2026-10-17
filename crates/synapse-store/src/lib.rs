@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use synapse_core::{
     BlobDigest, ChainPath, ChangesetEnvelope, ChangesetEnvelopeV2, ChangesetId, EvidenceAttachment,
     GitHubPullRequestProjection, IdempotencyKey, MutationOp, ObsolescenceMarker,
-    RadicleCanonicalHead, RefusalCode, RepoId, SynapseError, SynapseResult, WalSeq,
+    RadicleCanonicalHead, RefusalCode, RepoId, RevisionState, SynapseError, SynapseResult, WalSeq,
 };
 
 #[cfg(test)]
@@ -323,6 +323,16 @@ pub enum WalRecord {
         chain: ChainPath,
         recorded_at_ms: u64,
     },
+    /// A move of revision `changeset_id` of `repo_id` to state `to`, asked for under `chain` at
+    /// server time `moved_at_ms` (ADR 0003 B4). Binary codec only.
+    #[serde(skip)]
+    RevisionStateMoved {
+        repo_id: RepoId,
+        changeset_id: ChangesetId,
+        to: RevisionState,
+        chain: ChainPath,
+        moved_at_ms: u64,
+    },
 }
 
 impl WalRecord {
@@ -336,6 +346,7 @@ impl WalRecord {
             Self::LeaseUpdated { .. } => 6,
             Self::RevisionAdmitted { .. } => 7,
             Self::ObsolescenceRecorded { .. } => 8,
+            Self::RevisionStateMoved { .. } => 9,
         }
     }
 
@@ -2131,7 +2142,8 @@ impl SynapseStore {
                 }
                 self.revisions.apply(seq, record);
             }
-            record @ WalRecord::ObsolescenceRecorded { .. } => self.revisions.apply(seq, record),
+            record @ (WalRecord::ObsolescenceRecorded { .. }
+            | WalRecord::RevisionStateMoved { .. }) => self.revisions.apply(seq, record),
         }
     }
 
