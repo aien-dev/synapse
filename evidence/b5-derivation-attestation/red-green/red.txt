@@ -1,0 +1,126 @@
+# Red (2026-10-17): each acceptance test run against the B5 commit bbe1734 with one mutation
+# that removes the behaviour it proves; every mutation is reverted after its run.
+# Command per case: cargo test --locked -p synapse-api --test b5_derivation_attestation <test> -- --exact
+
+## server key not checked against the identity document
+# mutation in crates/synapse-store/src/revision.rs:
+#   -        if registered != Some(att.server_key) {
+#   +        if false && registered != Some(att.server_key) {
+thread 'b5_unregistered_server_key_is_refused_at_admission_and_replay' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:294:9:
+assertion `left == right` failed: refused at admission
+  left: Ok(WalSeq(5))
+ right: Err(DerivationServerKeyUnregistered)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.10s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+
+## attestation signature not verified
+# mutation in crates/synapse-core/src/derivation.rs:
+#   +        .or(Ok(()))
+thread 'b5_attestation_signed_by_another_key_is_refused_at_admission_and_replay' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:294:9:
+assertion `left == right` failed: refused at admission
+  left: Ok(WalSeq(5))
+ right: Err(DerivationSignatureInvalid)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.10s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+
+## replayed attestation not detected
+# mutation in crates/synapse-store/src/revision.rs:
+#   -        if let Some(first) = self.derivations.get(&(repo.clone(), digest)) {
+#   +        if let Some(first) = self.derivations.get(&(repo.clone(), digest)).filter(|_| false) {
+thread 'b5_replayed_attestation_is_refused_at_admission_and_replay' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:294:9:
+assertion `left == right` failed: refused at admission
+  left: Ok(WalSeq(5))
+ right: Err(DerivationAttestationReplayed)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.10s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+
+## derivation not recomputed (the attestation's output is trusted)
+# mutation in crates/synapse-store/src/revision.rs:
+#   -        let (content, tree) = derive_revision_output(att.rule, &att.inputs, &lookup, trees)?;
+#   +        let _ = (&lookup, &trees);
+#   +        let (content, tree) = (derived.content.clone(), att.output_tree);
+thread 'b5_attestation_naming_different_inputs_is_refused_at_admission_and_replay' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:294:9:
+assertion `left == right` failed: refused at admission
+  left: Ok(WalSeq(5))
+ right: Err(DerivationRecomputeMismatch)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.09s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+
+## recomputed tree not compared with the attested tree
+# mutation in crates/synapse-store/src/revision.rs:
+#   -        if recomputed != att.output_changeset || tree != att.output_tree {
+#   +        if recomputed != att.output_changeset {
+thread 'b5_recomputation_that_disagrees_is_refused_at_admission_and_replay' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:294:9:
+assertion `left == right` failed: refused at admission
+  left: Ok(WalSeq(5))
+ right: Err(DerivationRecomputeMismatch)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.10s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+
+## attested rule ignored (rule inferred from the input count)
+# mutation in crates/synapse-store/src/revision.rs:
+#   -        let (content, tree) = derive_revision_output(att.rule, &att.inputs, &lookup, trees)?;
+#   +        let (content, tree) = derive_revision_output(if att.inputs.len() == 2 { synapse_core::DerivationRule::Rebase } else { synapse_core::DerivationRule::Merge { tier: synapse_core::MergeTier::T0Path } }, &att.inputs, &lookup, trees)?;
+thread 'b5_attestation_naming_a_different_rule_is_refused_at_admission_and_replay' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:294:9:
+assertion `left == right` failed: refused at admission
+  left: Err(AuthChangeOutOfScope)
+ right: Err(DerivationInputMismatch)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.09s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+
+## replay verifier does not check agent signatures of revision records
+# mutation in crates/synapse-store/src/revision.rs:
+#   -                envelope.validate().map_err(at_seq)?;
+#   +                let _ = envelope;
+thread 'b5_derived_revision_presented_with_an_agent_signature_it_does_not_have_is_refused' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:612:9:
+assertion `left == right` failed
+  left: Ok(4)
+ right: Err(AuthSignatureInvalid)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.09s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+
+## replay verifier does not recompute derived records
+# mutation in crates/synapse-store/src/revision.rs:
+#   -                ledger
+#   -                    .check_derivation(derived, *seq, keys, trees)
+#   -                    .map_err(at_seq)?;
+#   +                let _ = (derived, &keys, &trees);
+thread 'b5_attestation_naming_different_inputs_is_refused_at_admission_and_replay' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:327:9:
+assertion `left == right` failed: refused at replay
+  left: Ok(4)
+ right: Err(DerivationRecomputeMismatch)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.09s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+
+## replay verifier checks the server key at the latest identity document, not at the record's sequence
+# mutation in crates/synapse-store/src/revision.rs:
+#   -                    .check_derivation(derived, *seq, keys, trees)
+#   +                    .check_derivation(derived, WalSeq(u64::MAX), keys, trees)
+thread 'b5_unregistered_server_key_is_refused_at_admission_and_replay' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:535:5:
+assertion `left == right` failed: each verifies at its own sequence
+  left: Err(DerivationServerKeyUnregistered)
+ right: Ok(5)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.11s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+
+## rebase applies the mutations on the source base instead of the target tree
+# mutation in crates/synapse-core/src/derivation.rs:
+#   -            let tree = trees.apply_mutations(*onto, &content.mutations)?;
+#   +            let tree = trees.apply_mutations(source.base_tree, &content.mutations)?;
+thread 'b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:345:5:
+assertion `left == right` failed
+  left: TreeDigest(8e50e3ff7af1ce28124e0bf045b39f205959a647714c58c9784f7dccfe44a0dd)
+ right: TreeDigest(4db0df3d43b078a9cf2e6883d8ac0a98306492e68a34b3d824078747bb606fd4)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.08s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+
+## checkpoint load drops derived revision records
+# mutation in crates/synapse-store/src/codec.rs:
+#   -                s.revision_log.push((seq, record));
+#   +                if record.kind_byte() != 11 {
+#   +                    s.revision_log.push((seq, record));
+#   +                }
+thread 'b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:410:53:
+called `Result::unwrap()` on an `Err` value: SynapseError { code: CheckpointCorrupt, message: "checkpoint: checkpoint.v2 state root does not match its content" }
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.08s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
