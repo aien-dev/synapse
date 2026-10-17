@@ -453,10 +453,46 @@ pub(crate) enum BatchFailure {
     Poisoned(SynapseError),
 }
 
+/// The file a [`WalV2Writer`] writes: a segment file (A2) or a segment slot of a raw
+/// block device (R1).
+#[derive(Debug)]
+pub(crate) enum SegFile {
+    Fs(File),
+    Block {
+        dev: std::sync::Arc<crate::blockdev::BlockDevice>,
+        id: u64,
+    },
+}
+
+impl SegFile {
+    fn write_all_at(&self, buf: &[u8], at: u64) -> std::io::Result<()> {
+        match self {
+            SegFile::Fs(f) => f.write_all_at(buf, at),
+            SegFile::Block { dev, id } => dev.write_segment(*id, at, buf),
+        }
+    }
+
+    /// `fdatasync` (R1: of the whole device).
+    fn sync_data(&self) -> std::io::Result<()> {
+        match self {
+            SegFile::Fs(f) => f.sync_data(),
+            SegFile::Block { dev, .. } => dev.flush(),
+        }
+    }
+
+    /// `fsync` data and size (R1: `fdatasync` of the device; a slot has a fixed size).
+    fn sync_all(&self) -> std::io::Result<()> {
+        match self {
+            SegFile::Fs(f) => f.sync_all(),
+            SegFile::Block { dev, .. } => dev.flush(),
+        }
+    }
+}
+
 /// Writer for `wal.v2.log`.
 #[derive(Debug)]
 pub(crate) struct WalV2Writer {
-    file: File,
+    file: SegFile,
     pub write_offset: u64,
     pub prewritten_end: u64,
     chunk: u64,
@@ -488,7 +524,7 @@ impl WalV2Writer {
         }
         let len = file.metadata().map_err(io_err)?.len();
         let mut w = Self {
-            file,
+            file: SegFile::Fs(file),
             write_offset,
             prewritten_end: len.max(write_offset),
             chunk: chunk.max(WAL_V2_ALIGN),
@@ -501,11 +537,29 @@ impl WalV2Writer {
     /// A writer over a newly created, empty segment file (nothing pre-written yet).
     pub fn new_empty(file: File, chunk: u64, prewrite_cap: u64) -> Self {
         Self {
-            file,
+            file: SegFile::Fs(file),
             write_offset: 0,
             prewritten_end: 0,
             chunk: chunk.max(WAL_V2_ALIGN),
             prewrite_cap: prewrite_cap.max(WAL_V2_ALIGN),
+        }
+    }
+
+    /// A writer over segment slot `id` of a raw block device (R1) with the log ending at
+    /// `write_offset`. The slot was zeroed and flushed when it was created, so the whole
+    /// slot counts as pre-written; a batch past its end is refused.
+    pub fn on_block(
+        dev: std::sync::Arc<crate::blockdev::BlockDevice>,
+        id: u64,
+        write_offset: u64,
+        segment_bytes: u64,
+    ) -> Self {
+        Self {
+            file: SegFile::Block { dev, id },
+            write_offset,
+            prewritten_end: segment_bytes,
+            chunk: segment_bytes.max(WAL_V2_ALIGN),
+            prewrite_cap: segment_bytes,
         }
     }
 
@@ -518,6 +572,12 @@ impl WalV2Writer {
     pub fn ensure_space(&mut self, need: u64) -> std::io::Result<()> {
         if self.write_offset + need <= self.prewritten_end {
             return Ok(());
+        }
+        if let SegFile::Block { id, .. } = &self.file {
+            return Err(std::io::Error::other(format!(
+                "a batch of {need} bytes at offset {} does not fit segment slot {id} of {} bytes",
+                self.write_offset, self.prewritten_end
+            )));
         }
         let ahead = (self.prewritten_end + self.chunk).min(self.prewrite_cap);
         let target = align_up((self.write_offset + need).max(ahead));

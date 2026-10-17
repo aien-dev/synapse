@@ -1,0 +1,13 @@
+Review of PR #103: new tests on head be66db4 (store code unchanged), cargo test -p synapse-store --lib
+test blockdev_tests::r1_a_second_opener_of_the_device_is_refused ... FAILED
+test blockdev_tests::r1_lost_newest_superblock_never_drops_acknowledged_changes ... FAILED
+test blockdev_tests::r1_refuses_a_device_whose_signature_is_only_at_its_end ... FAILED
+thread 'blockdev_tests::r1_a_second_opener_of_the_device_is_refused' (2253661) panicked at crates/synapse-store/src/blockdev_tests.rs:759:39:
+thread 'blockdev_tests::r1_lost_newest_superblock_never_drops_acknowledged_changes' (2253662) panicked at crates/synapse-store/src/blockdev_tests.rs:743:17:
+assertion `left == right` failed: TruncateTornTail: acknowledged changes lost
+thread 'blockdev_tests::r1_refuses_a_device_whose_signature_is_only_at_its_end' (2253663) panicked at crates/synapse-store/src/blockdev_tests.rs:804:9:
+gpt-backup: a device with an end signature was formatted
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.03s
+details:
+  r1_a_second_opener_of_the_device_is_refused: called `Result::unwrap_err()` on an `Ok` value (the second open of the same device file succeeded)
+  r1_lost_newest_superblock_never_drops_acknowledged_changes: left: WalSeq(8) right: WalSeq(10) (opened with 2 acknowledged changes silently gone, the reviewer's B2)

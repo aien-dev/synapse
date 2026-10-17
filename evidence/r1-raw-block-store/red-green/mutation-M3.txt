@@ -1,0 +1,20 @@
+mutation M3: foreign signature formatted over without the override
+test: blockdev_tests::r1_refuses_a_device_carrying_a_filesystem_or_partition_signature
+diff --git a/crates/synapse-store/src/blockdev.rs b/crates/synapse-store/src/blockdev.rs
+index 05850d9..11e25b3 100644
+--- a/crates/synapse-store/src/blockdev.rs
++++ b/crates/synapse-store/src/blockdev.rs
+@@ -612,7 +612,7 @@ impl BlockDevice {
+                     cfg.path.display()
+                 )))
+             }
+-            other if cfg.allow_foreign_signature && cfg.format == FormatPolicy::FormatIfBlank => {
++            other if cfg.format == FormatPolicy::FormatIfBlank => {
+                 let _ = other;
+                 Self::format(io.as_ref(), cfg.meta_region_bytes, segment_bytes)?;
+             }
+---
+test blockdev_tests::r1_refuses_a_device_carrying_a_filesystem_or_partition_signature ... FAILED
+thread 'blockdev_tests::r1_refuses_a_device_carrying_a_filesystem_or_partition_signature' (1697966) panicked at crates/synapse-store/src/blockdev_tests.rs:254:28:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.03s
+error: test failed, to rerun pass `-p synapse-store --lib`
