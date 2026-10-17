@@ -14,7 +14,7 @@ mod revision_state;
 mod tree;
 pub use derivation::{
     derive_revision_output, DerivationAttestation, DerivationInput, DerivationRule,
-    DerivationTrees, DerivedRevision, MergeTier, ServerKeyRegistry,
+    DerivationTrees, DerivedRevision, MergeTier, ServerKeyLookup, ServerKeyRegistry,
     DOMAIN_DERIVATION_ATTESTATION_V1, DOMAIN_DERIVATION_SIGN_V1, DOMAIN_DERIVED_MERGE_CHANGE_V1,
     MAX_DERIVATION_INPUTS,
 };
@@ -158,6 +158,10 @@ pub enum RefusalCode {
     /// identity document in effect at the admission `WalSeq`, or no document is in effect
     /// (step B5).
     DerivationServerKeyUnregistered,
+    /// The identity documents a derivation is checked against belong to another repository
+    /// than the one its `DerivationAttestation` names, so their `server_key` says nothing
+    /// about this derivation (step B5).
+    DerivationIdentityRepoMismatch,
     /// A `DerivationAttestation` names inputs that do not fit its rule (kind, count, order,
     /// duplicates) or that the replica does not hold: a revision not admitted in this
     /// repository before the derivation, or a tree not in the tree store (step B5).

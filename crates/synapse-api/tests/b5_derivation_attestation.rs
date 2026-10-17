@@ -32,7 +32,8 @@ use synapse_radicle::{
     IdentityDocumentDigest, IdentityEdit, IdentityLog, RepositoryIdentityDocument,
 };
 use synapse_store::{
-    AdmissionAuthority, FsyncPolicy, RecoveryPolicy, RevisionOutcome, StoreLimits, WalRecord,
+    AdmissionAuthority, FaultInjection, FsyncPolicy, RecoveryPolicy, RevisionOutcome, StoreLimits,
+    WalRecord,
 };
 
 const NOW: u64 = 5_000;
@@ -542,6 +543,59 @@ fn b5_unregistered_server_key_is_refused_at_admission_and_replay() {
 }
 
 #[test]
+fn b5_identity_log_of_another_repository_is_refused_at_admission_and_replay() {
+    let mut fx = Fx::new("other-repo-identity");
+    let honest = fx.rebase_a();
+    let at = fx.admit(honest.clone(), "a").unwrap();
+    // Another repository's identity log that registers the same server machine key, with the
+    // same delegates, from the same sequence: its `server_key` matches the attestation's, but
+    // it says nothing about this repository.
+    let mut ds = vec![pk(&fx.delegates[0]), pk(&fx.delegates[1])];
+    ds.sort();
+    let other_genesis = RepositoryIdentityDocument {
+        repo_id: RepoId::new("aien-spark/other").unwrap(),
+        revision: 0,
+        prev: IdentityDocumentDigest::ZERO,
+        threshold: 2,
+        delegates: ds,
+        executors: vec![],
+        server_key: pk(&fx.server),
+    };
+    let edit = IdentityEdit::sign(other_genesis, &[&fx.delegates[0], &fx.delegates[1]]);
+    let other = IdentityLog::genesis(&edit, WalSeq(0)).unwrap();
+    assert_eq!(fx.keys.server_key_at(at), other.server_key_at(at));
+
+    // Admission against the other repository's log is refused, and nothing is written.
+    let merge = fx.merge_ab();
+    let before = fx.svc.store().committed_seq();
+    let refused = fx
+        .svc
+        .admit_derived_revision(merge.clone(), authority("merge"), &other, NOW)
+        .map(|_| ())
+        .map_err(|e| e.code);
+    assert_eq!(
+        refused,
+        Err(RefusalCode::DerivationIdentityRepoMismatch),
+        "refused at admission"
+    );
+    assert_eq!(fx.svc.store().committed_seq(), before, "nothing written");
+
+    // Replay of the honest log against the other repository's log is refused; against this
+    // repository's own log it verifies.
+    let live = fx.records();
+    assert_eq!(
+        fx.svc
+            .verify_revision_records(&live, &other)
+            .map_err(|e| e.code),
+        Err(RefusalCode::DerivationIdentityRepoMismatch),
+        "refused at replay"
+    );
+    assert_eq!(fx.verify(&live), Ok(4));
+    // The same derivation is admitted against this repository's own log.
+    fx.admit(merge, "merge").unwrap();
+}
+
+#[test]
 fn b5_attestation_signed_by_another_key_is_refused_at_admission_and_replay() {
     let mut fx = Fx::new("signature");
     let honest = fx.rebase_a();
@@ -678,4 +732,33 @@ fn b5_recomputation_that_disagrees_is_refused_at_admission_and_replay() {
     assert_eq!(err.code, RefusalCode::DerivationRecomputeMismatch);
     let live = fx.records();
     assert_eq!(fx.verify(&live), Ok(4));
+}
+
+#[test]
+fn b5_derivation_written_at_another_sequence_than_it_was_checked_at_is_refused() {
+    let mut fx = Fx::new("sequence-mismatch");
+    let honest = fx.rebase_a();
+    let checked_at = fx.svc.store().committed_seq().next();
+    // Test hook standing in for a writer that places the frame elsewhere: the next frame is
+    // written at `checked_at + 1`, so the derivation was checked against the identity document
+    // of a sequence it is not stored at.
+    fx.svc
+        .store_mut()
+        .set_fault_injection(FaultInjection::InjectNextWalSequenceGap);
+    assert_eq!(
+        fx.admit(honest.clone(), "a"),
+        Err(RefusalCode::WalSequenceGap),
+        "refused with a typed error, not admitted and not a panic"
+    );
+    // Not applied: no derived record is visible, and the store refuses further writes until
+    // it is reopened (recovery then decides on the frame on disk).
+    assert!(
+        fx.records()
+            .iter()
+            .all(|(_, r)| !matches!(r, WalRecord::DerivedRevisionAdmitted { .. })),
+        "the derived revision is not applied"
+    );
+    assert!(fx.svc.store().poisoned().is_some(), "store is poisoned");
+    assert_eq!(fx.admit(honest, "a"), Err(RefusalCode::IoFailure));
+    assert!(fx.svc.store().committed_seq() > checked_at);
 }

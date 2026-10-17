@@ -16,7 +16,8 @@ use synapse_core::{
     derive_revision_output, AdmissionWitness, AuthorshipAttestation, BlobDigest, ChainPath,
     ChangeId, ChangesetEnvelopeV2, ChangesetId, DerivationAttestation, DerivationTrees,
     DerivedRevision, IdempotencyKey, MutationOp, ObsolescenceKind, ObsolescenceMarker, RefusalCode,
-    RepoId, RevisionContent, RevisionState, ServerKeyRegistry, SynapseError, SynapseResult, WalSeq,
+    RepoId, RevisionContent, RevisionState, ServerKeyLookup, ServerKeyRegistry, SynapseError,
+    SynapseResult, WalSeq,
 };
 
 /// Domain tag of the revision part of the state root (only hashed when revisions exist).
@@ -534,11 +535,12 @@ impl RevisionLedger {
     /// Checks of a derived revision at admission `WalSeq` `at` (ADR 0003 B5), shared by
     /// admission and replay verification so both refuse exactly the same records. In order:
     /// content rules, the attestation names this content and its signature verifies under the
-    /// server key it names (`DerivationSignatureInvalid`); that key is the identity document's
-    /// server key in effect at `at` (`DerivationServerKeyUnregistered`); the attestation was
-    /// not admitted before (`DerivationAttestationReplayed`); the inputs fit the rule and are
-    /// held (`DerivationInputMismatch`); recomputing the rule on them gives the attested
-    /// `ChangesetId` and `TreeDigest` (`DerivationRecomputeMismatch`).
+    /// server key it names (`DerivationSignatureInvalid`); the identity documents `keys` holds
+    /// belong to the attestation's repository (`DerivationIdentityRepoMismatch`); that key is
+    /// the identity document's server key in effect at `at` (`DerivationServerKeyUnregistered`);
+    /// the attestation was not admitted before (`DerivationAttestationReplayed`); the inputs fit
+    /// the rule and are held (`DerivationInputMismatch`); recomputing the rule on them gives the
+    /// attested `ChangesetId` and `TreeDigest` (`DerivationRecomputeMismatch`).
     pub(crate) fn check_derivation(
         &self,
         derived: &DerivedRevision,
@@ -548,20 +550,33 @@ impl RevisionLedger {
     ) -> SynapseResult<ChangesetId> {
         let id = derived.validate()?;
         let att = &derived.attestation;
-        let registered = keys.registered_server_key(at);
-        if registered != Some(att.server_key) {
-            return Err(SynapseError::new(
-                RefusalCode::DerivationServerKeyUnregistered,
-                match registered {
-                    Some(_) => format!(
+        let repo = att.repo_id.clone();
+        match keys.registered_server_key(&repo, at) {
+            ServerKeyLookup::Registered(key) if key == att.server_key => {}
+            ServerKeyLookup::Registered(_) => {
+                return Err(SynapseError::new(
+                    RefusalCode::DerivationServerKeyUnregistered,
+                    format!(
                         "server key {} is not the server key of the identity document in effect at {at}",
                         att.server_did()
                     ),
-                    None => format!("no identity document is in effect at {at}"),
-                },
-            ));
+                ))
+            }
+            ServerKeyLookup::NoDocument => {
+                return Err(SynapseError::new(
+                    RefusalCode::DerivationServerKeyUnregistered,
+                    format!("no identity document of {repo} is in effect at {at}"),
+                ))
+            }
+            ServerKeyLookup::OtherRepository(other) => {
+                return Err(SynapseError::new(
+                    RefusalCode::DerivationIdentityRepoMismatch,
+                    format!(
+                        "the identity documents checked belong to {other}, the derivation attestation names {repo}"
+                    ),
+                ))
+            }
         }
-        let repo = att.repo_id.clone();
         let digest = att.digest();
         if let Some(first) = self.derivations.get(&(repo.clone(), digest)) {
             return Err(SynapseError::new(
@@ -889,7 +904,7 @@ impl crate::SynapseStore {
             admitted_at_ms: now_ms,
             new_blobs: inline.iter().map(|(d, _)| *d).collect(),
         };
-        let wal_seq = self.append_revision_record(record, &inline)?;
+        let wal_seq = self.append_revision_record(record, &inline, None)?;
         Ok(RevisionOutcome::Admitted {
             wal_seq,
             changeset_id: id,
@@ -981,11 +996,7 @@ impl crate::SynapseStore {
             chain: authority.chain,
             admitted_at_ms: now_ms,
         };
-        let wal_seq = self.append_revision_record(record, &[])?;
-        debug_assert_eq!(
-            wal_seq, at,
-            "derivation checked at the sequence it was written at"
-        );
+        let wal_seq = self.append_revision_record(record, &[], Some(at))?;
         Ok(RevisionOutcome::Admitted {
             wal_seq,
             changeset_id: id,
@@ -1031,7 +1042,7 @@ impl crate::SynapseStore {
             chain,
             recorded_at_ms: now_ms,
         };
-        self.append_revision_record(record, &[])
+        self.append_revision_record(record, &[], None)
     }
 
     /// Record the signed state move `state_move` at server time `now_ms` (ADR 0003 step B4,
@@ -1056,7 +1067,7 @@ impl crate::SynapseStore {
             state_move,
             moved_at_ms: now_ms,
         };
-        self.append_revision_record(record, &[])
+        self.append_revision_record(record, &[], None)
     }
 
     /// Kind 9 records replay kept as no-ops, by reason (issue #89): unverified moves (only
@@ -1128,30 +1139,80 @@ impl crate::SynapseStore {
     }
 
     /// Append one revision record (blobs inline in the segment store, blob files first in
-    /// the `wal.log` layout) and apply it.
+    /// the `wal.log` layout) and apply it. With `checked_at`, the record was checked against
+    /// that `WalSeq` (a derivation against the identity document in effect there) and must be
+    /// written at exactly that sequence: a writer whose next sequence differs is refused
+    /// before anything is written, and a frame that lands at another sequence anyway is not
+    /// applied and poisons the store (`WalSequenceGap` in both cases), so a record is never
+    /// admitted at a sequence it was not checked at. Real checks in every build profile.
     fn append_revision_record(
         &mut self,
         record: WalRecord,
         blobs: &[(BlobDigest, &[u8])],
+        checked_at: Option<WalSeq>,
     ) -> SynapseResult<WalSeq> {
         if self.v2_mode {
             let encoded = crate::wal2::encode_record(&record, blobs, self.codec)?;
             self.check_frame_cap(encoded.payload.len())?;
             let mut ticket = self.v2_begin()?;
+            if let Some(err) =
+                checked_at.and_then(|at| sequence_mismatch(at, ticket.base_seq.next(), false))
+            {
+                // Hand the writer back untouched; the refusal is the result.
+                let refused = self.v2_finish(
+                    ticket,
+                    Err(crate::wal2::BatchFailure::RolledBack(err.clone())),
+                );
+                return Err(refused.err().unwrap_or(err));
+            }
             let result = Self::v2_write(&mut ticket, &[&encoded]);
             let placed = self.v2_finish(ticket, result)?;
             let seq = placed[0].seq;
+            self.refuse_misplaced(checked_at, seq)?;
             self.apply_v2_ingest(&placed[0], record, &encoded.inline);
             return Ok(seq);
+        }
+        if let Some(err) =
+            checked_at.and_then(|at| sequence_mismatch(at, self.committed_seq.next(), false))
+        {
+            return Err(err);
         }
         let payload = self.encode_v1_payload(&record)?;
         for (digest, bytes) in blobs {
             self.write_blob_file(*digest, bytes)?;
         }
         let (seq, _, _) = self.append_v1_payload(record.kind_byte(), &payload)?;
+        self.refuse_misplaced(checked_at, seq)?;
         self.apply_record(seq, record);
         Ok(seq)
     }
+
+    /// After a durable write: a record checked at `checked_at` that landed at `seq` instead
+    /// is not applied, and the store refuses writes until it is reopened.
+    fn refuse_misplaced(&mut self, checked_at: Option<WalSeq>, seq: WalSeq) -> SynapseResult<()> {
+        match checked_at.and_then(|at| sequence_mismatch(at, seq, true)) {
+            Some(err) => {
+                self.poisoned = Some(err.message.clone());
+                Err(err)
+            }
+            None => Ok(()),
+        }
+    }
+}
+
+/// `WalSequenceGap` when a record checked at `checked_at` would be (`written == false`) or was
+/// (`written == true`) placed at `seq`.
+fn sequence_mismatch(checked_at: WalSeq, seq: WalSeq, written: bool) -> Option<SynapseError> {
+    (checked_at != seq).then(|| {
+        SynapseError::new(
+            RefusalCode::WalSequenceGap,
+            if written {
+                format!("record checked at {checked_at} was written at {seq}; it is not applied and the store refuses writes until it is reopened")
+            } else {
+                format!("record checked at {checked_at} would be written at {seq}; nothing was written")
+            },
+        )
+    })
 }
 
 #[cfg(test)]
@@ -1521,8 +1582,9 @@ mod b4_tests {
         assert_eq!(broken.verify(), Err(StateMoveFault::SignatureInvalid));
         let impostor = non_leaf_signer(honest, &[1, 9]);
         assert_eq!(impostor.verify(), Err(StateMoveFault::SignerNotChainLeaf));
-        let first = s.append_revision_record(moved(broken), &[]).unwrap();
-        s.append_revision_record(moved(impostor), &[]).unwrap();
+        let first = s.append_revision_record(moved(broken), &[], None).unwrap();
+        s.append_revision_record(moved(impostor), &[], None)
+            .unwrap();
         assert_eq!(
             s.get_revision(&repo(), id).unwrap().state,
             RevisionState::Private
@@ -1573,14 +1635,18 @@ mod b4_tests {
         let mut s = open(&dir, TORN).unwrap();
         let id = admit(&mut s, owner);
         let honest = signed(owner, id, RevisionState::Draft);
-        s.append_revision_record(moved(bad_signature(honest.clone())), &[])
+        s.append_revision_record(moved(bad_signature(honest.clone())), &[], None)
             .unwrap();
-        s.append_revision_record(moved(non_leaf_signer(honest.clone(), &[1, 9])), &[])
+        s.append_revision_record(moved(non_leaf_signer(honest.clone(), &[1, 9])), &[], None)
             .unwrap();
         s.advance_revision_state(honest, 6_500).unwrap();
         // A verified move that is not an owner move is an ordinary no-op and stays.
-        s.append_revision_record(moved(signed(&[1, 9], id, RevisionState::Proposed)), &[])
-            .unwrap();
+        s.append_revision_record(
+            moved(signed(&[1, 9], id, RevisionState::Proposed)),
+            &[],
+            None,
+        )
+        .unwrap();
         drop(s);
         assert!(
             open(&dir, STRICT).is_err(),
