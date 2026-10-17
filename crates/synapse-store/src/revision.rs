@@ -171,10 +171,14 @@ fn not_found(msg: String) -> SynapseError {
 }
 
 /// Owner chain rule (ADR 0003 section 5.3, step B4): `chain` owns a revision when it is, or
-/// dominates, the chain of one of the revision's admissions (the keys that submitted it and
-/// the keys their grants descend from).
+/// dominates, the chain of the revision's first admission (the key that submitted it and the
+/// keys its grant descends from). A later admission of identical content (a B1 join) adds a
+/// witness but never an owner: otherwise a joiner could read the owner's authorship records
+/// and publish its `Private` attempt without the owner's consent.
 fn owned_by(rev: &StoredRevision, chain: &ChainPath) -> bool {
-    rev.witnesses.iter().any(|w| chain.dominates(&w.chain))
+    rev.witnesses
+        .first()
+        .is_some_and(|w| chain.dominates(&w.chain))
 }
 
 /// A `Private` revision is visible only to its owner chain; every later state is visible to
@@ -275,14 +279,17 @@ impl RevisionLedger {
                 repo_id,
                 changeset_id,
                 to,
-                chain,
                 ..
             } => {
-                // Total and deterministic: a move that is not an owner move along an edge of
-                // the state machine stays in the log but changes nothing, so no record
-                // sequence, forged or not, moves a revision backwards or to `Canonical`.
+                // Applied as recorded: who may move (owner chain, evidence for `Verified`) is
+                // checked when the record is written, never re-derived at replay, so a later
+                // change to those rules cannot change what an old log means. Replay keeps only
+                // the permanent rules: an edge of the state machine (never backwards, in
+                // place, or skipping) and never `Canonical`, which only the promotion queue's
+                // own record reaches (E2). Any other record stays in the log but changes
+                // nothing, so no record sequence, forged or not, breaks either rule.
                 if let Some(rev) = self.revisions.get_mut(&(repo_id.clone(), *changeset_id)) {
-                    if owned_by(rev, chain) && rev.state.check_owner_move(*to).is_ok() {
+                    if *to != RevisionState::Canonical && rev.state.check_move(*to).is_ok() {
                         rev.state = *to;
                     }
                 }
@@ -334,7 +341,7 @@ impl RevisionLedger {
             return Err(SynapseError::new(
                 RefusalCode::AuthChainNotDominant,
                 format!(
-                    "moving revision {id} needs a chain that is or dominates the chain of one of its admissions"
+                    "moving revision {id} needs a chain that is or dominates the chain of its first admission"
                 ),
             ));
         }
@@ -688,8 +695,8 @@ impl crate::SynapseStore {
     /// server time `now_ms` (ADR 0003 step B4). Refused, with nothing written: any move to
     /// `Canonical` (`CanonicalOutsidePromotionQueue`: canonical moves only through the
     /// promotion queue, step E2); a revision the chain cannot see (`ChangesetNotFound`, the
-    /// same as an unknown one); a chain that is not, and does not dominate, the chain of one
-    /// of the revision's admissions (`AuthChainNotDominant`); a move to `Verified`, or any
+    /// same as an unknown one); a chain that is not, and does not dominate, the chain of
+    /// the revision's first admission (`AuthChainNotDominant`); a move to `Verified`, or any
     /// move that is backwards, in place, or skips a state (`RevisionStateMoveInvalid`).
     /// The owner chain may move `Private -> Draft`, `Private -> Proposed`, and
     /// `Draft -> Proposed`.
@@ -868,9 +875,10 @@ mod b4_tests {
 
     /// Property (acceptance 1, replay side): the ledger applies any sequence of revision
     /// records, including forged moves no store call would write (backwards, in place,
-    /// skipping, to `Verified` or `Canonical`, by chains that do not own the revision). No
-    /// revision ever moves backwards or reaches `Verified` or `Canonical`, and rebuilding from
-    /// the log gives the same states.
+    /// skipping, to `Verified` or `Canonical`, by chains that do not own the revision). Moves
+    /// are applied as recorded along the edges of the state machine (authority is checked at
+    /// write time), so no revision ever moves backwards or reaches `Canonical`, every edge
+    /// record moves its revision, and rebuilding from the log gives the same states.
     #[test]
     fn b4_property_forged_record_sequences_never_move_a_revision_backwards() {
         let mut rng = SplitMix64(0xB4_0003);
@@ -905,10 +913,17 @@ mod b4_tests {
                     } => Some((*changeset_id, *to)),
                     _ => None,
                 };
+                let from = target.map(|(id, _)| ledger.get_revision(&repo(), id).unwrap().state);
                 ledger.apply(WalSeq(seq), record);
-                if let Some((id, to)) = target {
+                if let (Some((id, to)), Some(from)) = (target, from) {
                     let now = ledger.get_revision(&repo(), id).unwrap().state;
-                    if now != to {
+                    let edge = from.check_move(to).is_ok() && to != RevisionState::Canonical;
+                    assert_eq!(
+                        now,
+                        if edge { to } else { from },
+                        "{id}: {from:?} -> {to:?}"
+                    );
+                    if !edge {
                         forged_refused += 1;
                     }
                 }
@@ -916,7 +931,7 @@ mod b4_tests {
                     let now = ledger.get_revision(&repo(), *id).unwrap().state;
                     let before = last.insert(*id, now).unwrap_or(RevisionState::Private);
                     assert!(now.rank() >= before.rank(), "{id}: {before:?} -> {now:?}");
-                    assert!(now <= RevisionState::Proposed, "{id} reached {now:?}");
+                    assert!(now < RevisionState::Canonical, "{id} reached {now:?}");
                 }
             }
             let rebuilt = RevisionLedger::from_log(ledger.log().to_vec());

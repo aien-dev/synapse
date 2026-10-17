@@ -178,7 +178,7 @@ fn b4_property_random_operation_sequences_never_move_a_revision_backwards() {
         };
         let dir = temp_dir(&format!("property-{case}"));
         let mut s = open(&dir, policy);
-        // Every revision: (id, change, body, owner chains = admission chains, last state).
+        // Every revision: (id, change, body, admission chains (the first owns it), last state).
         let mut known: Vec<(ChangesetId, ChangeId, String, Vec<ChainPath>, RevisionState)> =
             Vec::new();
         let mut idem = 0u32;
@@ -189,7 +189,7 @@ fn b4_property_random_operation_sequences_never_move_a_revision_backwards() {
             match rng.below(10) {
                 // Admit a revision under a fresh change (no join rule in play) from a random
                 // chain, or identical content of a known revision from another chain whose
-                // grant names that change (one revision, one more owner chain).
+                // grant names that change (one revision, one more witness, no new owner).
                 0..=2 => {
                     let links = TREE[rng.below(TREE.len() as u64) as usize];
                     let rejoin = !known.is_empty() && rng.below(3) == 0;
@@ -240,7 +240,7 @@ fn b4_property_random_operation_sequences_never_move_a_revision_backwards() {
                     let to = RevisionState::ALL[rng.below(5) as usize];
                     let chain = path(TREE[rng.below(TREE.len() as u64) as usize]);
                     let (cur, owners) = (known[i].4, &known[i].3);
-                    let owner = !unknown && owners.iter().any(|o| chain.dominates(o));
+                    let owner = !unknown && chain.dominates(&owners[0]);
                     let visible = !unknown && (cur != RevisionState::Private || owner);
                     let expected = model_move(cur, to, owner, visible);
                     let before = s.committed_seq();
