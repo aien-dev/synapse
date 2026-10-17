@@ -477,6 +477,7 @@ fn segments(args: &[String]) -> Result<(), String> {
             "--segment-mib",
             "--checkpoint-every",
             "--idle-window-s",
+            "--block-device",
         ],
     )?;
     let get = |k: &str| {
@@ -498,6 +499,7 @@ fn segments(args: &[String]) -> Result<(), String> {
         segment_bytes: num("--segment-mib", 16)? * 1024 * 1024,
         checkpoint_every: num("--checkpoint-every", 1000)? as usize,
         idle_window_s: num("--idle-window-s", 30)?,
+        block_device: get("--block-device"),
     };
     let dir = PathBuf::from(get("--dir").ok_or("missing --dir")?);
     let out = PathBuf::from(get("--out").ok_or("missing --out")?);
