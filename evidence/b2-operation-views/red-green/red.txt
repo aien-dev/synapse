@@ -1,0 +1,152 @@
+=== undo-has-no-effect (crates/synapse-store/src/operation.rs): 'on[k] = false;' -> 'on[k] = on[k];'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... FAILED
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... FAILED
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... FAILED
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... FAILED
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... FAILED
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... ok
+test result: FAILED. 2 passed; 5 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.21s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED undo-has-no-effect
+=== facts-undoable (crates/synapse-store/src/operation.rs): 'if op.is_fact() {' -> 'if false && op.is_fact() {'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... FAILED
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... ok
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... ok
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... FAILED
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... ok
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 60 filtered out; finished in 3.51s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED facts-undoable
+=== no-undo-dominance (crates/synapse-store/src/operation.rs): 'if !undoer.dominates(&op.actor) {' -> 'if false {'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... FAILED
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... ok
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... ok
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... ok
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... ok
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 60 filtered out; finished in 3.99s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED no-undo-dominance
+=== filter-ignored (crates/synapse-store/src/operation.rs): 'if filter.is_some_and(|f| !f.dominates(&op.actor)) {' -> 'if false {'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... FAILED
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... FAILED
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... FAILED
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... FAILED
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... ok
+test result: FAILED. 3 passed; 4 failed; 0 ignored; 0 measured; 60 filtered out; finished in 3.23s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED filter-ignored
+=== replay-discard-unchecked (crates/synapse-store/src/operation.rs): 'if !first_admitter(ops, *id, i).is_some_and(|c| op.actor.dominates(c)) =>' -> 'if false =>'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... ok
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... ok
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... FAILED
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... ok
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... ok
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 60 filtered out; finished in 10.22s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED replay-discard-unchecked
+=== replay-revoke-unchecked (crates/synapse-store/src/operation.rs): 'OpKind::Revoke { revoked } if !op.actor.dominates(revoked) => {' -> 'OpKind::Revoke { .. } if false => {'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... ok
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... ok
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... FAILED
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... ok
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... ok
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 60 filtered out; finished in 2.80s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED replay-revoke-unchecked
+=== conflicts-dropped (crates/synapse-store/src/operation.rs): 'view.conflicts.insert(*seq);' -> '{}'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... FAILED
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... ok
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... ok
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... ok
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... ok
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 60 filtered out; finished in 3.34s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED conflicts-dropped
+=== final-discard-repeatable (crates/synapse-store/src/operation.rs): 'if fold(&ops).discarded.get(&id) == Some(&true) {' -> 'if false {'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... FAILED
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... ok
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... ok
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... ok
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... ok
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 60 filtered out; finished in 3.42s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED final-discard-repeatable
+=== store-revoke-undominated (crates/synapse-store/src/operation.rs): 'if !chain.dominates(&revoked) {' -> 'if false {'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... ok
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... ok
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... FAILED
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... ok
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... ok
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 60 filtered out; finished in 4.42s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED store-revoke-undominated
+=== digest-ignores-kind-12 (crates/synapse-store/src/revision.rs): 'let o = op.digest_bytes();' -> 'let o: Vec<u8> = Vec::new(); let _ = op;'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... FAILED
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... ok
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... ok
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... ok
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... ok
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... ok
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 60 filtered out; finished in 3.52s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED digest-ignores-kind-12
+=== checkpoint-drops-kind-12 (crates/synapse-store/src/codec.rs): '7..=9 | 11 | 12)' -> '7..=9 | 11)'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... ok
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... ok
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... FAILED
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... ok
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... FAILED
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.51s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED checkpoint-drops-kind-12
+=== ledger-skips-kind-12 (crates/synapse-store/src/revision.rs): 'WalRecord::ViewOperationRecorded { .. } => {}' -> 'WalRecord::ViewOperationRecorded { .. } => return,'
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... FAILED
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... FAILED
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... FAILED
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... FAILED
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... FAILED
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... FAILED
+test result: FAILED. 1 passed; 6 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.19s
+error: test failed, to rerun pass `-p synapse-store --lib`
+RED ledger-skips-kind-12
+=== api-undo-capability (crates/synapse-api/src/lib.rs): '            "undo",
+            &self.repo_id,
+            Capability::Undo,' -> '            "undo",
+            &self.repo_id,
+            Capability::Propose,'
+test b2_api_undo_and_discard_of_another_actor_need_a_dominating_chain ... FAILED
+test b2_api_undo_requires_the_undo_capability ... FAILED
+test b2_api_final_discard_can_never_be_undone ... FAILED
+test b2_api_revocation_is_a_fact_and_is_enforced ... FAILED
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+error: test failed, to rerun pass `-p synapse-api --test b2_operation_views`
+RED api-undo-capability
+=== api-revoke-not-enforced (crates/synapse-api/src/lib.rs): '        self.auth.revoke_link(leaf, out.wal_seq)?;' -> ''
+test b2_api_undo_and_discard_of_another_actor_need_a_dominating_chain ... ok
+test b2_api_final_discard_can_never_be_undone ... ok
+test b2_api_revocation_is_a_fact_and_is_enforced ... FAILED
+test b2_api_undo_requires_the_undo_capability ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+error: test failed, to rerun pass `-p synapse-api --test b2_operation_views`
+RED api-revoke-not-enforced
