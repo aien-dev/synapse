@@ -995,26 +995,41 @@ impl crate::SynapseStore {
         self.revisions
             .check_join(&repo, content.change_id, &authority)?;
         self.check_revision_parents(&repo, content, &authority.chain)?;
+        // Every upserted blob is visible already, or was produced by the recomputation above
+        // (a tier T1 merged file, step D1): those are written with the record.
+        let mut produced: Vec<(BlobDigest, Vec<u8>)> = Vec::new();
         for m in &content.mutations {
             if let MutationOp::Upsert { blob_digest, .. } = &m.op {
-                if !self.blob_first_visible_seq.contains_key(blob_digest) {
-                    return Err(SynapseError::new(
-                        RefusalCode::BlobNotFound,
-                        format!(
-                            "derived mutation path {} references blob {blob_digest}, which is not visible",
-                            m.path
-                        ),
-                    ));
+                if self.blob_first_visible_seq.contains_key(blob_digest)
+                    || produced.iter().any(|(d, _)| d == blob_digest)
+                {
+                    continue;
+                }
+                match trees.produced_blob(*blob_digest) {
+                    Some(bytes) if BlobDigest::compute(bytes) == *blob_digest => {
+                        produced.push((*blob_digest, bytes.to_vec()));
+                    }
+                    _ => {
+                        return Err(SynapseError::new(
+                            RefusalCode::BlobNotFound,
+                            format!(
+                                "derived mutation path {} references blob {blob_digest}, which is not visible",
+                                m.path
+                            ),
+                        ))
+                    }
                 }
             }
         }
+        let blobs: Vec<(BlobDigest, &[u8])> =
+            produced.iter().map(|(d, b)| (*d, b.as_slice())).collect();
         let joined_existing_revision = self.revisions.get_revision(&repo, id).is_some();
         let record = WalRecord::DerivedRevisionAdmitted {
             derived,
             chain: authority.chain,
             admitted_at_ms: now_ms,
         };
-        let wal_seq = self.append_revision_record(record, &[], Some(at))?;
+        let wal_seq = self.append_revision_record(record, &blobs, Some(at))?;
         Ok(RevisionOutcome::Admitted {
             wal_seq,
             changeset_id: id,
