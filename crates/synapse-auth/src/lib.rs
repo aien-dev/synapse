@@ -1,7 +1,7 @@
 //! Capability-scoped Ed25519 authentication, replay protection, quota enforcement,
 //! and tamper-evident hash-chained security audit logging (`synapse-auth`, Gate 2a).
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -169,7 +169,7 @@ impl AgentCapabilityGrant {
         })?;
         let sig = Signature::from_bytes(&sig_arr);
         verifying_key
-            .verify(&self.canonical_signable_bytes(), &sig)
+            .verify_strict(&self.canonical_signable_bytes(), &sig)
             .map_err(|_| {
                 SynapseError::new(
                     RefusalCode::AuthGrantSignatureInvalid,
@@ -551,7 +551,7 @@ impl PolicyEnforcer {
         })?;
         let sig = Signature::from_bytes(&sig_arr);
         agent_verifying_key
-            .verify(&req.canonical_signable_bytes(), &sig)
+            .verify_strict(&req.canonical_signable_bytes(), &sig)
             .map_err(|_| {
                 SynapseError::new(
                     RefusalCode::AuthSignatureInvalid,
@@ -822,5 +822,123 @@ mod tests {
             "tampered_operation".to_string();
         let audit_err = enforcer.audit_log().verify_chain().unwrap_err();
         assert_eq!(audit_err.code, RefusalCode::AuditChainCorrupt);
+    }
+
+    /// Ed25519 group order L, little-endian.
+    const ED25519_L: [u8; 32] = [
+        0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde,
+        0x14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10,
+    ];
+
+    /// Identity point encoding: a small-order public key. Under non-strict verify,
+    /// signature (R = identity, S = 0) is accepted for every message.
+    fn small_order_key_bytes() -> [u8; 32] {
+        let mut b = [0u8; 32];
+        b[0] = 1;
+        b
+    }
+
+    fn weak_signature() -> Vec<u8> {
+        let mut sig = vec![0u8; 64];
+        sig[0] = 1;
+        sig
+    }
+
+    fn repo() -> RepoId {
+        RepoId::new("aien-spark/synapse").unwrap()
+    }
+
+    #[test]
+    fn small_order_issuer_key_grant_is_refused() {
+        let key = SigningKey::from_bytes(&[1u8; 32]);
+        let mut grant = AgentCapabilityGrant::issue(
+            &key,
+            [0x10; 32],
+            repo(),
+            encode_did_key_ed25519(&[2u8; 32]),
+            vec![Capability::Read],
+            1024,
+            2,
+            10_000,
+            1_000,
+            5_000,
+        );
+        grant.issuer_did = encode_did_key_ed25519(&small_order_key_bytes());
+        grant.signature = weak_signature();
+        let err = grant.verify_authority_signature().unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthGrantSignatureInvalid);
+    }
+
+    #[test]
+    fn small_order_agent_key_request_is_refused() {
+        let authority_key = SigningKey::from_bytes(&[1u8; 32]);
+        let authority_did = encode_did_key_ed25519(&authority_key.verifying_key().to_bytes());
+        let weak_did = encode_did_key_ed25519(&small_order_key_bytes());
+        let mut enforcer = PolicyEnforcer::new();
+        enforcer.register_repo_authority(repo(), authority_did);
+        let grant = AgentCapabilityGrant::issue(
+            &authority_key,
+            [0x11; 32],
+            repo(),
+            weak_did,
+            vec![Capability::Propose],
+            1024,
+            2,
+            10_000,
+            1_000,
+            5_000,
+        );
+        let mut req = AuthenticatedRequest::sign_new(
+            &SigningKey::from_bytes(&[2u8; 32]),
+            grant,
+            repo(),
+            Capability::Propose,
+            [4u8; 32],
+            2_000,
+            128,
+            "weak-key",
+        )
+        .unwrap();
+        req.agent_signature = weak_signature();
+        let err = enforcer
+            .authorize(
+                BoundaryKind::Api,
+                "submit",
+                &repo(),
+                Capability::Propose,
+                &req,
+                2_000,
+            )
+            .unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthSignatureInvalid);
+    }
+
+    #[test]
+    fn non_canonical_malleable_signatures_are_refused() {
+        let key = SigningKey::from_bytes(&[1u8; 32]);
+        let mut grant = AgentCapabilityGrant::issue(
+            &key,
+            [0x12; 32],
+            repo(),
+            encode_did_key_ed25519(&[2u8; 32]),
+            vec![Capability::Read],
+            1024,
+            2,
+            10_000,
+            1_000,
+            5_000,
+        );
+        grant
+            .verify_authority_signature()
+            .expect("valid grant passes");
+        // Malleate: S' = S + L encodes the same scalar non-canonically.
+        let mut carry = 0u16;
+        for (i, l) in ED25519_L.iter().enumerate() {
+            let v = grant.signature[32 + i] as u16 + *l as u16 + carry;
+            grant.signature[32 + i] = v as u8;
+            carry = v >> 8;
+        }
+        let err = grant.verify_authority_signature().unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthGrantSignatureInvalid);
     }
 }

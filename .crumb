@@ -45,14 +45,14 @@
     "generated": {
       "children": [],
       "children_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "compiled_at": "2026-10-17T12:02:42Z",
+      "compiled_at": "2026-10-18T12:51:19Z",
       "compiler": "crumb-compile/1",
-      "digest": "sha256:fb301066e5ae4d15cead28f810814b4f4772e79638563bee1c13b56c86c3a501",
+      "digest": "sha256:969e0bc413514cafbf44f526eb9b50e6b6f1698ebb94825b7a7fad65d00e2af2",
       "evidence_files": 262,
       "evidence_root": "sha256:b25d2fcc4dd431ffce85a91a08342766e8f5d4b0309e16df46c008083835d98a",
       "files": 456,
-      "generated_at_commit": "77227b6b132bbd9ca2d0fbd86bffd84b3c509dbc",
-      "source_tree": "sha256:0b135d43305597f16d1212342c522b05be78f06b5fa8befc2e645c28cb31e584"
+      "generated_at_commit": "2f06c455a5af8a5db7e0230c3692f08db21f61f2",
+      "source_tree": "sha256:eebcd046348007ba443737614fb7a30d9e812f215c53bb96742956f213da1f05"
     },
     "synapse": {
       "component_paths": {
