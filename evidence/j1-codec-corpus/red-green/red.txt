@@ -16,7 +16,7 @@ failures:
   record_false_length: 5631 cases, 1348 refused, 4283 accepted (canonical)
   record_hand_made: 11 cases, 11 refused, 0 accepted (canonical)
   record_truncated: 1901 cases, 1901 refused, 0 accepted (canonical)
-  total malformed cases: 55670; corpus 775681 bytes, sha256 b2aba356b7dd58b48b6cd7139fdeaa059ee5ab8f496d3ba03f6e4a5aa94db50b
+  total malformed cases: 55670; corpus 775681 bytes, sha256 469a25239b6d683d137497b8cab1bebb186e11b180fb5061723af2fe8f6bb8b7
 
 thread 'j1_corpus::j1_sealed_corpus_is_what_the_rust_codec_gives' (2346559) panicked at crates/synapse-store/src/j1_corpus.rs:950:53:
 /home/drakestapleton/workspace/synapse-53/crates/synapse-store/../../evidence/j1-codec-corpus/corpus.bin: No such file or directory (os error 2)

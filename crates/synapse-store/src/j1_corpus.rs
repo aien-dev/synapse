@@ -20,7 +20,7 @@ use synapse_core::{ChangeId, FileMode, PathMutation, RevisionContent, TreeDigest
 /// The sealed corpus, relative to the repository root.
 const CORPUS_PATH: &str = "evidence/j1-codec-corpus/corpus.bin";
 /// SHA-256 of the sealed corpus, so the seal is checked by a test, not by hand.
-const CORPUS_SHA256: &str = "b2aba356b7dd58b48b6cd7139fdeaa059ee5ab8f496d3ba03f6e4a5aa94db50b";
+const CORPUS_SHA256: &str = "469a25239b6d683d137497b8cab1bebb186e11b180fb5061723af2fe8f6bb8b7";
 const MAGIC: [u8; 8] = *b"SYNJ1COD";
 const VERSION: u16 = 1;
 /// Record cap of the A1 malformed corpus (`a1_malformed_corpus.rs`).
@@ -285,6 +285,11 @@ impl Lf {
                 self.fix(&marker.signature);
                 self.chain(chain);
                 self.u64(*recorded_at_ms);
+            }
+            // Kinds 9 and 11 landed on main after this corpus was sealed; the corpus covers
+            // kinds 1 to 8 only (see the coverage test), so no corpus record reaches here.
+            WalRecord::RevisionStateMoved { .. } | WalRecord::DerivedRevisionAdmitted { .. } => {
+                unreachable!("J1 corpus does not yet cover record kinds 9 and 11")
             }
         }
     }
