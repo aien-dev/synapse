@@ -2,6 +2,7 @@
 //! store with a bounded cache (`tree`, ADR 0003 step C1), exact `PathIndex` invalidation, and
 //! durable subscription cursors (`synapse-api`, Gate 2b).
 
+use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
@@ -9,21 +10,24 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use synapse_auth::{
-    AuditEntry, AuthenticatedRequest, BoundaryKind, Capability, ChainedRequest, PolicyEnforcer,
+    AuditEntry, AuthenticatedRequest, BoundaryKind, Capability, CapabilityChain, ChainedRequest,
+    PolicyEnforcer, SignedStateMove,
 };
 use synapse_core::{
     validate_repo_relative_path, BlobDigest, ChangesetEnvelope, ChangesetId, EvidenceAttachment,
     FileMode, GitHubPullRequestProjection, GitOid, IdempotencyKey, MutationOp,
     RadicleCanonicalHead, RefusalCode, RepoId, SynapseError, SynapseResult, TreeDigest, WalSeq,
 };
-use synapse_core::{ChainPath, ChangeId, ChangesetEnvelopeV2, ObsolescenceMarker};
+use synapse_core::{ChainPath, ChangeId, ChangesetEnvelopeV2, ObsolescenceMarker, RevisionState};
 use synapse_store::{
     AdmissionAuthority, CompactionReport, FsyncPolicy, IngestOutcome, RecoveryPolicy, ReviewRecord,
-    RevisionOutcome, StoreLimits, StoredChangeset, SynapseStore,
+    RevisionOutcome, StoreLimits, StoredChangeset, StoredRevision, SynapseStore,
 };
 
 mod advisory;
 mod crumb;
+mod derivation;
+pub use derivation::ServiceDerivationTrees;
 mod evidence;
 pub mod tree;
 pub use advisory::{
@@ -237,6 +241,81 @@ pub struct WatchQueryPayload {
     pub subscriber_id: String,
     pub after_seq: Option<WalSeq>,
     pub page: PageRequest,
+}
+
+/// Request payload for `advance_revision_state` (ADR 0003 B4, issue #89), in its one binary
+/// encoding: `changeset_id [32] | state u8 | signed_at_ms u64 | signature [64]` (105 bytes).
+/// `signature` is the request agent's Ed25519 signature over
+/// [`SignedStateMove::statement_bytes`] for the service's repository, this revision and
+/// state, the request's chain, and `signed_at_ms`; the store records it with the move.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RevisionStateMovePayload {
+    pub changeset_id: ChangesetId,
+    pub to: RevisionState,
+    pub signed_at_ms: u64,
+    pub signature: [u8; 64],
+}
+
+impl RevisionStateMovePayload {
+    /// Encoded size.
+    pub const LEN: usize = 32 + 1 + 8 + 64;
+
+    /// Sign a move of `changeset_id` of `repo_id` to `to` as `agent`, the leaf audience of
+    /// `chain`, at the agent's time `signed_at_ms`.
+    pub fn sign_new(
+        agent: &SigningKey,
+        repo_id: &RepoId,
+        chain: &CapabilityChain,
+        changeset_id: ChangesetId,
+        to: RevisionState,
+        signed_at_ms: u64,
+    ) -> SynapseResult<Self> {
+        let path = ChainPath::new(chain.link_digests().iter().map(|d| d.0).collect())?;
+        Ok(Self {
+            changeset_id,
+            to,
+            signed_at_ms,
+            signature: SignedStateMove::sign_statement(
+                agent,
+                repo_id,
+                changeset_id,
+                to,
+                &path,
+                signed_at_ms,
+            ),
+        })
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::LEN);
+        buf.extend_from_slice(&self.changeset_id.0);
+        buf.push(self.to.tag_byte());
+        buf.extend_from_slice(&self.signed_at_ms.to_le_bytes());
+        buf.extend_from_slice(&self.signature);
+        buf
+    }
+
+    /// Exactly 105 bytes with a known state tag; anything else is `EnvelopeMalformed`.
+    pub fn decode(bytes: &[u8]) -> SynapseResult<Self> {
+        let malformed = || {
+            SynapseError::new(
+                RefusalCode::EnvelopeMalformed,
+                "state move payload must be changeset_id [32] | state u8 (1..=5) | signed_at_ms u64 | signature [64]",
+            )
+        };
+        if bytes.len() != Self::LEN {
+            return Err(malformed());
+        }
+        let (id, rest) = bytes.split_at(32);
+        let (tag, rest) = rest.split_at(1);
+        let (at, sig) = rest.split_at(8);
+        Ok(Self {
+            changeset_id: ChangesetId(id.try_into().map_err(|_| malformed())?),
+            to: RevisionState::from_tag_byte(tag[0]).ok_or_else(malformed)?,
+            signed_at_ms: u64::from_le_bytes(at.try_into().map_err(|_| malformed())?),
+            signature: sig.try_into().map_err(|_| malformed())?,
+        })
+    }
 }
 
 /// Exact path index mapping repository paths to touching `ChangesetId`s. Trees live in the
@@ -628,6 +707,91 @@ impl SynapseService {
         }
         let chain = admission_authority(req)?.chain;
         self.store.record_obsolescence(marker, chain, now_ms)
+    }
+
+    /// Move a revision's state (ADR 0003 B4) under an F1 delegation chain granting
+    /// `Propose`. `req.payload` is a [`RevisionStateMovePayload`]: the request agent (the
+    /// chain's leaf audience) must sign the move itself (issue #89), and the store records
+    /// that signature with the chain's leaf link, so replay can check the mover. A signature
+    /// that does not verify is `AuthSignatureInvalid`. The store applies the owner-chain and
+    /// state-machine rules: any move to `Canonical` is refused
+    /// (`CanonicalOutsidePromotionQueue`; canonical moves only through the promotion queue,
+    /// step E2), another owner's `Private` revision is `ChangesetNotFound`, a chain that does
+    /// not own the revision is `AuthChainNotDominant`, and a move to `Verified` or any move
+    /// that is backwards, in place, or skips a state is `RevisionStateMoveInvalid`.
+    pub fn advance_revision_state(
+        &mut self,
+        req: &ChainedRequest,
+        now_ms: u64,
+    ) -> SynapseResult<WalSeq> {
+        let mv = RevisionStateMovePayload::decode(&req.payload)?;
+        self.auth.authorize_chain(
+            BoundaryKind::Api,
+            "advance_revision_state",
+            &self.repo_id,
+            Capability::Propose,
+            req,
+            self.store.committed_seq().next(),
+            now_ms,
+        )?;
+        let leaf_link = req.chain.leaf().cloned().ok_or_else(|| {
+            SynapseError::new(RefusalCode::AuthChainBroken, "state move: empty chain")
+        })?;
+        let state_move = SignedStateMove {
+            repo_id: self.repo_id.clone(),
+            changeset_id: mv.changeset_id,
+            to: mv.to,
+            chain: admission_authority(req)?.chain,
+            signed_at_ms: mv.signed_at_ms,
+            leaf_link,
+            mover_key: req.agent_key,
+            signature: mv.signature,
+        };
+        self.store.advance_revision_state(state_move, now_ms)
+    }
+
+    /// Read an envelope v2 revision (ADR 0003 B4) under an F1 delegation chain granting
+    /// `Read`. `req.payload` is the 32-byte `ChangesetId`. A revision the chain may not see
+    /// is `ChangesetNotFound`, exactly like an unknown one: another owner's `Private`
+    /// revision, or a revision with a mutation path outside the chain's path scope.
+    pub fn read_revision(
+        &mut self,
+        req: &ChainedRequest,
+        now_ms: u64,
+    ) -> SynapseResult<StoredRevision> {
+        let id: [u8; 32] = req.payload.as_slice().try_into().map_err(|_| {
+            SynapseError::new(
+                RefusalCode::EnvelopeMalformed,
+                "read_revision payload must be exactly one 32-byte ChangesetId",
+            )
+        })?;
+        let id = ChangesetId(id);
+        self.auth.authorize_chain(
+            BoundaryKind::Api,
+            "read_revision",
+            &self.repo_id,
+            Capability::Read,
+            req,
+            self.store.committed_seq().next(),
+            now_ms,
+        )?;
+        let viewer = admission_authority(req)?.chain;
+        let rev = self
+            .store
+            .get_revision_visible_to(&self.repo_id, id, &viewer)?;
+        let in_scope = req.chain.leaf().is_some_and(|leaf| {
+            rev.content
+                .mutations
+                .iter()
+                .all(|m| leaf.caveats.paths.covers_path(&m.path))
+        });
+        if !in_scope {
+            return Err(SynapseError::new(
+                RefusalCode::ChangesetNotFound,
+                format!("revision {id} not found"),
+            ));
+        }
+        Ok(rev)
     }
 
     /// Index a committed (or duplicate) submission in the path index.

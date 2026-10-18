@@ -8,14 +8,23 @@ use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+mod derivation;
 mod revision;
+mod revision_state;
 mod tree;
+pub use derivation::{
+    derive_revision_output, DerivationAttestation, DerivationInput, DerivationRule,
+    DerivationTrees, DerivedRevision, MergeTier, ServerKeyLookup, ServerKeyRegistry,
+    DOMAIN_DERIVATION_ATTESTATION_V1, DOMAIN_DERIVATION_SIGN_V1, DOMAIN_DERIVED_MERGE_CHANGE_V1,
+    MAX_DERIVATION_INPUTS,
+};
 pub use revision::{
     AdmissionWitness, AuthorshipAttestation, ChainPath, ChangesetEnvelopeV2, ObsolescenceKind,
     ObsolescenceMarker, RevisionContent, WitnessSigner, DOMAIN_ADMISSION_WITNESS_V1,
     DOMAIN_AUTHORSHIP_SIGN_V2, DOMAIN_CHANGESET_ID_V2, DOMAIN_OBSOLESCENCE_SIGN_V1,
     ENVELOPE_V2_VERSION, MAX_CHAIN_PATH_DEPTH, MAX_OBSOLESCENCE_SUCCESSORS,
 };
+pub use revision_state::RevisionState;
 pub use tree::{
     tree_entry_order, validate_tree_entry_name, TreeDigest, TreeNodeEncoder, DOMAIN_TREE_V1,
     MAX_TREE_ENTRY_NAME_BYTES, TREE_TAG_DIRECTORY,
@@ -71,8 +80,9 @@ pub enum RefusalCode {
 
     // Schema, path, and consistency refusals
     EnvelopeVersionUnsupported,
-    /// A changeset envelope v2, authorship attestation, admission witness, or obsolescence
-    /// marker is not in its one canonical binary encoding (ADR 0003 section 5.1, step B1).
+    /// A changeset envelope v2, authorship attestation, admission witness, obsolescence
+    /// marker, derivation attestation, or derived revision is not in its one canonical binary
+    /// encoding (ADR 0003 section 5.1, steps B1 and B5).
     EnvelopeMalformed,
     RepoIdInvalid,
     PathInvalid,
@@ -130,6 +140,38 @@ pub enum RefusalCode {
     /// An obsolescence marker names an unknown revision, a revision of another change, itself
     /// as its own successor, or would close a cycle of markers (step B1).
     ObsolescenceMarkerInvalid,
+    /// A revision state move that is not an edge of the state machine: backwards, in place,
+    /// skipping a state, or to `Verified` without its claims and required actions discharged
+    /// (ADR 0003 section 5.3, step B4).
+    RevisionStateMoveInvalid,
+    /// A move of a revision to `Canonical` that does not come from the promotion queue
+    /// (ADR 0003 sections 5.3 and 5.5, step B4).
+    CanonicalOutsidePromotionQueue,
+    /// Strict recovery found a WAL kind 9 state move whose mover signature does not verify
+    /// or whose mover key is not the audience of its chain's leaf link: the log was written
+    /// without the mover's private key (ADR 0003 sections 5.3 and 5.4, step B4, issue #89).
+    RevisionStateMoveUnverified,
+    /// A `DerivationAttestation` does not name the revision it is presented with, or its
+    /// signature does not verify under the server key it names (ADR 0003 section 5.1, step B5).
+    DerivationSignatureInvalid,
+    /// The server key a `DerivationAttestation` names is not the server key of the repository
+    /// identity document in effect at the admission `WalSeq`, or no document is in effect
+    /// (step B5).
+    DerivationServerKeyUnregistered,
+    /// The identity documents a derivation is checked against belong to another repository
+    /// than the one its `DerivationAttestation` names, so their `server_key` says nothing
+    /// about this derivation (step B5).
+    DerivationIdentityRepoMismatch,
+    /// A `DerivationAttestation` names inputs that do not fit its rule (kind, count, order,
+    /// duplicates) or that the replica does not hold: a revision not admitted in this
+    /// repository before the derivation, or a tree not in the tree store (step B5).
+    DerivationInputMismatch,
+    /// Recomputing the rule a `DerivationAttestation` names from the inputs it names fails, or
+    /// gives a `ChangesetId` or `TreeDigest` other than the ones it attests (step B5).
+    DerivationRecomputeMismatch,
+    /// A `DerivationAttestation` already admitted (the same attestation digest) is presented
+    /// again (step B5).
+    DerivationAttestationReplayed,
 
     // Git and Radicle canonicality refusals
     GitObjectCorrupt,

@@ -19,10 +19,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+pub use synapse_auth::{SignedStateMove, StateMoveFault};
 use synapse_core::{
-    BlobDigest, ChainPath, ChangesetEnvelope, ChangesetEnvelopeV2, ChangesetId, EvidenceAttachment,
-    GitHubPullRequestProjection, IdempotencyKey, MutationOp, ObsolescenceMarker,
-    RadicleCanonicalHead, RefusalCode, RepoId, SynapseError, SynapseResult, WalSeq,
+    BlobDigest, ChainPath, ChangesetEnvelope, ChangesetEnvelopeV2, ChangesetId, DerivedRevision,
+    EvidenceAttachment, GitHubPullRequestProjection, IdempotencyKey, MutationOp,
+    ObsolescenceMarker, RadicleCanonicalHead, RefusalCode, RepoId, RevisionState, SynapseError,
+    SynapseResult, WalSeq,
 };
 
 #[cfg(test)]
@@ -41,8 +43,8 @@ pub mod wal2;
 
 pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
 pub use revision::{
-    AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome, StoredRevision,
-    DOMAIN_STATE_ROOT_REVISIONS_V1,
+    verify_revision_log, AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome,
+    StateMoveReplayReport, StoredRevision, DOMAIN_STATE_ROOT_REVISIONS_V1,
 };
 pub use shared::{GroupCommitStats, SharedStore};
 
@@ -325,6 +327,23 @@ pub enum WalRecord {
         chain: ChainPath,
         recorded_at_ms: u64,
     },
+    /// A move of a revision to another state, signed by its mover (the audience of the
+    /// chain's leaf link) and recorded at server time `moved_at_ms` (ADR 0003 B4, issue
+    /// #89). Binary codec only.
+    #[serde(skip)]
+    RevisionStateMoved {
+        state_move: SignedStateMove,
+        moved_at_ms: u64,
+    },
+    /// Admission of a server-derived revision under `chain` at server time `admitted_at_ms`
+    /// (ADR 0003 B5). It references only blobs already visible, so it carries none. Binary
+    /// codec only.
+    #[serde(skip)]
+    DerivedRevisionAdmitted {
+        derived: DerivedRevision,
+        chain: ChainPath,
+        admitted_at_ms: u64,
+    },
 }
 
 impl WalRecord {
@@ -338,6 +357,8 @@ impl WalRecord {
             Self::LeaseUpdated { .. } => 6,
             Self::RevisionAdmitted { .. } => 7,
             Self::ObsolescenceRecorded { .. } => 8,
+            Self::RevisionStateMoved { .. } => 9,
+            Self::DerivedRevisionAdmitted { .. } => 11,
         }
     }
 
@@ -346,6 +367,7 @@ impl WalRecord {
         let mutations = match self {
             Self::ChangesetIngest { envelope, .. } => &envelope.mutations,
             Self::RevisionAdmitted { envelope, .. } => &envelope.content.mutations,
+            Self::DerivedRevisionAdmitted { derived, .. } => &derived.content.mutations,
             _ => return Vec::new(),
         };
         mutations
@@ -1670,7 +1692,12 @@ impl SynapseStore {
         //    The first binary checkpoint records the last v1 state root (or the empty
         //    root for a store that never wrote v1) and chains its own root to it; every
         //    later one chains to the previous checkpoint root.
+        //    Unverified kind 9 records (kept as no-ops only under `TruncateTornTail`) are left
+        //    out (review of PR #100): they change no state, and carrying them would make
+        //    strict recovery refuse the store forever. The ledger is rebuilt without them
+        //    only once the checkpoint is durable; the replay report counts them.
         self.sync_wal()?;
+        let (revision_log, dropped_moves) = self.revisions.log_without_unverified_moves();
         let (v1_state_root, prev_checkpoint_root) = match self.checkpoint_chain {
             Some(c) => (c.v1_state_root, c.checkpoint_root),
             None if self.v1_history => (v1_state_root_at_entry, v1_state_root_at_entry),
@@ -1684,7 +1711,7 @@ impl SynapseStore {
             blob_first_visible_seq: std::mem::take(&mut self.blob_first_visible_seq),
             github_projections: std::mem::take(&mut self.github_projections),
             canonical_heads: std::mem::take(&mut self.canonical_heads),
-            revision_log: self.revisions.log().to_vec(),
+            revision_log,
         };
         let encoded = codec::encode_checkpoint_v2(&state, v1_state_root, prev_checkpoint_root);
         self.changesets = state.changesets;
@@ -1692,10 +1719,14 @@ impl SynapseStore {
         self.blob_first_visible_seq = state.blob_first_visible_seq;
         self.github_projections = state.github_projections;
         self.canonical_heads = state.canonical_heads;
+        let revision_log = state.revision_log;
         let (bytes, chain) = encoded?;
-        // Read back what will be written: it must decode to the same chain and root.
+        // Read back what will be written: it must decode to the same chain and root (the
+        // live state, less any unverified kind 9 records left out above).
+        let snap = self.resolve_snapshot_seq(None, None)?;
+        let expected_root = codec::state_root_of(&self.changesets, &revision_log, snap);
         let (_, check) = codec::decode_checkpoint_v2(&bytes)?;
-        if check != chain || chain.state_root != self.state_root_digest(None)? {
+        if check != chain || chain.state_root != expected_root {
             return Err(SynapseError::new(
                 RefusalCode::CheckpointCorrupt,
                 "checkpoint.v2 does not decode back to the state it was written from",
@@ -1734,6 +1765,10 @@ impl SynapseStore {
             &bytes,
         )?;
         self.checkpoint_chain = Some(chain);
+        if dropped_moves > 0 {
+            self.revisions
+                .rebuild_after_compaction(revision_log, dropped_moves);
+        }
         self.codec = RecordCodec::BinaryV2;
         self.binary_seen = true;
         // checkpoint.v1 becomes the tombstone only after checkpoint.v2 is durable.
@@ -2133,7 +2168,14 @@ impl SynapseStore {
                 }
                 self.revisions.apply(seq, record);
             }
-            record @ WalRecord::ObsolescenceRecorded { .. } => self.revisions.apply(seq, record),
+            record @ (WalRecord::ObsolescenceRecorded { .. }
+            | WalRecord::RevisionStateMoved { .. }) => self.revisions.apply(seq, record),
+            record @ WalRecord::DerivedRevisionAdmitted { .. } => {
+                for digest in record.upsert_blobs() {
+                    self.blob_first_visible_seq.entry(digest).or_insert(seq);
+                }
+                self.revisions.apply(seq, record);
+            }
         }
     }
 
@@ -2199,7 +2241,24 @@ impl SynapseStore {
         self.recover_v2(recovery_policy, &mut overlap)?;
         overlap.close(self.committed_seq, self.last_frame_sha256)?;
 
-        // 3. A store with v1 history keeps writing v1 JSON until its first binary
+        // 3. A state move that does not verify was written without the mover's key: the
+        //    unkeyed seal cannot tell a forgery from a store's write, so strict recovery
+        //    refuses the store instead of hiding it as a no-op (issue #89). It checks the
+        //    records themselves, so a forgery inside a resealed checkpoint is refused too.
+        if recovery_policy == RecoveryPolicy::StrictFailClosed {
+            let report = self.revisions.state_move_report();
+            if let Some((seq, fault)) = report.first_unverified {
+                return Err(SynapseError::new(
+                    RefusalCode::RevisionStateMoveUnverified,
+                    format!(
+                        "{} WAL kind 9 state move(s) do not verify (first at {seq}: {fault:?}); strict recovery refuses the store (open it with TruncateTornTail and run checkpoint_and_compact to drop them)",
+                        report.unverified()
+                    ),
+                ));
+            }
+        }
+
+        // 4. A store with v1 history keeps writing v1 JSON until its first binary
         //    checkpoint (the migration checkpoint); every other store writes binary v2.
         self.codec = if self.checkpoint_chain.is_some() || !self.v1_history {
             RecordCodec::BinaryV2

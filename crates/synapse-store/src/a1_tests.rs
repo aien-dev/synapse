@@ -407,7 +407,7 @@ fn a1_documented_layout_decodes_and_every_non_canonical_form_is_refused() {
         Err(CodecRefusal::VersionUnsupported { found: 1 })
     );
     let mut k = review.clone();
-    k[1] = 9; // first unused kind (7 and 8 are the B1 revision records)
+    k[1] = 10; // first unused kind (7 and 8 are the B1 revision records, 9 the B4 state move)
     assert_eq!(kind(decode_record(&k, CAP)), "UnknownTag");
     let mut k0 = review.clone();
     k0[1] = 0;
