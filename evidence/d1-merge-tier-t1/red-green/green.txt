@@ -1,0 +1,15 @@
+test merge::tests::d1_edits_that_some_minimal_diff_places_together_conflict ... ok
+test merge::tests::d1_disjoint_single_line_edits_merge_and_touching_edits_conflict ... ok
+test merge::tests::d1_binary_missing_final_newline_and_oversized_files_are_refused ... ok
+test merge::tests::d1_forced_matches_are_exactly_the_pairs_every_optimal_alignment_shares ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.08s
+d1 merge cell: MergeT1Result { pairs: 253, synapse_merged: 245, git_clean: 245, git_errors: 0, merged_but_git_conflict: 0, merged_with_different_tree: 0, refused_but_git_clean: 0, disjoint_hunk_pairs: 3, disjoint_hunk_pairs_merged: 3, by_class: {"DisjointHunksSameFile": (3, 3, 3), "DistinctPaths": (240, 240, 240), "FileDirectoryCollision": (1, 0, 0), "HotspotRewrite": (6, 0, 0), "IdenticalChange": (2, 2, 2), "ModifyDelete": (1, 0, 0)}, checks: [MergeT1Check { check: "The disjoint-hunk pairs merge at tier T1", passed: true, detail: "3 of 3 merged" }, MergeT1Check { check: "No pair Git reports as conflicting is merged", passed: true, detail: "0 merged Git conflicts, 0 merge-tree errors, 253 pairs" }, MergeT1Check { check: "Every merged tree equals Git's merge result on every touched path", passed: true, detail: "0 merged pairs differ from Git" }, MergeT1Check { check: "Every merge attestation records tier T1 and the canonical merge order", passed: true, detail: "0 attestations without them" }] }
+test merge_t1::tests::d1_gate4_conflict_scenario_t1_merges_match_git_on_all_253_pairs ... ok
+d1 merge-file differential: 3947 merged, 1255 refused but clean in Git
+test merge_t1::tests::d1_region_merge_never_merges_what_git_merge_file_refuses ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 19.35s
+test d1_api_forged_t1_merge_output_is_refused ... ok
+test d1_api_t1_refuses_touching_regions_and_modify_delete ... ok
+test d1_api_t1_merges_disjoint_regions_of_one_file_end_to_end ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+workspace: cargo test --workspace --locked --no-fail-fast -> passed=408 failed=0

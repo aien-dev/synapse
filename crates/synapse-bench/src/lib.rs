@@ -25,6 +25,7 @@ pub mod floor;
 pub mod git_arm;
 pub mod gitcmd;
 pub mod host;
+pub mod merge_t1;
 pub mod orchestrator;
 pub mod pmu;
 pub mod pmu_diag;
