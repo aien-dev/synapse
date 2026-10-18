@@ -29,6 +29,7 @@ mod crumb;
 mod derivation;
 pub use derivation::ServiceDerivationTrees;
 mod evidence;
+mod search;
 pub mod tree;
 pub use advisory::{
     ChangesetAdvisory, ChangesetAdvisoryPayload, CoordinationStatus, GuidanceNote,
@@ -38,6 +39,11 @@ pub use crumb::CrumbContextQueryPayload;
 pub use evidence::{
     EvidenceBase, EvidenceBaseQueryPayload, ReceiptMismatch, ReceiptVerification, StaleContext,
     StaleReason, VerifyEvidenceReceiptPayload,
+};
+pub use search::{
+    IndexReport, SearchIndex, SearchIndexConfig, SearchMatch, SearchQueryPayload, SearchResponse,
+    SearchStats, SearchTarget, DEFAULT_MAX_INDEXED_BLOB_BYTES, DEFAULT_SEARCH_INDEX_BYTES,
+    MAX_SEARCH_PATTERN_BYTES, MAX_SEARCH_RESULTS, MAX_SPANS_PER_FILE,
 };
 pub use tree::{
     TreeCacheConfig, TreeDiffEntry, TreeEdit, TreeEntry, TreeEntryKind, TreeFile, TreeNode,
@@ -378,6 +384,7 @@ pub struct SynapseService {
     trees: TreeStore,
     base_blobs: BTreeMap<BlobDigest, Vec<u8>>,
     max_page_size: usize,
+    search_index: SearchIndex,
 }
 
 impl SynapseService {
@@ -411,6 +418,7 @@ impl SynapseService {
             trees: TreeStore::new(TreeCacheConfig::default())?,
             base_blobs: BTreeMap::new(),
             max_page_size: DEFAULT_MAX_PAGE_SIZE,
+            search_index: SearchIndex::new(SearchIndexConfig::default()),
         })
     }
 
