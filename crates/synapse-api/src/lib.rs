@@ -21,7 +21,7 @@ use synapse_core::{
 use synapse_core::{ChainPath, ChangeId, ChangesetEnvelopeV2, ObsolescenceMarker, RevisionState};
 use synapse_store::{
     AdmissionAuthority, CompactionReport, FsyncPolicy, IngestOutcome, RecoveryPolicy, ReviewRecord,
-    RevisionOutcome, StoreLimits, StoredChangeset, StoredRevision, SynapseStore,
+    RevisionOutcome, RevisionSealKey, StoreLimits, StoredChangeset, StoredRevision, SynapseStore,
 };
 
 mod advisory;
@@ -381,7 +381,8 @@ pub struct SynapseService {
 }
 
 impl SynapseService {
-    /// Open or create a `SynapseService` at `root_dir` for `repo_id`.
+    /// Open or create a `SynapseService` at `root_dir` for `repo_id`. Revision records are
+    /// not sealed (see [`SynapseStore::open`]); [`Self::open_sealed`] seals them.
     pub fn open(
         root_dir: impl AsRef<Path>,
         repo_id: RepoId,
@@ -389,12 +390,56 @@ impl SynapseService {
         recovery_policy: RecoveryPolicy,
         limits: StoreLimits,
     ) -> SynapseResult<Self> {
+        Self::open_with(
+            root_dir,
+            repo_id,
+            fsync_policy,
+            recovery_policy,
+            limits,
+            None,
+        )
+    }
+
+    /// [`Self::open`] with the server's machine key sealing every revision record, so a
+    /// rewrite of the log without that key changes nothing on replay (issue #101; see
+    /// [`SynapseStore::open_sealed`]).
+    pub fn open_sealed(
+        root_dir: impl AsRef<Path>,
+        repo_id: RepoId,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        seal: RevisionSealKey,
+    ) -> SynapseResult<Self> {
+        Self::open_with(
+            root_dir,
+            repo_id,
+            fsync_policy,
+            recovery_policy,
+            limits,
+            Some(seal),
+        )
+    }
+
+    fn open_with(
+        root_dir: impl AsRef<Path>,
+        repo_id: RepoId,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        seal: Option<RevisionSealKey>,
+    ) -> SynapseResult<Self> {
         let root_dir = root_dir.as_ref().to_path_buf();
         let cursors_dir = root_dir.join("cursors");
         fs::create_dir_all(&cursors_dir)
             .map_err(|e| SynapseError::new(RefusalCode::IoFailure, e.to_string()))?;
 
-        let store = SynapseStore::open(&root_dir, fsync_policy, recovery_policy, limits)?;
+        let store = match seal {
+            Some(seal) => {
+                SynapseStore::open_sealed(&root_dir, fsync_policy, recovery_policy, limits, seal)?
+            }
+            None => SynapseStore::open(&root_dir, fsync_policy, recovery_policy, limits)?,
+        };
         let mut path_index = PathIndex::new();
         for cs in store.list_changesets(Some(&repo_id), None, None)? {
             path_index.index_changeset(cs.changeset_id, &cs.envelope);

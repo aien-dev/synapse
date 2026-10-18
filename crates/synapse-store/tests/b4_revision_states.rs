@@ -562,6 +562,7 @@ fn b4_state_move_records_round_trip_and_malformed_bytes_are_refused_typed() {
     let record = WalRecord::RevisionStateMoved {
         state_move: signed(w1, id, RevisionState::Proposed, 7),
         moved_at_ms: 8,
+        seal: None,
     };
     let bytes = encode_record(&record).unwrap();
     assert_eq!(record.kind_byte(), 9);
