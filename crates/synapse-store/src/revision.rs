@@ -464,8 +464,9 @@ impl RevisionLedger {
     /// refused first, whatever the revision (`CanonicalOutsidePromotionQueue`); then a
     /// signature that does not verify, or a mover key that is not the audience of the
     /// chain's leaf link, is `AuthSignatureInvalid`; a revision the chain cannot see is
-    /// `ChangesetNotFound`; a chain that is not the owner chain is `AuthChainNotDominant`;
-    /// then the owner-move rule of `RevisionState`.
+    /// `ChangesetNotFound`; a chain that is not the owner chain is `AuthChainNotDominant`; a
+    /// move to `Verified` of a revision that records a conflict term is `TreeConflicted` (step
+    /// D2); then the owner-move rule of `RevisionState`.
     pub(crate) fn plan_move(&self, m: &SignedStateMove) -> SynapseResult<()> {
         let (id, to, chain) = (m.changeset_id, m.to, &m.chain);
         if to == RevisionState::Canonical {
@@ -487,6 +488,23 @@ impl RevisionLedger {
                     "moving revision {id} needs a chain that is or dominates the chain of its first admission"
                 ),
             ));
+        }
+        // ADR 0003 step D2: a revision that records a conflict term cannot be promoted.
+        if to == RevisionState::Verified {
+            if let Some(m) = rev
+                .content
+                .mutations
+                .iter()
+                .find(|m| matches!(m.op, synapse_core::MutationOp::Conflict(_)))
+            {
+                return Err(SynapseError::new(
+                    RefusalCode::TreeConflicted,
+                    format!(
+                        "revision {id} records a conflict term at {}; resolve it before promotion",
+                        m.path
+                    ),
+                ));
+            }
         }
         rev.state.check_owner_move(to)
     }

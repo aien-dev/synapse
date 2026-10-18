@@ -43,6 +43,10 @@ pub const DOMAIN_TREE_V1: &[u8] = b"SYNAPSE_TREE_V1\0";
 /// Tag byte of a directory entry in the canonical node encoding.
 pub const TREE_TAG_DIRECTORY: u8 = 4;
 
+/// Tag byte of a conflict entry (ADR 0003 step D2): the body is the canonical
+/// [`crate::ConflictTerm`] encoding. A conflict entry sorts as a non-directory.
+pub const TREE_TAG_CONFLICT: u8 = 5;
+
 /// Longest entry name accepted, matching the whole-path cap of `validate_repo_relative_path`.
 pub const MAX_TREE_ENTRY_NAME_BYTES: usize = 2048;
 
@@ -210,6 +214,13 @@ impl TreeNodeEncoder {
     pub fn dir(&mut self, name: &str, child: &TreeDigest) -> SynapseResult<()> {
         self.header(name, true, TREE_TAG_DIRECTORY)?;
         self.buf.extend_from_slice(&child.0);
+        Ok(())
+    }
+
+    /// Append a conflict entry (sorted as a non-directory).
+    pub fn conflict(&mut self, name: &str, term: &crate::ConflictTerm) -> SynapseResult<()> {
+        self.header(name, false, TREE_TAG_CONFLICT)?;
+        term.encode_into(&mut self.buf);
         Ok(())
     }
 
