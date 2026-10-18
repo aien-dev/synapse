@@ -1,0 +1,46 @@
+# Red (2026-10-18): each B3 behaviour removed by one mutation applied to the working tree of
+# commit 6970910 (parent main 2f06c45), its tests run, the mutation reverted. Script kept
+# outside the repo; each case lists the mutated file and the test lines it produced.
+
+=== M1 no free-text refusal (store and API) (crates/synapse-store/src/revision.rs)
+test revision::b4_tests::b3_free_text_envelope_is_refused_at_admission_and_b1_records_still_replay ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 61 filtered out; finished in 0.02s
+=== M1b no free-text refusal (API) (crates/synapse-api/src/lib.rs)
+# (stays green: the store refuses the same envelope, see docs/B3_INTENT_RECORD.md section 4)
+test b3_api_free_text_only_envelope_is_refused ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.03s
+=== M2 no footprint containment (crates/synapse-core/src/intent.rs)
+# (workspace run without --no-fail-fast: cargo stopped at the first red binary; M2b below runs core and store)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 31 filtered out; finished in 0.00s
+test b3_api_free_text_only_envelope_is_refused ... ok
+test b3_api_footprint_must_lie_inside_the_propose_scope ... ok
+test b3_api_mutation_outside_declared_footprint_is_refused ... FAILED
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.04s
+=== M3 request scope = mutation paths, not footprint (crates/synapse-api/src/lib.rs)
+test b3_api_footprint_must_lie_inside_the_propose_scope ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.03s
+=== M4 context blob not stored at admission (crates/synapse-store/src/revision.rs)
+test revision::b4_tests::b3_context_blob_is_stored_retained_and_required ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 61 filtered out; finished in 0.03s
+=== M5 two claim kinds share a predicate type (crates/synapse-core/src/intent.rs)
+test intent::tests::b3_every_claim_kind_maps_to_a_predicate_type ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.00s
+=== M6 content version 3 written as 2 (crates/synapse-core/src/revision.rs)
+test intent::tests::b3_every_claim_kind_maps_to_a_predicate_type ... ok
+test intent::tests::b3_content_version_2_keeps_its_bytes_and_changeset_id ... ok
+test intent::tests::b3_intent_record_round_trips_and_non_canonical_bytes_are_refused ... FAILED
+test intent::tests::b3_mutation_outside_declared_footprint_is_refused ... FAILED
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.00s
+=== M2b no footprint containment, core and store (crates/synapse-core/src/intent.rs)
+test intent::tests::b3_mutation_outside_declared_footprint_is_refused ... FAILED
+test intent::tests::b3_every_claim_kind_maps_to_a_predicate_type ... ok
+test intent::tests::b3_content_version_2_keeps_its_bytes_and_changeset_id ... ok
+test intent::tests::b3_intent_record_round_trips_and_non_canonical_bytes_are_refused ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.00s
+test revision::b4_tests::b3_free_text_envelope_is_refused_at_admission_and_b1_records_still_replay ... ok
+test revision::b4_tests::b3_context_blob_is_stored_retained_and_required ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.07s
+=== M7 context blob dropped from referenced_blobs (retention and replay presence check) (crates/synapse-core/src/revision.rs)
+test revision::b4_tests::b3_context_blob_is_stored_retained_and_required ... FAILED
+thread 'revision::b4_tests::b3_context_blob_is_stored_retained_and_required' (2892352) panicked at crates/synapse-store/src/revision.rs:1978:56:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 61 filtered out; finished in 0.08s

@@ -28,9 +28,9 @@ use synapse_auth::{
 };
 use synapse_core::{
     BlobDigest, ChainPath, ChangeId, ChangesetEnvelopeV2, ChangesetId, DerivationAttestation,
-    DerivationInput, DerivationRule, DerivedRevision, FileMode, GitOid, IdempotencyKey, MergeTier,
-    MutationOp, PathMutation, RefusalCode, RepoId, RevisionContent, RevisionState, TreeDigest,
-    WalSeq, WitnessSigner,
+    DerivationInput, DerivationRule, DerivedRevision, FileMode, GitOid, IdempotencyKey, IntentKind,
+    IntentRecord, MergeTier, MutationOp, PathMutation, RefusalCode, RepoId, RevisionContent,
+    RevisionIntent, RevisionState, TreeDigest, WalSeq, WitnessSigner,
 };
 use synapse_radicle::{
     IdentityDocumentDigest, IdentityEdit, IdentityLog, RepositoryIdentityDocument,
@@ -173,7 +173,7 @@ fn agent_revision(s: &str, base: TreeDigest, path: &str, body: &[u8]) -> Changes
         base_tree: base,
         parents: vec![],
         mutations: vec![upsert(path, body)],
-        intent_summary: format!("agent revision {s}"),
+        intent: RevisionIntent::Record(IntentRecord::new(IntentKind::Feature, vec![path.into()])),
     };
     ChangesetEnvelopeV2::sign_new(
         &key(&format!("agent {s}")),
@@ -394,7 +394,7 @@ fn b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests() {
     assert_eq!(rebase.content.change_id, fx.ra.content.change_id);
     assert_eq!(rebase.content.base_tree, fx.b1);
     assert_eq!(rebase.content.mutations, fx.ra.content.mutations);
-    assert_eq!(rebase.content.intent_summary, fx.ra.content.intent_summary);
+    assert_eq!(rebase.content.intent, fx.ra.content.intent);
     // A merge's parents are the merged revisions in the canonical order.
     let mut parents = vec![fx.ra.changeset_id(), fx.rb.changeset_id()];
     parents.sort();
@@ -662,7 +662,7 @@ fn b5_attestation_signed_by_another_key_is_refused_at_admission_and_replay() {
     fx.refused_at_admission_and_replay(at, forged, RefusalCode::DerivationSignatureInvalid);
     // The registered key's attestation presented with content it does not name.
     let mut swapped = honest.clone();
-    swapped.content.intent_summary = "a different intent".into();
+    swapped.content.intent = RevisionIntent::Summary("a different intent".into());
     fx.refused_at_admission_and_replay(at, swapped, RefusalCode::DerivationSignatureInvalid);
     // A field changed after signing.
     let mut tampered = honest.clone();
@@ -768,6 +768,12 @@ fn b5_recomputation_that_disagrees_is_refused_at_admission_and_replay() {
     // The right inputs and rule with other content (an extra mutation the rule never makes).
     let mut content = honest.content.clone();
     content.mutations.push(upsert("src/z.rs", b"a1"));
+    // Declared in the footprint too, so the content rules (B3) pass and the rule is what
+    // refuses it.
+    if let RevisionIntent::Record(r) = &mut content.intent {
+        r.footprint.push("src/z.rs".into());
+        r.footprint.sort();
+    }
     let forged = forge(&fx.server, content, a.rule, a.inputs.clone(), a.output_tree);
     fx.refused_at_admission_and_replay(at, forged, RefusalCode::DerivationRecomputeMismatch);
     // `rc` changed docs/x.md, which `B1` also changed: the rebase conflicts and cannot be

@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use synapse_core::{
     BlobDigest, ChainPath, ChangeId, ChangesetId, DerivationAttestation, DerivationInput,
     DerivationRule, DerivedRevision, FileMode, MergeTier, MutationOp, PathMutation, RepoId,
-    RevisionContent, TreeDigest,
+    RevisionContent, RevisionIntent, TreeDigest,
 };
 use synapse_store::codec::{decode_record, encode_record};
 use synapse_store::WalRecord;
@@ -33,7 +33,7 @@ fn derived(rule: DerivationRule, inputs: Vec<DerivationInput>) -> DerivedRevisio
                 size_bytes: 1,
             },
         }],
-        intent_summary: "derived".into(),
+        intent: RevisionIntent::Summary("derived".into()),
     };
     let attestation = DerivationAttestation::sign(
         &SigningKey::from_bytes(&label("server")),

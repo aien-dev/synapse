@@ -1,0 +1,16 @@
+# Green (2026-10-18) at commit 6970910
+## cargo test --locked -p synapse-core b3_
+test intent::tests::b3_every_claim_kind_maps_to_a_predicate_type ... ok
+test intent::tests::b3_content_version_2_keeps_its_bytes_and_changeset_id ... ok
+test intent::tests::b3_mutation_outside_declared_footprint_is_refused ... ok
+test intent::tests::b3_intent_record_round_trips_and_non_canonical_bytes_are_refused ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.00s
+## cargo test --locked -p synapse-store --lib b3_
+test revision::b4_tests::b3_free_text_envelope_is_refused_at_admission_and_b1_records_still_replay ... ok
+test revision::b4_tests::b3_context_blob_is_stored_retained_and_required ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.07s
+## cargo test --locked -p synapse-api --test b1_chained_revisions b3_api
+test b3_api_mutation_outside_declared_footprint_is_refused ... ok
+test b3_api_free_text_only_envelope_is_refused ... ok
+test b3_api_footprint_must_lie_inside_the_propose_scope ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.04s

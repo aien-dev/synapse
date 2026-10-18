@@ -18,8 +18,8 @@
 use crate::revision::{malformed, put_str, Reader};
 use crate::{
     encode_did_key_ed25519, AdmissionWitness, ChainPath, ChangeId, ChangesetId, IdempotencyKey,
-    PathMutation, RefusalCode, RepoId, RevisionContent, SynapseError, SynapseResult, TreeDigest,
-    WalSeq, WitnessSigner,
+    PathMutation, RefusalCode, RepoId, RevisionContent, RevisionIntent, SynapseError,
+    SynapseResult, TreeDigest, WalSeq, WitnessSigner,
 };
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
@@ -608,7 +608,10 @@ pub fn derive_revision_output(
                 base_tree: *base,
                 parents: ids.clone(),
                 mutations,
-                intent_summary: format!("merge tier T0 of {} revisions", ids.len()),
+                intent: RevisionIntent::Summary(format!(
+                    "merge tier T0 of {} revisions",
+                    ids.len()
+                )),
             };
             content.validate()?;
             let tree = trees.apply_mutations(*base, &content.mutations)?;
@@ -729,7 +732,7 @@ mod tests {
                     size_bytes: 1,
                 },
             }],
-            intent_summary: "derived".into(),
+            intent: RevisionIntent::Summary("derived".into()),
         };
         let attestation = DerivationAttestation::sign(
             &server(),

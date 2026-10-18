@@ -14,8 +14,8 @@ use synapse_auth::{
 };
 use synapse_core::{
     encode_did_key_ed25519, BlobDigest, ChangeId, ChangesetEnvelopeV2, ChangesetId, FileMode,
-    GitOid, IdempotencyKey, MutationOp, PathMutation, RefusalCode, RepoId, RevisionContent,
-    RevisionState, TreeDigest, WalSeq,
+    GitOid, IdempotencyKey, IntentKind, IntentRecord, MutationOp, PathMutation, RefusalCode,
+    RepoId, RevisionContent, RevisionIntent, RevisionState, TreeDigest, WalSeq,
 };
 use synapse_store::{FsyncPolicy, RecoveryPolicy, RevisionOutcome, StoreLimits, StoredRevision};
 
@@ -209,7 +209,10 @@ impl Fx {
                     size_bytes: body.len() as u64,
                 },
             }],
-            intent_summary: "implement the task".into(),
+            intent: RevisionIntent::Record(IntentRecord::new(
+                IntentKind::Feature,
+                vec!["src/lib.rs".into()],
+            )),
         };
         let env =
             ChangesetEnvelopeV2::sign_new(&who.0, repo(), content, IdempotencyKey([idem; 32]), NOW);
