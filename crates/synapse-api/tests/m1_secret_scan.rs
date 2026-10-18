@@ -5,6 +5,7 @@
 //! negatives are clearly fake documentation examples.
 
 use ed25519_dalek::SigningKey;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use synapse_api::secret_scan::{
@@ -391,6 +392,20 @@ fn repo() -> RepoId {
     RepoId::new("aien-spark/synapse").unwrap()
 }
 
+/// Link nonces for one fixture: SHA-256 of the fixture label and a counter, so every link
+/// gets a fresh nonce and none is a fixed value (same shape as b4_revision_states).
+fn link_nonces(label: &str) -> impl FnMut() -> [u8; 32] {
+    let seed = label.to_owned();
+    let mut issued = 0u32;
+    move || {
+        issued += 1;
+        let mut h = Sha256::new();
+        h.update(seed.as_bytes());
+        h.update(issued.to_le_bytes());
+        h.finalize().into()
+    }
+}
+
 fn open(label: &str) -> SynapseService {
     SynapseService::open(
         temp_dir(label),
@@ -517,7 +532,7 @@ fn m1_submit_revision_refuses_secret_blob_before_any_wal_write() {
     let link = CapabilityLink::issue(
         &a,
         ROOT_PARENT,
-        [0xA0; 32],
+        link_nonces("revision")(),
         repo(),
         o.verifying_key().to_bytes(),
         caveats,
