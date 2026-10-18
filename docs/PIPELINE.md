@@ -1,8 +1,10 @@
 # The Spark pipeline: how a pull request gets tested and merged
 
 Since 2026-10-16 the DGX Spark is the only test judge for this repository (ADR 0033 Decision 11,
-phase 3, agreed by Drake on 2026-10-15). The hosted Synapse portable CI workflow no longer runs on
-pull requests or pushes (manual trigger only); its two jobs are the Spark gates in `tests/gates/`:
+phase 3, agreed by Drake on 2026-10-15). On 2026-10-18 the hosted test workflows were removed; the
+only test-related workflow left is AIEN Verification (`.github/workflows/aien-verification.yml`),
+which builds nothing from this repository and only checks the bundle the Spark signs. Each former
+hosted job is a Spark gate in `tests/gates/`:
 
 | Spark gate | Mirrors | Pool |
 | --- | --- | --- |
@@ -39,7 +41,7 @@ Without the label nothing is merged. Remove the label to stop a merge.
 
 To add the label from a terminal use the REST call (`gh pr edit --add-label` can fail on
 repositories with a Projects (classic) error):
-`gh api -X POST repos/aien-spark/synapse/issues/<number>/labels -f 'labels[]=ready-to-merge'`.
+`gh api -X POST repos/aien-dev/synapse/issues/<number>/labels -f 'labels[]=ready-to-merge'`.
 
 ## Changes to the pipeline itself
 
