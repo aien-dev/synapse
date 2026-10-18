@@ -33,6 +33,7 @@ pub mod codec;
 #[cfg(test)]
 mod group_tests;
 mod revision;
+pub mod seal;
 pub mod segment;
 #[cfg(test)]
 mod segment_tests;
@@ -42,8 +43,9 @@ pub mod wal2;
 pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
 pub use revision::{
     verify_revision_log, AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome,
-    StateMoveReplayReport, StoredRevision, DOMAIN_STATE_ROOT_REVISIONS_V1,
+    SealReplayReport, StateMoveReplayReport, StoredRevision, DOMAIN_STATE_ROOT_REVISIONS_V1,
 };
+pub use seal::{RevisionSeal, RevisionSealKey};
 pub use shared::{GroupCommitStats, SharedStore};
 
 /// Magic bytes for a Synapse WAL frame (`b"SWAL"`).
@@ -316,6 +318,8 @@ pub enum WalRecord {
         chain: ChainPath,
         admitted_at_ms: u64,
         new_blobs: Vec<BlobDigest>,
+        /// The server's keyed seal (issue #101); `None` in a store opened without a seal key.
+        seal: Option<RevisionSeal>,
     },
     /// An obsolescence marker recorded under `chain` at server time `recorded_at_ms`
     /// (ADR 0003 B1). Binary codec only.
@@ -324,6 +328,7 @@ pub enum WalRecord {
         marker: ObsolescenceMarker,
         chain: ChainPath,
         recorded_at_ms: u64,
+        seal: Option<RevisionSeal>,
     },
     /// A move of a revision to another state, signed by its mover (the audience of the
     /// chain's leaf link) and recorded at server time `moved_at_ms` (ADR 0003 B4, issue
@@ -332,6 +337,7 @@ pub enum WalRecord {
     RevisionStateMoved {
         state_move: SignedStateMove,
         moved_at_ms: u64,
+        seal: Option<RevisionSeal>,
     },
     /// Admission of a server-derived revision under `chain` at server time `admitted_at_ms`
     /// (ADR 0003 B5). It references only blobs already visible, so it carries none. Binary
@@ -341,6 +347,7 @@ pub enum WalRecord {
         derived: DerivedRevision,
         chain: ChainPath,
         admitted_at_ms: u64,
+        seal: Option<RevisionSeal>,
     },
 }
 
@@ -357,6 +364,38 @@ impl WalRecord {
             Self::ObsolescenceRecorded { .. } => 8,
             Self::RevisionStateMoved { .. } => 9,
             Self::DerivedRevisionAdmitted { .. } => 11,
+        }
+    }
+
+    /// True for the revision records a seal covers (kinds 7, 8, 9, and 11).
+    pub fn is_revision_record(&self) -> bool {
+        matches!(
+            self,
+            Self::RevisionAdmitted { .. }
+                | Self::ObsolescenceRecorded { .. }
+                | Self::RevisionStateMoved { .. }
+                | Self::DerivedRevisionAdmitted { .. }
+        )
+    }
+
+    /// The keyed seal of a revision record (issue #101), if it carries one.
+    pub fn seal(&self) -> Option<&RevisionSeal> {
+        match self {
+            Self::RevisionAdmitted { seal, .. }
+            | Self::ObsolescenceRecorded { seal, .. }
+            | Self::RevisionStateMoved { seal, .. }
+            | Self::DerivedRevisionAdmitted { seal, .. } => seal.as_ref(),
+            _ => None,
+        }
+    }
+
+    fn set_seal(&mut self, value: RevisionSeal) {
+        if let Self::RevisionAdmitted { seal, .. }
+        | Self::ObsolescenceRecorded { seal, .. }
+        | Self::RevisionStateMoved { seal, .. }
+        | Self::DerivedRevisionAdmitted { seal, .. } = self
+        {
+            *seal = Some(value);
         }
     }
 
@@ -489,6 +528,8 @@ pub struct SynapseStore {
     /// `checkpoint.v1` is not yet the tombstone although `checkpoint.v2` exists.
     /// Envelope v2 revisions, changes, witnesses, and markers (ADR 0003 B1).
     revisions: revision::RevisionLedger,
+    /// The server key revision records are sealed with and checked against (issue #101).
+    revision_seal: Option<RevisionSealKey>,
     tombstone_pending: bool,
 }
 
@@ -588,11 +629,40 @@ pub(crate) struct V2Ticket {
 
 impl SynapseStore {
     /// Open or initialize a `SynapseStore` at `root_dir`, verifying checkpoint + WAL chain.
+    /// Revision records are neither sealed nor checked for a seal: whoever can rewrite the
+    /// whole log can rewrite them too (issue #101). Use [`Self::open_sealed`] to close that.
     pub fn open(
         root_dir: impl AsRef<Path>,
         fsync_policy: FsyncPolicy,
         recovery_policy: RecoveryPolicy,
         limits: StoreLimits,
+    ) -> SynapseResult<Self> {
+        Self::open_with(root_dir, fsync_policy, recovery_policy, limits, None)
+    }
+
+    /// [`Self::open`] with the server's machine key as the revision seal key (issue #101).
+    /// Every revision record written (kinds 7, 8, 9, and 11) is sealed by `seal`, chained to
+    /// the previous one; on replay a revision record whose seal does not verify against that
+    /// chain changes nothing. `StrictFailClosed` refuses such a store with
+    /// `RevisionRecordUnsealed` (including one with revision records written before it was
+    /// sealed); `TruncateTornTail` opens it, reports them in [`Self::seal_replay_report`],
+    /// and `checkpoint_and_compact` then leaves them out.
+    pub fn open_sealed(
+        root_dir: impl AsRef<Path>,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        seal: RevisionSealKey,
+    ) -> SynapseResult<Self> {
+        Self::open_with(root_dir, fsync_policy, recovery_policy, limits, Some(seal))
+    }
+
+    fn open_with(
+        root_dir: impl AsRef<Path>,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        revision_seal: Option<RevisionSealKey>,
     ) -> SynapseResult<Self> {
         let root_dir = root_dir.as_ref().to_path_buf();
         let blobs_dir = root_dir.join("blobs");
@@ -631,7 +701,10 @@ impl SynapseStore {
             v1_history: false,
             binary_seen: false,
             tombstone_pending: false,
-            revisions: revision::RevisionLedger::default(),
+            revisions: revision::RevisionLedger::new(
+                revision_seal.as_ref().map(RevisionSealKey::public_key),
+            ),
+            revision_seal,
         };
 
         store.recover(recovery_policy)?;
@@ -1693,9 +1766,15 @@ impl SynapseStore {
         //    Unverified kind 9 records (kept as no-ops only under `TruncateTornTail`) are left
         //    out (review of PR #100): they change no state, and carrying them would make
         //    strict recovery refuse the store forever. The ledger is rebuilt without them
-        //    only once the checkpoint is durable; the replay report counts them.
+        //    only once the checkpoint is durable; the replay report counts them. In a sealed
+        //    store (issue #101) the same holds for revision records whose seal does not
+        //    verify; sealed records always stay, so the seal chain stays whole.
         self.sync_wal()?;
-        let (revision_log, dropped_moves) = self.revisions.log_without_unverified_moves();
+        let revision::CompactedRevisionLog {
+            log: revision_log,
+            dropped_moves,
+            dropped_unsealed,
+        } = self.revisions.compacted_log();
         let (v1_state_root, prev_checkpoint_root) = match self.checkpoint_chain {
             Some(c) => (c.v1_state_root, c.checkpoint_root),
             None if self.v1_history => (v1_state_root_at_entry, v1_state_root_at_entry),
@@ -1763,9 +1842,13 @@ impl SynapseStore {
             &bytes,
         )?;
         self.checkpoint_chain = Some(chain);
-        if dropped_moves > 0 {
+        if dropped_moves + dropped_unsealed > 0 {
             self.revisions
-                .rebuild_after_compaction(revision_log, dropped_moves);
+                .rebuild_after_compaction(revision::CompactedRevisionLog {
+                    log: revision_log,
+                    dropped_moves,
+                    dropped_unsealed,
+                });
         }
         self.codec = RecordCodec::BinaryV2;
         self.binary_seen = true;
@@ -2155,6 +2238,11 @@ impl SynapseStore {
                     cs.lease_expires_at_ms = lease_expires_at_ms;
                 }
             }
+            record @ WalRecord::RevisionAdmitted { .. }
+                if !self.revisions.accepts(seq, &record) =>
+            {
+                self.revisions.apply(seq, record);
+            }
             record @ WalRecord::RevisionAdmitted { .. } => {
                 if let WalRecord::RevisionAdmitted { new_blobs, .. } = &record {
                     for digest in new_blobs {
@@ -2168,6 +2256,11 @@ impl SynapseStore {
             }
             record @ (WalRecord::ObsolescenceRecorded { .. }
             | WalRecord::RevisionStateMoved { .. }) => self.revisions.apply(seq, record),
+            record @ WalRecord::DerivedRevisionAdmitted { .. }
+                if !self.revisions.accepts(seq, &record) =>
+            {
+                self.revisions.apply(seq, record);
+            }
             record @ WalRecord::DerivedRevisionAdmitted { .. } => {
                 for digest in record.upsert_blobs() {
                     self.blob_first_visible_seq.entry(digest).or_insert(seq);
@@ -2244,6 +2337,19 @@ impl SynapseStore {
         //    refuses the store instead of hiding it as a no-op (issue #89). It checks the
         //    records themselves, so a forgery inside a resealed checkpoint is refused too.
         if recovery_policy == RecoveryPolicy::StrictFailClosed {
+            // Issue #101: in a sealed store, a revision record whose seal does not verify
+            // against the chain so far was written, changed, moved, or followed by a removal
+            // without the server key.
+            let seals = self.revisions.seal_report();
+            if let Some(seq) = seals.first_unsealed {
+                return Err(SynapseError::new(
+                    RefusalCode::RevisionRecordUnsealed,
+                    format!(
+                        "{} revision record(s) are not sealed by the store's seal key (first at {seq}); strict recovery refuses the store (open it with TruncateTornTail and run checkpoint_and_compact to drop them)",
+                        seals.unsealed
+                    ),
+                ));
+            }
             let report = self.revisions.state_move_report();
             if let Some((seq, fault)) = report.first_unverified {
                 return Err(SynapseError::new(
@@ -2274,7 +2380,10 @@ impl SynapseStore {
         self.blob_first_visible_seq = s.blob_first_visible_seq;
         self.github_projections = s.github_projections;
         self.canonical_heads = s.canonical_heads;
-        self.revisions = revision::RevisionLedger::from_log(s.revision_log);
+        self.revisions = revision::RevisionLedger::from_log(
+            s.revision_log,
+            self.revision_seal.as_ref().map(RevisionSealKey::public_key),
+        );
     }
 
     /// Admit a replayed (not checkpoint-covered) frame written with `codec`: the codec

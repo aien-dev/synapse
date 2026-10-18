@@ -9,6 +9,7 @@
 //! same ledger. v1 changesets stay in their own map with their own IDs; the two ID domains
 //! never meet.
 
+use crate::seal::{next_head, RevisionSealKey};
 use crate::{SignedStateMove, StateMoveFault, WalRecord};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -134,6 +135,24 @@ impl StateMoveReplayReport {
     }
 }
 
+/// What replay did with revision records whose keyed seal (issue #101) did not verify, in a
+/// store opened with a seal key. A sealing store writes only sealed records, so every count
+/// here is a record written without the server's key: a forgery, a removed or reordered
+/// record (which breaks the seal chain from there on), or a record from before the store was
+/// sealed. Such records stay in the log but change nothing. `StrictFailClosed` recovery
+/// refuses the store (`RevisionRecordUnsealed`); `TruncateTornTail` opens it and reports them
+/// here. All zero in a store opened without a seal key (seals are then not checked).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SealReplayReport {
+    /// Revision records whose seal is missing or does not verify against the chain so far.
+    pub unsealed: u64,
+    /// Sequence of the first such record, for the refusal message.
+    pub first_unsealed: Option<WalSeq>,
+    /// Unsealed records this process left out of a checkpoint (`checkpoint_and_compact`
+    /// under `TruncateTornTail`). Not persisted: a reopened store reports zero.
+    pub dropped_by_compaction: u64,
+}
+
 /// In-memory revision state, rebuilt from revision records.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RevisionLedger {
@@ -147,6 +166,21 @@ pub(crate) struct RevisionLedger {
     state_moves: StateMoveReplayReport,
     /// (repository, derivation attestation digest) to its admission (replay refusal, B5).
     derivations: BTreeMap<(RepoId, [u8; 32]), WalSeq>,
+    /// Public half of the seal key (issue #101): when set, a revision record is applied only
+    /// if its seal verifies against `seal_head`.
+    seal_key: Option<[u8; 32]>,
+    /// Head of the seal chain after the last sealed record applied (zero before the first).
+    seal_head: [u8; 32],
+    /// Revision records whose seal did not verify (applied as nothing).
+    unsealed: BTreeSet<WalSeq>,
+    seals: SealReplayReport,
+}
+
+/// What a checkpoint keeps of the revision log, and what it leaves out.
+pub(crate) struct CompactedRevisionLog {
+    pub(crate) log: Vec<(WalSeq, WalRecord)>,
+    pub(crate) dropped_moves: u64,
+    pub(crate) dropped_unsealed: u64,
 }
 
 /// Digest of one revision record over its canonical core encodings.
@@ -160,6 +194,7 @@ fn record_digest(record: &WalRecord) -> [u8; 32] {
             chain: c,
             admitted_at_ms,
             new_blobs,
+            ..
         } => {
             let e = envelope.encode();
             h.update((e.len() as u64).to_le_bytes());
@@ -176,6 +211,7 @@ fn record_digest(record: &WalRecord) -> [u8; 32] {
             marker,
             chain: c,
             recorded_at_ms,
+            ..
         } => {
             let m = marker.encode();
             h.update((m.len() as u64).to_le_bytes());
@@ -187,6 +223,7 @@ fn record_digest(record: &WalRecord) -> [u8; 32] {
         WalRecord::RevisionStateMoved {
             state_move: m,
             moved_at_ms,
+            ..
         } => {
             h.update((m.repo_id.as_str().len() as u64).to_le_bytes());
             h.update(m.repo_id.as_str().as_bytes());
@@ -206,6 +243,7 @@ fn record_digest(record: &WalRecord) -> [u8; 32] {
             derived,
             chain: c,
             admitted_at_ms,
+            ..
         } => {
             let d = derived.encode();
             h.update((d.len() as u64).to_le_bytes());
@@ -250,44 +288,89 @@ impl RevisionLedger {
         self.state_moves
     }
 
-    /// The log without kind 9 records that do not verify, and how many were left out
-    /// (review of PR #100): what a checkpoint keeps. Verified moves that changed nothing stay.
-    pub(crate) fn log_without_unverified_moves(&self) -> (Vec<(WalSeq, WalRecord)>, u64) {
-        if self.state_moves.unverified() == 0 {
-            return (self.log.clone(), 0);
-        }
-        let mut dropped = 0;
-        let log = self
-            .log
-            .iter()
-            .filter(|(_, record)| match record {
-                WalRecord::RevisionStateMoved { state_move, .. }
-                    if state_move.verify().is_err() =>
-                {
-                    dropped += 1;
-                    false
+    /// What a checkpoint keeps: the log without the records that changed nothing because
+    /// they do not verify, and how many were left out. Unsealed records (issue #101) go,
+    /// since they never joined the seal chain; so do kind 9 records that do not verify
+    /// (review of PR #100), unless they are sealed: removing a sealed record would break
+    /// the chain of every later one. Verified moves that changed nothing stay.
+    pub(crate) fn compacted_log(&self) -> CompactedRevisionLog {
+        let mut out = CompactedRevisionLog {
+            log: Vec::with_capacity(self.log.len()),
+            dropped_moves: 0,
+            dropped_unsealed: 0,
+        };
+        for (seq, record) in &self.log {
+            if self.unsealed.contains(seq) {
+                out.dropped_unsealed += 1;
+                continue;
+            }
+            if let WalRecord::RevisionStateMoved { state_move, .. } = record {
+                if self.seal_key.is_none() && state_move.verify().is_err() {
+                    out.dropped_moves += 1;
+                    continue;
                 }
-                _ => true,
-            })
-            .cloned()
-            .collect();
-        (log, dropped)
+            }
+            out.log.push((*seq, record.clone()));
+        }
+        out
     }
 
-    /// Rebuild from the log a checkpoint kept, recording the `dropped` unverified moves.
-    pub(crate) fn rebuild_after_compaction(&mut self, log: Vec<(WalSeq, WalRecord)>, dropped: u64) {
-        let carried = self.state_moves.dropped_by_compaction + dropped;
-        *self = Self::from_log(log);
-        self.state_moves.dropped_by_compaction = carried;
+    /// Rebuild from the log a checkpoint kept, recording what it left out.
+    pub(crate) fn rebuild_after_compaction(&mut self, compacted: CompactedRevisionLog) {
+        let moves = self.state_moves.dropped_by_compaction + compacted.dropped_moves;
+        let unsealed = self.seals.dropped_by_compaction + compacted.dropped_unsealed;
+        *self = Self::from_log(compacted.log, self.seal_key);
+        self.state_moves.dropped_by_compaction = moves;
+        self.seals.dropped_by_compaction = unsealed;
+    }
+
+    /// An empty ledger that checks seals under `seal_key` when it is set (issue #101).
+    pub(crate) fn new(seal_key: Option<[u8; 32]>) -> Self {
+        Self {
+            seal_key,
+            ..Self::default()
+        }
     }
 
     /// Rebuild a ledger from checkpointed records.
-    pub(crate) fn from_log(log: Vec<(WalSeq, WalRecord)>) -> Self {
-        let mut l = Self::default();
+    pub(crate) fn from_log(log: Vec<(WalSeq, WalRecord)>, seal_key: Option<[u8; 32]>) -> Self {
+        let mut l = Self::new(seal_key);
         for (seq, record) in log {
             l.apply(seq, record);
         }
         l
+    }
+
+    /// Unsealed revision records replay kept as no-ops (issue #101).
+    pub(crate) fn seal_report(&self) -> SealReplayReport {
+        self.seals
+    }
+
+    /// The seal head `record` at `seq` moves the chain to, when its seal verifies against the
+    /// chain so far; `None` when it does not (and the record must change nothing).
+    fn sealed_head(&self, key: &[u8; 32], seq: WalSeq, record: &WalRecord) -> Option<[u8; 32]> {
+        let head = next_head(&self.seal_head, seq, &record_digest(record));
+        record
+            .seal()
+            .is_some_and(|s| s.verifies(key, &head))
+            .then_some(head)
+    }
+
+    /// Whether `record` at `seq` would take effect: always without a seal key, else only when
+    /// its seal verifies against the chain so far (issue #101).
+    pub(crate) fn accepts(&self, seq: WalSeq, record: &WalRecord) -> bool {
+        match self.seal_key {
+            Some(key) if record.is_revision_record() => {
+                self.sealed_head(&key, seq, record).is_some()
+            }
+            _ => true,
+        }
+    }
+
+    /// Seal `record`, to be written at `seq`, as the next link of this ledger's chain.
+    pub(crate) fn seal_record(&self, key: &RevisionSealKey, seq: WalSeq, record: &mut WalRecord) {
+        let head = next_head(&self.seal_head, seq, &record_digest(record));
+        record.set_seal(key.seal(&head));
     }
 
     /// Feed the revision part of the state root (nothing when the ledger is empty, so roots
@@ -308,6 +391,23 @@ impl RevisionLedger {
     /// Apply one revision record (other records are ignored). Total: a record that could
     /// not have been admitted is still applied the same way on every replica.
     pub(crate) fn apply(&mut self, seq: WalSeq, record: WalRecord) {
+        if !record.is_revision_record() {
+            return;
+        }
+        // Issue #101: in a sealed store a revision record counts only when the server's seal
+        // over the chain so far verifies; nothing in it (not even its unsigned `chain`) can
+        // then have been changed, inserted, reordered, or removed without the key.
+        if let Some(key) = self.seal_key {
+            if let Some(head) = self.sealed_head(&key, seq, &record) {
+                self.seal_head = head;
+            } else {
+                self.seals.unsealed += 1;
+                self.seals.first_unsealed.get_or_insert(seq);
+                self.unsealed.insert(seq);
+                self.log.push((seq, record));
+                return;
+            }
+        }
         match &record {
             WalRecord::RevisionAdmitted {
                 envelope,
@@ -353,6 +453,7 @@ impl RevisionLedger {
                 derived,
                 chain,
                 admitted_at_ms,
+                ..
             } => {
                 let att = &derived.attestation;
                 let id = att.output_changeset;
@@ -392,6 +493,7 @@ impl RevisionLedger {
                 marker,
                 chain,
                 recorded_at_ms,
+                ..
             } => {
                 self.changes
                     .entry((marker.repo_id.clone(), marker.change_id))
@@ -919,6 +1021,7 @@ impl crate::SynapseStore {
             chain: authority.chain,
             admitted_at_ms: now_ms,
             new_blobs: inline.iter().map(|(d, _)| *d).collect(),
+            seal: None,
         };
         let wal_seq = self.append_revision_record(record, &inline, None)?;
         Ok(RevisionOutcome::Admitted {
@@ -1013,6 +1116,7 @@ impl crate::SynapseStore {
             derived,
             chain: authority.chain,
             admitted_at_ms: now_ms,
+            seal: None,
         };
         let wal_seq = self.append_revision_record(record, &[], Some(at))?;
         Ok(RevisionOutcome::Admitted {
@@ -1059,6 +1163,7 @@ impl crate::SynapseStore {
             marker,
             chain,
             recorded_at_ms: now_ms,
+            seal: None,
         };
         self.append_revision_record(record, &[], None)
     }
@@ -1084,6 +1189,7 @@ impl crate::SynapseStore {
         let record = WalRecord::RevisionStateMoved {
             state_move,
             moved_at_ms: now_ms,
+            seal: None,
         };
         self.append_revision_record(record, &[], None)
     }
@@ -1093,6 +1199,13 @@ impl crate::SynapseStore {
     /// not owner moves. All zero for a log written only by stores.
     pub fn state_move_replay_report(&self) -> StateMoveReplayReport {
         self.revisions.state_move_report()
+    }
+
+    /// Revision records replay kept as no-ops because their seal did not verify (issue #101;
+    /// only in a store opened with [`Self::open_sealed`] under `TruncateTornTail`, since
+    /// strict recovery refuses them). All zero for a log written only by this sealed store.
+    pub fn seal_replay_report(&self) -> SealReplayReport {
+        self.revisions.seal_report()
     }
 
     /// An admitted revision of `repo_id` as `viewer` may see it (step B4): another owner's
@@ -1165,10 +1278,18 @@ impl crate::SynapseStore {
     /// admitted at a sequence it was not checked at. Real checks in every build profile.
     fn append_revision_record(
         &mut self,
-        record: WalRecord,
+        mut record: WalRecord,
         blobs: &[(BlobDigest, &[u8])],
-        checked_at: Option<WalSeq>,
+        mut checked_at: Option<WalSeq>,
     ) -> SynapseResult<WalSeq> {
+        // Issue #101: a sealed store seals the record for the exact sequence it is written
+        // at, so it is checked at that sequence like a derivation (a record that would land
+        // elsewhere is refused, one that did is not applied).
+        if let Some(key) = &self.revision_seal {
+            let at = checked_at.unwrap_or_else(|| self.committed_seq.next());
+            self.revisions.seal_record(key, at, &mut record);
+            checked_at = Some(at);
+        }
         if self.v2_mode {
             let encoded = crate::wal2::encode_record(&record, blobs, self.codec)?;
             self.check_frame_cap(encoded.payload.len())?;
@@ -1371,6 +1492,7 @@ mod b4_tests {
         WalRecord::RevisionStateMoved {
             state_move,
             moved_at_ms: 6_000,
+            seal: None,
         }
     }
 
@@ -1408,6 +1530,7 @@ mod b4_tests {
             chain,
             admitted_at_ms: 5_000,
             new_blobs: vec![],
+            seal: None,
         }
     }
 
@@ -1492,7 +1615,7 @@ mod b4_tests {
                 }
             }
             assert_eq!(ledger.state_move_report(), want);
-            let rebuilt = RevisionLedger::from_log(ledger.log().to_vec());
+            let rebuilt = RevisionLedger::from_log(ledger.log().to_vec(), None);
             assert_eq!(rebuilt.state_move_report(), want);
             for id in &ids {
                 assert_eq!(
@@ -1529,7 +1652,7 @@ mod b4_tests {
             (WalSeq(4), mv(RevisionState::Verified, &[1, 9])),
             (WalSeq(5), mv(RevisionState::Canonical, owner)),
         ];
-        let replayed = RevisionLedger::from_log(log);
+        let replayed = RevisionLedger::from_log(log, None);
         assert_eq!(
             replayed.get_revision(&repo(), id).unwrap().state,
             RevisionState::Proposed,
@@ -1754,7 +1877,7 @@ mod b4_tests {
             (WalSeq(2), moved(signed(owner, id, RevisionState::Draft))),
         ];
         // The revision is `Draft`, so every chain sees it: only ownership can refuse.
-        let shared = RevisionLedger::from_log(log.clone());
+        let shared = RevisionLedger::from_log(log.clone(), None);
         for m in &moves {
             let err = shared.plan_move(m).unwrap_err();
             assert_eq!(err.code, RefusalCode::AuthChainNotDominant);
@@ -1765,7 +1888,7 @@ mod b4_tests {
                 .zip(3..)
                 .map(|(m, n)| (WalSeq(n), moved(m))),
         );
-        let replayed = RevisionLedger::from_log(log);
+        let replayed = RevisionLedger::from_log(log, None);
         assert_eq!(
             replayed.get_revision(&repo(), id).unwrap().state,
             RevisionState::Draft
@@ -1833,7 +1956,443 @@ mod b4_tests {
         let later = WalRecord::RevisionStateMoved {
             state_move: m,
             moved_at_ms: 6_001,
+            seal: None,
         };
         assert_ne!(record_digest(&later), base);
+    }
+
+    // ---------------------------------------------------------------------------------
+    // Issue #101: the keyed seal over revision records
+    // ---------------------------------------------------------------------------------
+
+    fn server_key() -> crate::RevisionSealKey {
+        crate::RevisionSealKey::new(SigningKey::from_bytes(&derived("server machine key", &[])))
+    }
+
+    fn open_sealed(dir: &PathBuf, policy: RecoveryPolicy) -> SynapseResult<SynapseStore> {
+        open_sealed_with(dir, policy, server_key())
+    }
+
+    fn open_sealed_with(
+        dir: &PathBuf,
+        policy: RecoveryPolicy,
+        key: crate::RevisionSealKey,
+    ) -> SynapseResult<SynapseStore> {
+        let limits = StoreLimits {
+            wal_prealloc_bytes: 64 * 1024,
+            ..Default::default()
+        };
+        SynapseStore::open_sealed(dir, FsyncPolicy::EveryCommit, policy, limits, key)
+    }
+
+    /// A root link a forger minted with its own key (no repository authority signed it),
+    /// delegating to itself: what a whole-log rewrite can put in an unsigned `chain` field.
+    fn forger_chain() -> (SigningKey, CapabilityChain, ChainPath) {
+        let forger = key_of(&[7]);
+        let link = CapabilityLink::issue(
+            &forger,
+            ROOT_PARENT,
+            derived("forged nonce", &[]),
+            repo(),
+            forger.verifying_key().to_bytes(),
+            caveats(),
+        );
+        let chain = CapabilityChain::new(vec![link]);
+        let digests = chain.link_digests().iter().map(|d| d.0).collect();
+        (forger, chain, ChainPath::new(digests).unwrap())
+    }
+
+    fn with_chain(mut record: WalRecord, swapped: ChainPath) -> WalRecord {
+        if let WalRecord::RevisionAdmitted { chain, .. } = &mut record {
+            *chain = swapped;
+        }
+        record
+    }
+
+    /// Issue #101 acceptance 1: a whole-log rewrite that swaps an admission's chain for a
+    /// forger-minted one and signs an owner move under it. Written through the store's own
+    /// framing (valid CRC32C and hash chain), carrying over the honest record's seal bytes.
+    /// Opened without a seal key (the behaviour on PR #100's head) the forger owns and
+    /// publishes the revision; opened with the server's seal key the rewrite changes nothing:
+    /// strict recovery refuses the store, torn-tail recovery applies neither record. A
+    /// rewrite resealed with another key is refused the same way.
+    #[test]
+    fn s101_whole_log_rewrite_swapping_an_admission_chain_changes_nothing_on_sealed_replay() {
+        const TORN: RecoveryPolicy = RecoveryPolicy::TruncateTornTail;
+        const STRICT: RecoveryPolicy = RecoveryPolicy::StrictFailClosed;
+        let owner: &[u8] = &[1, 2];
+        let honest_dir = temp_dir("s101-honest");
+        let mut s = open_sealed(&honest_dir, STRICT).unwrap();
+        let id = admit(&mut s, owner);
+        let honest = s.revision_records()[0].1.clone();
+        assert!(
+            honest.seal().is_some(),
+            "a sealed store seals what it writes"
+        );
+        drop(s);
+
+        let (forger, forger_links, forged_chain) = forger_chain();
+        let forged_move = SignedStateMove::sign_new(
+            &forger,
+            repo(),
+            id,
+            RevisionState::Draft,
+            &forger_links,
+            6_000,
+        )
+        .unwrap();
+        assert_eq!(forged_move.verify(), Ok(()));
+
+        for reseal in [None, Some(crate::RevisionSealKey::new(key_of(&[8])))] {
+            let dir = temp_dir("s101-forged");
+            // The rewrite: a fresh log holding the swapped admission and the forged move.
+            let mut w = match reseal.clone() {
+                None => open(&dir, STRICT).unwrap(),
+                Some(k) => open_sealed_with(&dir, STRICT, k).unwrap(),
+            };
+            let swapped = with_chain(honest.clone(), forged_chain.clone());
+            let blob = body(1);
+            w.append_revision_record(swapped, &[(BlobDigest::compute(&blob), &blob[..])], None)
+                .unwrap();
+            w.append_revision_record(moved(forged_move.clone()), &[], None)
+                .unwrap();
+            drop(w);
+
+            // Without a seal key the rewrite takes effect: the attack of issue #101.
+            let unsealed = open(&dir, STRICT).unwrap();
+            let rev = unsealed.get_revision(&repo(), id).unwrap();
+            assert_eq!(rev.state, RevisionState::Draft);
+            assert_eq!(rev.witnesses[0].chain, forged_chain);
+
+            let err = open_sealed(&dir, STRICT).err().unwrap();
+            assert_eq!(err.code, RefusalCode::RevisionRecordUnsealed, "{err:?}");
+            let s = open_sealed(&dir, TORN).unwrap();
+            assert_eq!(
+                s.get_revision(&repo(), id).unwrap_err().code,
+                RefusalCode::ChangesetNotFound,
+                "the swapped admission must change nothing"
+            );
+            let report = s.seal_replay_report();
+            assert_eq!(report.unsealed, 2, "{report:?}");
+            assert_eq!(report.first_unsealed, Some(WalSeq(1)));
+            assert_eq!(
+                s.state_move_replay_report(),
+                StateMoveReplayReport::default(),
+                "an unsealed move is not even considered"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+        let _ = std::fs::remove_dir_all(&honest_dir);
+    }
+
+    /// Records appended to a sealed store without the key (here by opening it without one)
+    /// change nothing on sealed replay; the honest records keep their meaning, the store
+    /// keeps sealing after them, and a torn-tail compaction drops exactly the unsealed
+    /// records so strict recovery accepts the store again with the same states and root.
+    #[test]
+    fn s101_appended_unsealed_records_change_nothing_and_compaction_restores_strict() {
+        const TORN: RecoveryPolicy = RecoveryPolicy::TruncateTornTail;
+        const STRICT: RecoveryPolicy = RecoveryPolicy::StrictFailClosed;
+        let owner: &[u8] = &[1, 2];
+        let dir = temp_dir("s101-appended");
+        let mut s = open_sealed(&dir, STRICT).unwrap();
+        let id = admit(&mut s, owner);
+        drop(s);
+
+        let (forger, forger_links, forged_chain) = forger_chain();
+        let forged = admission(forged_chain, &[7], 2);
+        let forged_id = match &forged {
+            WalRecord::RevisionAdmitted { envelope, .. } => envelope.changeset_id(),
+            _ => unreachable!(),
+        };
+        let mut w = open(&dir, STRICT).unwrap();
+        let blob = body(2);
+        w.append_revision_record(forged, &[(BlobDigest::compute(&blob), &blob[..])], None)
+            .unwrap();
+        let forged_move = SignedStateMove::sign_new(
+            &forger,
+            repo(),
+            forged_id,
+            RevisionState::Proposed,
+            &forger_links,
+            6_000,
+        )
+        .unwrap();
+        w.append_revision_record(moved(forged_move), &[], None)
+            .unwrap();
+        drop(w);
+
+        assert_eq!(
+            open_sealed(&dir, STRICT).err().unwrap().code,
+            RefusalCode::RevisionRecordUnsealed
+        );
+        let mut s = open_sealed(&dir, TORN).unwrap();
+        assert_eq!(s.seal_replay_report().unsealed, 2);
+        assert!(s.get_revision(&repo(), forged_id).is_err());
+        // The sealed chain continues after the unsealed records.
+        s.advance_revision_state(signed(owner, id, RevisionState::Draft), 6_500)
+            .unwrap();
+        drop(s);
+        let mut s = open_sealed(&dir, TORN).unwrap();
+        assert_eq!(
+            s.get_revision(&repo(), id).unwrap().state,
+            RevisionState::Draft
+        );
+        s.checkpoint_and_compact(7_000).unwrap();
+        assert_eq!(s.seal_replay_report().dropped_by_compaction, 2);
+        assert_eq!(s.seal_replay_report().unsealed, 0);
+        let root = s.state_root_digest(None).unwrap();
+        drop(s);
+        let s = open_sealed(&dir, STRICT).expect("strict accepts the compacted store");
+        assert_eq!(
+            s.get_revision(&repo(), id).unwrap().state,
+            RevisionState::Draft
+        );
+        assert!(s.get_revision(&repo(), forged_id).is_err());
+        assert_eq!(s.seal_replay_report(), SealReplayReport::default());
+        assert_eq!(s.state_root_digest(None).unwrap(), root);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The seal chain binds each record's sequence and the records before it: removing a
+    /// sealed record (its sequence filled by anything else), reordering two sealed
+    /// admissions (which would hand ownership to the second admitter), or changing any
+    /// field breaks the chain from that record on. The ledger applies nothing from there.
+    #[test]
+    fn s101_removed_reordered_or_edited_sealed_records_break_the_chain() {
+        let key = server_key();
+        let public = Some(key.public_key());
+        // Two admissions of the same content by different chains, then an owner move.
+        let first = admission(path(&[1, 2]), &[1, 2], 1);
+        let joiner = admission(path(&[3]), &[3], 1);
+        let id = match &first {
+            WalRecord::RevisionAdmitted { envelope, .. } => envelope.changeset_id(),
+            _ => unreachable!(),
+        };
+        let mut sealing = RevisionLedger::new(public);
+        let mut log = Vec::new();
+        for (n, mut r) in [
+            first,
+            joiner,
+            moved(signed(&[1, 2], id, RevisionState::Draft)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let seq = WalSeq(n as u64 + 1);
+            sealing.seal_record(&key, seq, &mut r);
+            sealing.apply(seq, r.clone());
+            log.push((seq, r));
+        }
+        let honest = RevisionLedger::from_log(log.clone(), public);
+        assert_eq!(honest.seal_report(), SealReplayReport::default());
+        let rev = honest.get_revision(&repo(), id).unwrap();
+        assert_eq!(rev.state, RevisionState::Draft);
+        assert_eq!(rev.witnesses[0].chain, path(&[1, 2]));
+
+        // Removed: the joiner's record is gone; the move after it no longer verifies.
+        let removed = vec![log[0].clone(), log[2].clone()];
+        let l = RevisionLedger::from_log(removed, public);
+        assert_eq!(l.seal_report().first_unsealed, Some(WalSeq(3)));
+        assert_eq!(
+            l.get_revision(&repo(), id).unwrap().state,
+            RevisionState::Private
+        );
+
+        // Reordered: the joiner first would own the revision; neither record verifies.
+        let reordered = vec![
+            (WalSeq(1), log[1].1.clone()),
+            (WalSeq(2), log[0].1.clone()),
+            log[2].clone(),
+        ];
+        let l = RevisionLedger::from_log(reordered, public);
+        assert_eq!(l.seal_report().unsealed, 3);
+        assert!(l.get_revision(&repo(), id).is_none());
+
+        // Edited: the first admission's time changed, everything after it is cut off.
+        let mut edited = log.clone();
+        if let WalRecord::RevisionAdmitted { admitted_at_ms, .. } = &mut edited[0].1 {
+            *admitted_at_ms += 1;
+        }
+        let l = RevisionLedger::from_log(edited, public);
+        assert_eq!(l.seal_report().unsealed, 3);
+
+        // Without a seal key the seals are carried but not checked.
+        let unchecked = RevisionLedger::from_log(log, None);
+        assert_eq!(unchecked.seal_report(), SealReplayReport::default());
+        assert_eq!(
+            unchecked.get_revision(&repo(), id).unwrap().state,
+            RevisionState::Draft
+        );
+    }
+
+    /// Issue #101 acceptance 2: a legitimate sealed store (admission, owner move, marker)
+    /// round-trips strict replay, checkpoint, and compaction unchanged, with the same state
+    /// root as the same operations in an unsealed store (the seal is not part of the root).
+    #[test]
+    fn s101_sealed_store_round_trips_replay_checkpoint_and_compaction() {
+        const STRICT: RecoveryPolicy = RecoveryPolicy::StrictFailClosed;
+        let owner: &[u8] = &[1, 2];
+        let run = |s: &mut SynapseStore| {
+            let id = admit(s, owner);
+            s.advance_revision_state(signed(owner, id, RevisionState::Draft), 6_000)
+                .unwrap();
+            let marker = ObsolescenceMarker::sign_new(
+                &key_of(owner),
+                repo(),
+                ChangeId([1; 16]),
+                id,
+                vec![],
+                6_100,
+            );
+            s.record_obsolescence(marker, path(owner), 6_200).unwrap();
+            id
+        };
+        let plain_dir = temp_dir("s101-plain");
+        let mut plain = open(&plain_dir, STRICT).unwrap();
+        run(&mut plain);
+        let plain_root = plain.state_root_digest(None).unwrap();
+
+        let dir = temp_dir("s101-roundtrip");
+        let mut s = open_sealed(&dir, STRICT).unwrap();
+        let id = run(&mut s);
+        assert_eq!(s.revision_records().len(), 3);
+        assert!(s.revision_records().iter().all(|(_, r)| r.seal().is_some()));
+        assert_eq!(s.state_root_digest(None).unwrap(), plain_root);
+        drop(s);
+        let check = |s: &SynapseStore| {
+            assert_eq!(
+                s.get_revision(&repo(), id).unwrap().state,
+                RevisionState::Draft
+            );
+            assert_eq!(
+                s.change_status(&repo(), ChangeId([1; 16]))
+                    .unwrap()
+                    .obsolete,
+                vec![id]
+            );
+            assert_eq!(s.seal_replay_report(), SealReplayReport::default());
+            assert_eq!(s.state_root_digest(None).unwrap(), plain_root);
+        };
+        let mut s = open_sealed(&dir, STRICT).unwrap();
+        check(&s);
+        s.checkpoint_and_compact(7_000).unwrap();
+        check(&s);
+        // Writing after the checkpoint continues the same chain.
+        s.advance_revision_state(signed(owner, id, RevisionState::Proposed), 7_100)
+            .unwrap();
+        drop(s);
+        let s = open_sealed(&dir, STRICT).unwrap();
+        assert_eq!(
+            s.get_revision(&repo(), id).unwrap().state,
+            RevisionState::Proposed
+        );
+        assert_eq!(s.seal_replay_report(), SealReplayReport::default());
+        drop(s);
+        // An existing unsealed store is refused by strict sealed recovery: its records
+        // predate the seal and cannot be told apart from forgeries.
+        drop(plain);
+        assert_eq!(
+            open_sealed(&plain_dir, STRICT).err().unwrap().code,
+            RefusalCode::RevisionRecordUnsealed
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&plain_dir);
+    }
+
+    /// The segment store (group commit) seals and replays the same way.
+    #[test]
+    fn s101_group_commit_store_seals_and_replays() {
+        const STRICT: RecoveryPolicy = RecoveryPolicy::StrictFailClosed;
+        let owner: &[u8] = &[1, 2];
+        let dir = temp_dir("s101-group");
+        let reopen = || {
+            let limits = StoreLimits {
+                wal_prealloc_bytes: 64 * 1024,
+                ..Default::default()
+            };
+            let fsync = FsyncPolicy::GroupCommit {
+                max_batch_records: 8,
+                max_batch_delay_us: 0,
+            };
+            SynapseStore::open_sealed(&dir, fsync, STRICT, limits, server_key()).unwrap()
+        };
+        let mut s = reopen();
+        let id = admit(&mut s, owner);
+        s.advance_revision_state(signed(owner, id, RevisionState::Draft), 6_000)
+            .unwrap();
+        assert!(s.revision_records().iter().all(|(_, r)| r.seal().is_some()));
+        drop(s);
+        let mut s = reopen();
+        assert_eq!(
+            s.get_revision(&repo(), id).unwrap().state,
+            RevisionState::Draft
+        );
+        s.checkpoint_and_compact(7_000).unwrap();
+        s.advance_revision_state(signed(owner, id, RevisionState::Proposed), 7_100)
+            .unwrap();
+        drop(s);
+        let s = reopen();
+        assert_eq!(
+            s.get_revision(&repo(), id).unwrap().state,
+            RevisionState::Proposed
+        );
+        assert_eq!(s.seal_replay_report(), SealReplayReport::default());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The seal trailer is canonical: sealed records of every kind round-trip the binary
+    /// codec, an unsealed record ends at its body, a trailer cut short is `Truncated`, and
+    /// bytes that do not open with the seal tag, or follow a seal, are `TrailingBytes`.
+    #[test]
+    fn s101_seal_trailer_round_trips_and_malformed_trailers_are_refused_typed() {
+        let key = server_key();
+        let id = ChangesetId(derived("changeset", &[1]));
+        let marker = ObsolescenceMarker::sign_new(
+            &key_of(&[1]),
+            repo(),
+            ChangeId([1; 16]),
+            id,
+            vec![],
+            6_100,
+        );
+        let records = [
+            admission(path(&[1, 2]), &[1, 2], 1),
+            moved(signed(&[1, 2], id, RevisionState::Draft)),
+            WalRecord::ObsolescenceRecorded {
+                marker,
+                chain: path(&[1]),
+                recorded_at_ms: 6_200,
+                seal: None,
+            },
+        ];
+        let cap = 1 << 20;
+        for mut record in records {
+            let unsealed = crate::codec::encode_record(&record).unwrap();
+            let ledger = RevisionLedger::new(Some(key.public_key()));
+            ledger.seal_record(&key, WalSeq(1), &mut record);
+            let sealed = crate::codec::encode_record(&record).unwrap();
+            assert_eq!(sealed.len(), unsealed.len() + 97);
+            assert_eq!(&sealed[..unsealed.len()], &unsealed[..]);
+            assert_eq!(crate::codec::decode_record(&sealed, cap).unwrap(), record);
+            let mut bad_tag = sealed.clone();
+            bad_tag[unsealed.len()] = 2;
+            assert!(matches!(
+                crate::codec::decode_record(&bad_tag, cap),
+                Err(crate::CodecRefusal::TrailingBytes { .. })
+            ));
+            for cut in unsealed.len() + 1..sealed.len() {
+                assert!(matches!(
+                    crate::codec::decode_record(&sealed[..cut], cap),
+                    Err(crate::CodecRefusal::Truncated { .. })
+                ));
+            }
+            let mut extra = sealed.clone();
+            extra.push(0);
+            assert!(matches!(
+                crate::codec::decode_record(&extra, cap),
+                Err(crate::CodecRefusal::TrailingBytes { .. })
+            ));
+        }
     }
 }
