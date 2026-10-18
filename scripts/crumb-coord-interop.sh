@@ -22,7 +22,10 @@ git -C "$ARCH" show "$PIN:tools/crumb/crumb.c" > "$T/crumb.c" || exit 3
 echo "crumb.c @ $PIN sha256 $(sha256sum "$T/crumb.c" | cut -c1-64)"
 cc -O2 -std=c11 -o "$T/crumb" "$T/crumb.c" || { echo "FAIL cc build"; exit 1; }
 (cd "$HERE" && cargo build -q -p synapse-coord --bin synapse-coord) || { echo "FAIL cargo build"; exit 1; }
-RS="$HERE/target/debug/synapse-coord"
+# The build may go to CARGO_TARGET_DIR (the Spark pipeline and agents set one); a relative
+# value is relative to $HERE, where cargo ran.
+TD=${CARGO_TARGET_DIR:-target}; case $TD in /*) ;; *) TD="$HERE/$TD" ;; esac
+RS="$TD/debug/synapse-coord"
 C="$T/crumb"
 
 # ---- one Git repository with a linked worktree for crumb.c; one shared store ----
