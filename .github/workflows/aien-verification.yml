@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      REPO_SLUG: aien-spark/synapse
+      REPO_SLUG: aien-dev/synapse
       AIEN_TEST_PIN: c26f4d7ac3156088469b27462390f5b08ef4f436
       RECEIPTS_RAW: https://raw.githubusercontent.com/aien-dev/aien-receipts/main
     steps:
@@ -86,7 +86,7 @@ jobs:
       - name: Checkout the pinned crumb tool source (aien-architecture @ d0f0b95d344b4c6628c3d868346932fd247ce168)
         uses: actions/checkout@v4
         with:
-          repository: aien-spark/aien-architecture
+          repository: aien-dev/aien-architecture
           ref: d0f0b95d344b4c6628c3d868346932fd247ce168
           path: .crumb-tool-src
 
@@ -110,7 +110,7 @@ jobs:
         if: steps.anchors.outputs.enrolled == 'true'
         uses: actions/checkout@v4
         with:
-          repository: aien-spark/aien-sovereign-core
+          repository: aien-dev/aien-sovereign-core
           ref: ${{ env.AIEN_TEST_PIN }}
           path: .aien-test-src
 
