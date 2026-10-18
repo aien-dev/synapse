@@ -44,7 +44,9 @@ df -h "$WORK_PARENT"
 
 echo "== building synapse-bench (release)"
 (cd "$REPO_ROOT" && cargo build --release -p synapse-bench --offline)
-BIN="$REPO_ROOT/target/release/synapse-bench"
+# CARGO_TARGET_DIR, when set, is where cargo put the binary (relative to REPO_ROOT, where it ran).
+TD=${CARGO_TARGET_DIR:-target}; case $TD in /*) ;; *) TD="$REPO_ROOT/$TD" ;; esac
+BIN="$TD/release/synapse-bench"
 
 # Identity of the harness source that produced the evidence.
 SOURCE_REV="$(git -C "$REPO_ROOT" rev-parse HEAD)"

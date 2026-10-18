@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: matrix.gate == 'conformance'
         with:
-          repository: aien-spark/aien-architecture
+          repository: aien-dev/aien-architecture
           ref: 29780e56c9e6b9111d884e0d4b146737228c19f6
           path: .ci-architecture
           persist-credentials: false
