@@ -939,3 +939,179 @@ fn r1_refuses_a_device_whose_signature_is_only_at_its_end() {
     }
     let _ = fs::remove_dir_all(&dir);
 }
+
+// --- repair tool, non-destructive path (issue #105) -------------------------------
+
+mod repair_tests {
+    use super::*;
+    use crate::blockdev::repair::*;
+
+    /// 10 acknowledged changes over two slots (8 batches per slot), then the newest
+    /// superblock copy (the rotation commit that raised the count to 2) damaged.
+    fn damaged_fixture() -> (MemIo, Vec<u8>) {
+        let io = MemIo::new(vec![0u8; 4 << 20]);
+        let cfg = mem_cfg(FormatPolicy::FormatIfBlank, 256 * 1024);
+        let dev = BlockDevice::open(Box::new(io.clone()), &cfg, SEG).unwrap();
+        let mut s =
+            SynapseStore::open_on_device(dev, cfg.path.clone(), TRUNCATE, limits()).unwrap();
+        for i in 0..10 {
+            commit(&mut s, &key(9), &format!("repair-{i}")).unwrap();
+        }
+        drop(s);
+        let g = {
+            let d = BlockDevice::open(
+                Box::new(MemIo::new(io.rec().image.clone())),
+                &mem_cfg(FormatPolicy::OpenExisting, 256 * 1024),
+                SEG,
+            )
+            .unwrap();
+            assert_eq!(d.segment_count(), 2);
+            d.generation()
+        };
+        io.rec().image[(g % 2 * BLOCK) as usize + 40] ^= 0xFF;
+        let original = io.rec().image.clone();
+        (io, original)
+    }
+
+    fn open_seq(image: Vec<u8>) -> Result<u64, RefusalCode> {
+        BlockDevice::open(
+            Box::new(MemIo::new(image)),
+            &mem_cfg(FormatPolicy::OpenExisting, 256 * 1024),
+            SEG,
+        )
+        .and_then(|dev| {
+            SynapseStore::open_on_device(
+                dev,
+                PathBuf::from("/r1-test/in-memory"),
+                TRUNCATE,
+                limits(),
+            )
+        })
+        .map(|s| s.committed_seq().0)
+        .map_err(|e| e.code)
+    }
+
+    fn writes(io: &MemIo) -> usize {
+        io.rec()
+            .ops
+            .iter()
+            .filter(|o| matches!(o, Op::Write { .. }))
+            .count()
+    }
+
+    #[test]
+    fn r1_repair_diagnosis_names_the_corrupt_copy_and_the_range_lost() {
+        let (io, original) = damaged_fixture();
+        assert_eq!(
+            open_seq(original.clone()),
+            Err(RefusalCode::CheckpointCorrupt)
+        );
+        let before = writes(&io);
+        let r = diagnose(&io).unwrap();
+        assert_eq!(writes(&io), before, "diagnose must not write");
+        assert_eq!(io.rec().image, original);
+        assert_eq!(r.verdict, Verdict::OlderCheckpointLosesRange);
+        assert_eq!(r.segment_count, 1);
+        assert_eq!(r.lost.len(), 1);
+        assert_eq!(r.lost[0].slot, 2);
+        let text = r.to_string();
+        assert!(
+            text.contains("CRC-32C mismatch") || text.contains("CORRUPT"),
+            "{text}"
+        );
+        assert!(text.contains("CORRUPT, CRC-32C mismatch"), "{text}");
+        assert!(text.contains("1 committed segments"), "{text}");
+        assert!(
+            text.contains(&format!(
+                "segment slot 2: device bytes {}..{}",
+                r.lost[0].start, r.lost[0].end
+            )),
+            "{text}"
+        );
+        assert!(text.contains("DROP acknowledged data"), "{text}");
+        assert!(text.contains("nothing was written"), "{text}");
+    }
+
+    #[test]
+    fn r1_repair_refuses_without_the_flag_and_writes_nothing() {
+        let (io, original) = damaged_fixture();
+        let dir = temp_dir("repair-refuse");
+        let backup = dir.join("backup.bin");
+        let before = writes(&io);
+        let err = repair_dropping_acknowledged_range(&io, &backup, false).unwrap_err();
+        assert!(err.message.contains("--drop-acknowledged-range"), "{err:?}");
+        assert_eq!(writes(&io), before);
+        assert_eq!(io.rec().image, original);
+        assert!(!backup.exists(), "no backup before consent either");
+    }
+
+    #[test]
+    fn r1_repair_with_the_flag_backs_up_then_drops_only_the_reported_range() {
+        let (io, original) = damaged_fixture();
+        let dir = temp_dir("repair-drop");
+        let backup = dir.join("backup.bin");
+        let report = repair_dropping_acknowledged_range(&io, &backup, true).unwrap();
+        // Backup content equals the original device bytes of what was touched.
+        let b = read_backup(&backup).unwrap();
+        assert_eq!(b.sections.len(), 1 + report.lost.len());
+        assert_eq!(b.sections[0].offset, 0);
+        assert_eq!(b.sections[0].bytes, original[..2 * BLOCK as usize]);
+        let l = &report.lost[0];
+        let (a, e) = (l.start / BLOCK * BLOCK, l.end.div_ceil(BLOCK) * BLOCK);
+        assert_eq!(b.sections[1].offset, a);
+        assert_eq!(b.sections[1].bytes, original[a as usize..e as usize]);
+        assert!(b.sections[1].bytes.iter().any(|x| *x != 0));
+        // Only the reported blocks changed, and they are now zero.
+        let after = io.rec().image.clone();
+        for (i, (x, y)) in original.iter().zip(&after).enumerate() {
+            if x != y {
+                assert!(
+                    (a..e).contains(&(i as u64)),
+                    "byte {i} changed outside the range"
+                );
+            }
+        }
+        assert!(after[a as usize..e as usize].iter().all(|x| *x == 0));
+        assert_eq!(after[..2 * BLOCK as usize], original[..2 * BLOCK as usize]);
+        // The store opens again with the older checkpoint: slot 1's 8 changes.
+        assert_eq!(open_seq(after).unwrap(), 8);
+        // The backup is never overwritten by a second repair.
+        let r2 = repair_dropping_acknowledged_range(&io, &backup, true).unwrap();
+        assert_eq!(r2.verdict, Verdict::OneCopyDamagedNothingLost);
+    }
+
+    #[test]
+    fn r1_repair_intact_image_has_nothing_to_do_and_never_writes() {
+        let io = MemIo::new(vec![0u8; 4 << 20]);
+        let cfg = mem_cfg(FormatPolicy::FormatIfBlank, 256 * 1024);
+        let dev = BlockDevice::open(Box::new(io.clone()), &cfg, SEG).unwrap();
+        let mut s =
+            SynapseStore::open_on_device(dev, cfg.path.clone(), TRUNCATE, limits()).unwrap();
+        commit(&mut s, &key(9), "intact").unwrap();
+        drop(s);
+        // Two statements: the guard from io.rec() would otherwise live to the end of the
+        // tuple expression while writes(&io) takes the same lock on this thread.
+        let img = io.rec().image.clone();
+        let w = writes(&io);
+        let dir = temp_dir("repair-intact");
+        let backup = dir.join("b.bin");
+        assert_eq!(diagnose(&io).unwrap().verdict, Verdict::Healthy);
+        let r = repair_dropping_acknowledged_range(&io, &backup, true).unwrap();
+        assert_eq!(r.verdict, Verdict::Healthy);
+        let now_img = io.rec().image.clone();
+        assert_eq!((now_img, writes(&io)), (img, w));
+        assert!(!backup.exists());
+    }
+
+    #[test]
+    fn r1_repair_refuses_a_foreign_device() {
+        let mut img = vec![0u8; 4 << 20];
+        img[510] = 0x55;
+        img[511] = 0xAA; // MBR
+        let io = MemIo::new(img);
+        assert!(diagnose(&io).is_err());
+        assert!(
+            repair_dropping_acknowledged_range(&io, Path::new("/nonexistent/b"), true).is_err()
+        );
+    }
+}
