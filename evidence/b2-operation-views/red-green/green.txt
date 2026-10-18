@@ -1,0 +1,13 @@
+test operation_tests::b2_kind_12_codec_round_trips_and_refuses_unknown_tags ... ok
+test operation_tests::b2_per_actor_undo_records_conflicts_with_other_actors_markers ... ok
+test operation_tests::b2_undo_by_a_non_dominating_chain_is_refused ... ok
+test operation_tests::b2_undo_of_a_revocation_or_a_final_discard_is_refused ... ok
+test operation_tests::b2_forged_view_operations_change_nothing_on_replay ... ok
+test operation_tests::b2_per_actor_undo_leaves_other_actors_intact ... ok
+test operation_tests::b2_property_undo_to_t_restores_the_view_of_t_across_replay_and_compaction ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 3.29s
+test b2_api_undo_and_discard_of_another_actor_need_a_dominating_chain ... ok
+test b2_api_final_discard_can_never_be_undone ... ok
+test b2_api_revocation_is_a_fact_and_is_enforced ... ok
+test b2_api_undo_requires_the_undo_capability ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s

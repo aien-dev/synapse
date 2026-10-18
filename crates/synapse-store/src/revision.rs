@@ -150,7 +150,7 @@ pub(crate) struct RevisionLedger {
 }
 
 /// Digest of one revision record over its canonical core encodings.
-fn record_digest(record: &WalRecord) -> [u8; 32] {
+pub(crate) fn record_digest(record: &WalRecord) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update([record.kind_byte()]);
     let mut chain = Vec::new();
@@ -213,6 +213,18 @@ fn record_digest(record: &WalRecord) -> [u8; 32] {
             c.encode_into(&mut chain);
             h.update(&chain);
             h.update(admitted_at_ms.to_le_bytes());
+        }
+        WalRecord::ViewOperationRecorded {
+            op,
+            chain: c,
+            recorded_at_ms,
+        } => {
+            let o = op.digest_bytes();
+            h.update((o.len() as u64).to_le_bytes());
+            h.update(&o);
+            c.encode_into(&mut chain);
+            h.update(&chain);
+            h.update(recorded_at_ms.to_le_bytes());
         }
         _ => {}
     }
@@ -439,6 +451,9 @@ impl RevisionLedger {
                     }
                 }
             }
+            // B2: view operations change no revision; they only join the log (the view is a
+            // fold over it, `operation::view_at`).
+            WalRecord::ViewOperationRecorded { .. } => {}
             _ => return,
         }
         self.log.push((seq, record));
@@ -1146,7 +1161,7 @@ impl crate::SynapseStore {
             .ok_or_else(|| not_found(format!("change {change_id} not found")))
     }
 
-    fn check_binary_codec(&self) -> SynapseResult<()> {
+    pub(crate) fn check_binary_codec(&self) -> SynapseResult<()> {
         if self.codec == crate::RecordCodec::JsonV1 {
             return Err(SynapseError::new(
                 RefusalCode::EnvelopeVersionUnsupported,
@@ -1163,7 +1178,7 @@ impl crate::SynapseStore {
     /// before anything is written, and a frame that lands at another sequence anyway is not
     /// applied and poisons the store (`WalSequenceGap` in both cases), so a record is never
     /// admitted at a sequence it was not checked at. Real checks in every build profile.
-    fn append_revision_record(
+    pub(crate) fn append_revision_record(
         &mut self,
         record: WalRecord,
         blobs: &[(BlobDigest, &[u8])],
@@ -1234,7 +1249,7 @@ fn sequence_mismatch(checked_at: WalSeq, seq: WalSeq, written: bool) -> Option<S
 }
 
 #[cfg(test)]
-mod b4_tests {
+pub(crate) mod b4_tests {
     use super::*;
     use crate::{AdmissionAuthority, FsyncPolicy, RecoveryPolicy, StoreLimits, SynapseStore};
     use ed25519_dalek::SigningKey;
@@ -1245,10 +1260,10 @@ mod b4_tests {
     };
     use synapse_core::{FileMode, PathMutation, TreeDigest};
 
-    struct SplitMix64(u64);
+    pub(crate) struct SplitMix64(pub(crate) u64);
 
     impl SplitMix64 {
-        fn next(&mut self) -> u64 {
+        pub(crate) fn next(&mut self) -> u64 {
             self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
             let mut z = self.0;
             z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -1256,12 +1271,12 @@ mod b4_tests {
             z ^ (z >> 31)
         }
 
-        fn below(&mut self, n: u64) -> u64 {
+        pub(crate) fn below(&mut self, n: u64) -> u64 {
             self.next() % n
         }
     }
 
-    fn repo() -> RepoId {
+    pub(crate) fn repo() -> RepoId {
         RepoId::new("aien-spark/synapse").unwrap()
     }
 
@@ -1277,7 +1292,7 @@ mod b4_tests {
     }
 
     /// The key presenting the chain with label path `labels`.
-    fn key_of(labels: &[u8]) -> SigningKey {
+    pub(crate) fn key_of(labels: &[u8]) -> SigningKey {
         SigningKey::from_bytes(&derived("key", labels))
     }
 
@@ -1324,7 +1339,7 @@ mod b4_tests {
     }
 
     /// Link digests of the chain with label path `labels`; label prefixes are ancestors.
-    fn path(labels: &[u8]) -> ChainPath {
+    pub(crate) fn path(labels: &[u8]) -> ChainPath {
         ChainPath::new(
             chain_of(labels)
                 .link_digests()
@@ -1374,7 +1389,7 @@ mod b4_tests {
         }
     }
 
-    fn body(n: u32) -> [u8; 4] {
+    pub(crate) fn body(n: u32) -> [u8; 4] {
         n.to_le_bytes()
     }
 
@@ -1545,7 +1560,7 @@ mod b4_tests {
         assert_eq!(report.unverified(), 0);
     }
 
-    fn temp_dir(name: &str) -> PathBuf {
+    pub(crate) fn temp_dir(name: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -1556,7 +1571,7 @@ mod b4_tests {
         dir
     }
 
-    fn open(dir: &PathBuf, policy: RecoveryPolicy) -> SynapseResult<SynapseStore> {
+    pub(crate) fn open(dir: &PathBuf, policy: RecoveryPolicy) -> SynapseResult<SynapseStore> {
         let limits = StoreLimits {
             wal_prealloc_bytes: 64 * 1024,
             ..Default::default()
