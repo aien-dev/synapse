@@ -215,6 +215,12 @@ fn put_envelope(w: &mut Writer, e: &ChangesetEnvelope) -> SynapseResult<()> {
                 w.u64(*size_bytes);
             }
             MutationOp::Delete => w.u8(2),
+            MutationOp::Conflict(_) => {
+                return Err(SynapseError::new(
+                    RefusalCode::ConflictNotDerived,
+                    format!("envelope v1 cannot carry the conflict term at {}", m.path),
+                ))
+            }
         }
     }
     put_attachments(w, &e.evidence_receipts)?;

@@ -60,6 +60,8 @@ const SIGNER_TAG_AGENT: u8 = 1;
 const SIGNER_TAG_SERVER: u8 = 2;
 const OP_TAG_UPSERT: u8 = 1;
 const OP_TAG_DELETE: u8 = 2;
+/// A conflict entry (ADR 0003 step D2): followed by the canonical `ConflictTerm` encoding.
+const OP_TAG_CONFLICT: u8 = 3;
 
 pub(crate) fn malformed(msg: impl Into<String>) -> SynapseError {
     SynapseError::new(RefusalCode::EnvelopeMalformed, msg)
@@ -123,7 +125,7 @@ impl RevisionContent {
 
     /// `version u16 (2) | change_id [16] | base_tree [32] | u32 count | parent [32]* |
     /// u32 count | (path str | op)* | intent_summary str`, where `op` is `1 | mode u8 |
-    /// blob_digest [32] | size u64` (upsert) or `2` (delete) and `str` is `u32 len | UTF-8`.
+    /// blob_digest [32] | size u64` (upsert), `2` (delete) or `3 | conflict term` (D2)| size u64` (upsert) or `2` (delete) and `str` is `u32 len | UTF-8`.
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(128 + 96 * self.mutations.len());
         buf.extend_from_slice(&ENVELOPE_V2_VERSION.to_le_bytes());
@@ -148,6 +150,10 @@ impl RevisionContent {
                     buf.extend_from_slice(&size_bytes.to_le_bytes());
                 }
                 MutationOp::Delete => buf.push(OP_TAG_DELETE),
+                MutationOp::Conflict(term) => {
+                    buf.push(OP_TAG_CONFLICT);
+                    term.encode_into(&mut buf);
+                }
             }
         }
         put_str(&mut buf, &self.intent_summary);
@@ -193,6 +199,7 @@ impl RevisionContent {
                     }
                 }
                 OP_TAG_DELETE => MutationOp::Delete,
+                OP_TAG_CONFLICT => MutationOp::Conflict(crate::ConflictTerm::decode_from(r)?),
                 tag => return Err(malformed(format!("unknown mutation tag {tag}"))),
             };
             mutations.push(PathMutation { path, op });
@@ -356,6 +363,7 @@ impl ChangesetEnvelopeV2 {
     /// signature. Returns the v2 `ChangesetId`.
     pub fn validate(&self) -> SynapseResult<ChangesetId> {
         self.content.validate()?;
+        crate::refuse_conflict_terms(&self.content.mutations, "an agent-submitted revision")?;
         let id = self.content.changeset_id();
         if self.attestation.changeset_id != id {
             return Err(SynapseError::new(

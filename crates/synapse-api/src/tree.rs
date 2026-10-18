@@ -29,8 +29,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::mem::size_of;
 use std::sync::Arc;
 use synapse_core::{
-    tree_entry_order, validate_repo_relative_path, BlobDigest, ChangesetId, FileMode, GitOid,
-    RefusalCode, SynapseError, SynapseResult, TreeDigest, TreeNodeEncoder,
+    tree_entry_order, validate_repo_relative_path, BlobDigest, ChangesetId, ConflictTerm,
+    ConflictTrees, EntryState, FileMode, GitOid, NodeEntry, RefusalCode, SynapseError,
+    SynapseResult, TreeDigest, TreeNodeEncoder,
 };
 
 /// Default bound on tree memory: 64 MiB.
@@ -70,14 +71,18 @@ pub struct TreeFile {
 }
 
 /// What a tree entry names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TreeEntryKind {
     File(TreeFile),
-    /// A non-empty subdirectory: its node digest and the number of files anywhere below it.
+    /// A non-empty subdirectory: its node digest, the number of files anywhere below it, and
+    /// the number of conflict entries anywhere below it.
     Dir {
         digest: TreeDigest,
         file_count: u64,
+        conflict_count: u64,
     },
+    /// A conflict entry (ADR 0003 step D2): the entry holds a sum of states, not a file.
+    Conflict(ConflictTerm),
 }
 
 /// One entry of a tree node.
@@ -99,6 +104,7 @@ pub struct TreeNode {
     digest: TreeDigest,
     entries: Box<[TreeEntry]>,
     file_count: u64,
+    conflict_count: u64,
     encoded_len: usize,
 }
 
@@ -108,7 +114,7 @@ impl TreeNode {
     pub fn new(mut entries: Vec<TreeEntry>) -> SynapseResult<Self> {
         entries.sort_by(|a, b| tree_entry_order(&a.name, a.is_dir(), &b.name, b.is_dir()));
         let mut enc = TreeNodeEncoder::new(entries.len() as u32);
-        let mut file_count = 0u64;
+        let (mut file_count, mut conflict_count) = (0u64, 0u64);
         for e in &entries {
             match &e.kind {
                 TreeEntryKind::File(f) => {
@@ -118,9 +124,15 @@ impl TreeNode {
                 TreeEntryKind::Dir {
                     digest,
                     file_count: n,
+                    conflict_count: c,
                 } => {
                     enc.dir(&e.name, digest)?;
                     file_count += n;
+                    conflict_count += c;
+                }
+                TreeEntryKind::Conflict(term) => {
+                    enc.conflict(&e.name, term)?;
+                    conflict_count += 1;
                 }
             }
         }
@@ -129,6 +141,7 @@ impl TreeNode {
             digest,
             entries: entries.into_boxed_slice(),
             file_count,
+            conflict_count,
             encoded_len: bytes.len(),
         })
     }
@@ -146,6 +159,11 @@ impl TreeNode {
         self.file_count
     }
 
+    /// Conflict entries anywhere below this node (ADR 0003 step D2).
+    pub fn conflict_count(&self) -> u64 {
+        self.conflict_count
+    }
+
     /// Length of this node's canonical encoding (the bytes its digest covers).
     pub fn encoded_len(&self) -> usize {
         self.encoded_len
@@ -160,6 +178,10 @@ impl TreeNode {
         }
         for e in self.entries.iter() {
             bytes += e.name.len() + ALLOC_OVERHEAD_BYTES;
+            if let TreeEntryKind::Conflict(term) = &e.kind {
+                // The two term vectors (adds, removes), each one allocation.
+                bytes += term.heap_capacity_bytes() + 2 * ALLOC_OVERHEAD_BYTES;
+            }
         }
         bytes
     }
@@ -223,6 +245,11 @@ pub struct TreeStore {
     nodes: HashMap<TreeDigest, Slot>,
     roots: HashMap<ChangesetId, RootMemo>,
     node_bytes: usize,
+    /// Highest `capacity()` each table has reported. A hashbrown table never shrinks, but its
+    /// reported capacity drops as removals leave deleted slots, so the table's real size is
+    /// accounted from this high water, not from the current figure.
+    nodes_cap: usize,
+    roots_cap: usize,
     tick: u64,
     stats: TreeStoreStats,
 }
@@ -236,19 +263,30 @@ fn table_bytes<K, V>(capacity: usize) -> usize {
     buckets * (size_of::<(K, V)>() + 1) + 16 + ALLOC_OVERHEAD_BYTES
 }
 
-/// Accounted table bytes after one more insertion into a table holding `len` of `capacity`.
-fn table_bytes_after_insert<K, V>(len: usize, capacity: usize) -> usize {
+/// Accounted table bytes after one more insertion into a table holding `len` items, reporting
+/// `capacity` now, whose full capacity (its high water) is `full`. With no room left the
+/// insertion either rehashes in place or doubles the bucket count; doubling is assumed.
+fn table_bytes_after_insert<K, V>(len: usize, capacity: usize, full: usize) -> usize {
+    let full = full.max(capacity);
     if len < capacity {
-        return table_bytes::<K, V>(capacity);
+        return table_bytes::<K, V>(full);
     }
     // hashbrown doubles its bucket count (from 0 to 4 buckets, capacity 3).
-    let grown = if capacity < 3 {
+    let grown = if full < 3 {
         3
     } else {
-        let buckets = (capacity * 8).div_ceil(7).next_power_of_two();
+        let buckets = (full * 8).div_ceil(7).next_power_of_two();
         buckets * 2 * 7 / 8
     };
     table_bytes::<K, V>(grown)
+}
+
+/// A Git-shaped diff reached a conflict entry, which has no mode or object id.
+fn conflicted_diff(path: &str) -> SynapseError {
+    SynapseError::new(
+        RefusalCode::TreeConflicted,
+        format!("{path} is a conflict entry; a Git-shaped diff cannot represent it (read it with `conflicts`)"),
+    )
 }
 
 fn not_found(digest: TreeDigest) -> SynapseError {
@@ -301,6 +339,8 @@ impl TreeStore {
             nodes: HashMap::new(),
             roots: HashMap::new(),
             node_bytes: 0,
+            nodes_cap: 0,
+            roots_cap: 0,
             tick: 0,
             stats: TreeStoreStats {
                 max_bytes: config.max_bytes,
@@ -320,8 +360,8 @@ impl TreeStore {
     /// Accounted bytes now.
     pub fn total_bytes(&self) -> usize {
         self.node_bytes
-            + table_bytes::<TreeDigest, Slot>(self.nodes.capacity())
-            + table_bytes::<ChangesetId, RootMemo>(self.roots.capacity())
+            + table_bytes::<TreeDigest, Slot>(self.nodes_cap.max(self.nodes.capacity()))
+            + table_bytes::<ChangesetId, RootMemo>(self.roots_cap.max(self.roots.capacity()))
     }
 
     pub fn stats(&self) -> TreeStoreStats {
@@ -379,6 +419,7 @@ impl TreeStore {
                 pins: 0,
             },
         );
+        self.nodes_cap = self.nodes_cap.max(self.nodes.capacity());
         self.node_bytes += bytes;
         self.stats.nodes_inserted += 1;
         self.stats.encoded_bytes_inserted += encoded;
@@ -398,14 +439,22 @@ impl TreeStore {
     fn make_room(&mut self, incoming: usize, into_nodes: bool, into_roots: bool) {
         let need = |s: &Self| {
             let nodes_table = if into_nodes {
-                table_bytes_after_insert::<TreeDigest, Slot>(s.nodes.len(), s.nodes.capacity())
+                table_bytes_after_insert::<TreeDigest, Slot>(
+                    s.nodes.len(),
+                    s.nodes.capacity(),
+                    s.nodes_cap,
+                )
             } else {
-                table_bytes::<TreeDigest, Slot>(s.nodes.capacity())
+                table_bytes::<TreeDigest, Slot>(s.nodes_cap.max(s.nodes.capacity()))
             };
             let roots_table = if into_roots {
-                table_bytes_after_insert::<ChangesetId, RootMemo>(s.roots.len(), s.roots.capacity())
+                table_bytes_after_insert::<ChangesetId, RootMemo>(
+                    s.roots.len(),
+                    s.roots.capacity(),
+                    s.roots_cap,
+                )
             } else {
-                table_bytes::<ChangesetId, RootMemo>(s.roots.capacity())
+                table_bytes::<ChangesetId, RootMemo>(s.roots_cap.max(s.roots.capacity()))
             };
             s.node_bytes + nodes_table + roots_table + incoming
         };
@@ -534,6 +583,7 @@ impl TreeStore {
         }
         self.make_room(0, false, true);
         self.roots.insert(changeset, RootMemo { digest, tick });
+        self.roots_cap = self.roots_cap.max(self.roots.capacity());
         self.note_high_water();
     }
 
@@ -561,7 +611,7 @@ impl TreeStore {
                 .entries
                 .iter()
                 .find(|e| &*e.name == seg)
-                .map(|e| e.kind);
+                .map(|e| e.kind.clone());
             match (found, last) {
                 (Some(TreeEntryKind::File(f)), true) => return Ok(Some(f)),
                 (Some(TreeEntryKind::Dir { digest, .. }), false) => node = self.get(digest)?,
@@ -571,9 +621,52 @@ impl TreeStore {
         Ok(None)
     }
 
+    /// Refuse `TreeConflicted` when `root` holds any conflict entry: `what` (a whole-tree file
+    /// listing, an export, a Git-shaped diff) cannot represent one (ADR 0003 step D2).
+    pub fn refuse_conflicted(&mut self, root: TreeDigest, what: &str) -> SynapseResult<()> {
+        let n = self.get(root)?.conflict_count;
+        if n == 0 {
+            return Ok(());
+        }
+        Err(SynapseError::new(
+            RefusalCode::TreeConflicted,
+            format!(
+                "tree {root} holds {n} conflict entries; {what} is refused until they are resolved"
+            ),
+        ))
+    }
+
+    /// Every conflict entry of `root` with its full path, in path byte order. Only subtrees
+    /// that hold conflicts are opened.
+    pub fn conflicts(&mut self, root: TreeDigest) -> SynapseResult<Vec<(String, ConflictTerm)>> {
+        let mut out = Vec::new();
+        let mut stack = vec![(String::new(), root)];
+        while let Some((dir, d)) = stack.pop() {
+            let node = self.get(d)?;
+            let mut below = Vec::new();
+            for e in node.entries.iter() {
+                match &e.kind {
+                    TreeEntryKind::Conflict(term) => {
+                        out.push((format!("{dir}{}", e.name), term.clone()))
+                    }
+                    TreeEntryKind::Dir {
+                        digest,
+                        conflict_count,
+                        ..
+                    } if *conflict_count > 0 => below.push((format!("{dir}{}/", e.name), *digest)),
+                    _ => {}
+                }
+            }
+            stack.extend(below.into_iter().rev());
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(out)
+    }
+
     /// Number of files whose full path starts with `prefix` (empty prefix: every file).
     pub fn count_files(&mut self, root: TreeDigest, prefix: &str) -> SynapseResult<u64> {
         let node = self.get(root)?;
+        self.refuse_conflicted(root, "a file listing")?;
         if prefix.is_empty() {
             return Ok(node.file_count);
         }
@@ -586,7 +679,9 @@ impl TreeStore {
         for e in node.entries.iter() {
             match e.kind {
                 TreeEntryKind::File(_) => n += u64::from(concat_starts_with(dir, &e.name, prefix)),
-                TreeEntryKind::Dir { digest, file_count } => {
+                TreeEntryKind::Dir {
+                    digest, file_count, ..
+                } => {
                     let len = dir.len();
                     dir.push_str(&e.name);
                     dir.push('/');
@@ -600,6 +695,7 @@ impl TreeStore {
                     }
                     dir.truncate(len);
                 }
+                TreeEntryKind::Conflict(_) => unreachable!("conflicted trees are refused first"),
             }
         }
         Ok(n)
@@ -614,6 +710,7 @@ impl TreeStore {
         offset: u64,
         limit: usize,
     ) -> SynapseResult<Vec<(String, TreeFile)>> {
+        self.refuse_conflicted(root, "a file listing")?;
         let node = self.get(root)?;
         let mut out = Vec::with_capacity(limit.min(4096));
         let mut skip = offset;
@@ -648,7 +745,9 @@ impl TreeStore {
                         }
                     }
                 }
-                TreeEntryKind::Dir { digest, file_count } => {
+                TreeEntryKind::Dir {
+                    digest, file_count, ..
+                } => {
                     let len = dir.len();
                     dir.push_str(&e.name);
                     dir.push('/');
@@ -666,6 +765,7 @@ impl TreeStore {
                     }
                     dir.truncate(len);
                 }
+                TreeEntryKind::Conflict(_) => unreachable!("conflicted trees are refused first"),
             }
         }
         Ok(())
@@ -699,13 +799,14 @@ impl TreeStore {
     ) -> SynapseResult<()> {
         let len = dir.len();
         dir.push_str(&entry.name);
-        match entry.kind {
+        match &entry.kind {
             TreeEntryKind::File(f) => out.push(TreeDiffEntry {
                 path: dir.clone(),
-                old: (!added).then_some(f),
-                new: added.then_some(f),
+                old: (!added).then_some(*f),
+                new: added.then_some(*f),
             }),
-            TreeEntryKind::Dir { digest, .. } => {
+            TreeEntryKind::Conflict(_) => return Err(conflicted_diff(dir)),
+            &TreeEntryKind::Dir { digest, .. } => {
                 dir.push('/');
                 let node = self.get(digest)?;
                 for e in node.entries.iter() {
@@ -742,8 +843,8 @@ impl TreeStore {
                     j += 1;
                 }
                 std::cmp::Ordering::Equal => {
-                    match (ea[i].kind, eb[j].kind) {
-                        (TreeEntryKind::File(x), TreeEntryKind::File(y)) => {
+                    match (&ea[i].kind, &eb[j].kind) {
+                        (&TreeEntryKind::File(x), &TreeEntryKind::File(y)) => {
                             if x.blob_digest != y.blob_digest || x.mode != y.mode {
                                 let mut path = dir.clone();
                                 path.push_str(&ea[i].name);
@@ -755,8 +856,8 @@ impl TreeStore {
                             }
                         }
                         (
-                            TreeEntryKind::Dir { digest: x, .. },
-                            TreeEntryKind::Dir { digest: y, .. },
+                            &TreeEntryKind::Dir { digest: x, .. },
+                            &TreeEntryKind::Dir { digest: y, .. },
                         ) => {
                             if x != y {
                                 let len = dir.len();
@@ -767,7 +868,14 @@ impl TreeStore {
                                 dir.truncate(len);
                             }
                         }
-                        // Equal order implies equal name and kind.
+                        (TreeEntryKind::Conflict(x), TreeEntryKind::Conflict(y)) if x == y => {}
+                        // A conflict entry on either side has no Git-shaped difference.
+                        (TreeEntryKind::Conflict(_), _) | (_, TreeEntryKind::Conflict(_)) => {
+                            let mut path = dir.clone();
+                            path.push_str(&ea[i].name);
+                            return Err(conflicted_diff(&path));
+                        }
+                        // Equal order implies equal name and directory-ness.
                         _ => unreachable!("tree_entry_order Equal with differing kinds"),
                     }
                     i += 1;
@@ -812,13 +920,18 @@ pub struct TreeEdit {
 }
 
 enum EditDir {
-    Stored { digest: TreeDigest, file_count: u64 },
+    Stored {
+        digest: TreeDigest,
+        file_count: u64,
+        conflict_count: u64,
+    },
     Open(BTreeMap<Box<str>, EditEntry>),
 }
 
 enum EditEntry {
     File(TreeFile),
     Dir(EditDir),
+    Conflict(ConflictTerm),
 }
 
 impl EditDir {
@@ -829,11 +942,18 @@ impl EditDir {
                 .entries
                 .iter()
                 .map(|e| {
-                    let v = match e.kind {
-                        TreeEntryKind::File(f) => EditEntry::File(f),
-                        TreeEntryKind::Dir { digest, file_count } => {
-                            EditEntry::Dir(EditDir::Stored { digest, file_count })
-                        }
+                    let v = match &e.kind {
+                        TreeEntryKind::File(f) => EditEntry::File(*f),
+                        &TreeEntryKind::Dir {
+                            digest,
+                            file_count,
+                            conflict_count,
+                        } => EditEntry::Dir(EditDir::Stored {
+                            digest,
+                            file_count,
+                            conflict_count,
+                        }),
+                        TreeEntryKind::Conflict(t) => EditEntry::Conflict(t.clone()),
                     };
                     (e.name.clone(), v)
                 })
@@ -850,11 +970,12 @@ impl EditDir {
 impl TreeEdit {
     /// Start editing the tree `base` (its root node must be present).
     pub fn new(store: &mut TreeStore, base: TreeDigest) -> SynapseResult<Self> {
-        let file_count = store.get(base)?.file_count;
+        let node = store.get(base)?;
         Ok(Self {
             root: EditDir::Stored {
                 digest: base,
-                file_count,
+                file_count: node.file_count,
+                conflict_count: node.conflict_count,
             },
             written_bytes: 0,
             written_nodes: 0,
@@ -869,6 +990,26 @@ impl TreeEdit {
         path: &str,
         file: TreeFile,
     ) -> SynapseResult<()> {
+        self.put_leaf(store, path, EditEntry::File(file))
+    }
+
+    /// Set the entry at `path` to the conflict term `term` (ADR 0003 step D2), replacing
+    /// whatever is at or above `path` exactly as [`TreeEdit::upsert`] does.
+    pub fn set_conflict(
+        &mut self,
+        store: &mut TreeStore,
+        path: &str,
+        term: ConflictTerm,
+    ) -> SynapseResult<()> {
+        self.put_leaf(store, path, EditEntry::Conflict(term))
+    }
+
+    fn put_leaf(
+        &mut self,
+        store: &mut TreeStore,
+        path: &str,
+        leaf: EditEntry,
+    ) -> SynapseResult<()> {
         validate_repo_relative_path(path)?;
         let mut segments: Vec<&str> = path.split('/').collect();
         let name = segments.pop().expect("validated path is non-empty");
@@ -878,19 +1019,20 @@ impl TreeEdit {
             let slot = map
                 .entry(seg.into())
                 .or_insert_with(|| EditEntry::Dir(EditDir::Open(BTreeMap::new())));
-            if matches!(slot, EditEntry::File(_)) {
+            if !matches!(slot, EditEntry::Dir(_)) {
                 *slot = EditEntry::Dir(EditDir::Open(BTreeMap::new()));
             }
             dir = match slot {
                 EditEntry::Dir(d) => d,
-                EditEntry::File(_) => unreachable!("replaced above"),
+                _ => unreachable!("replaced above"),
             };
         }
-        dir.open(store)?.insert(name.into(), EditEntry::File(file));
+        dir.open(store)?.insert(name.into(), leaf);
         Ok(())
     }
 
-    /// Remove the file at `path`. A missing path, or a path naming a directory, is left as is.
+    /// Remove the file or conflict entry at `path`. A missing path, or a path naming a
+    /// directory, is left as is.
     pub fn delete(&mut self, store: &mut TreeStore, path: &str) -> SynapseResult<()> {
         validate_repo_relative_path(path)?;
         let mut segments: Vec<&str> = path.split('/').collect();
@@ -904,7 +1046,10 @@ impl TreeEdit {
             };
         }
         let map = dir.open(store)?;
-        if matches!(map.get(name), Some(EditEntry::File(_))) {
+        if matches!(
+            map.get(name),
+            Some(EditEntry::File(_) | EditEntry::Conflict(_))
+        ) {
             map.remove(name);
         }
         Ok(())
@@ -933,23 +1078,29 @@ impl TreeEdit {
             EditDir::Stored {
                 digest: TreeDigest::empty(),
                 file_count: 0,
+                conflict_count: 0,
             },
         );
         let digest = match self.freeze(root, store)? {
-            Some((digest, _)) => digest,
+            Some((digest, _, _)) => digest,
             None => store.insert(TreeNode::new(Vec::new())?),
         };
         Ok((digest, self.written_bytes, self.written_nodes))
     }
 
-    /// Freeze a directory bottom-up. Returns `None` for an empty directory (pruned).
+    /// Freeze a directory bottom-up: its digest, file count and conflict count, or `None` for
+    /// an empty directory (pruned).
     fn freeze(
         &mut self,
         dir: EditDir,
         store: &mut TreeStore,
-    ) -> SynapseResult<Option<(TreeDigest, u64)>> {
+    ) -> SynapseResult<Option<(TreeDigest, u64, u64)>> {
         let map = match dir {
-            EditDir::Stored { digest, file_count } => return Ok(Some((digest, file_count))),
+            EditDir::Stored {
+                digest,
+                file_count,
+                conflict_count,
+            } => return Ok(Some((digest, file_count, conflict_count))),
             EditDir::Open(map) => map,
         };
         let mut entries = Vec::with_capacity(map.len());
@@ -960,23 +1111,31 @@ impl TreeEdit {
                     kind: TreeEntryKind::File(f),
                 }),
                 EditEntry::Dir(d) => {
-                    if let Some((digest, file_count)) = self.freeze(d, store)? {
+                    if let Some((digest, file_count, conflict_count)) = self.freeze(d, store)? {
                         entries.push(TreeEntry {
                             name,
-                            kind: TreeEntryKind::Dir { digest, file_count },
+                            kind: TreeEntryKind::Dir {
+                                digest,
+                                file_count,
+                                conflict_count,
+                            },
                         });
                     }
                 }
+                EditEntry::Conflict(term) => entries.push(TreeEntry {
+                    name,
+                    kind: TreeEntryKind::Conflict(term),
+                }),
             }
         }
         if entries.is_empty() {
             return Ok(None);
         }
         let node = TreeNode::new(entries)?;
-        let file_count = node.file_count;
+        let (file_count, conflict_count) = (node.file_count, node.conflict_count);
         self.written_bytes += node.encoded_len as u64;
         self.written_nodes += 1;
-        Ok(Some((store.insert(node), file_count)))
+        Ok(Some((store.insert(node), file_count, conflict_count)))
     }
 }
 
@@ -988,11 +1147,18 @@ fn overlay_dir(dir: &mut EditDir, other: &TreeNode, store: &mut TreeStore) -> Sy
     }
     let map = dir.open(store)?;
     for e in other.entries.iter() {
-        match e.kind {
+        match &e.kind {
             TreeEntryKind::File(f) => {
-                map.insert(e.name.clone(), EditEntry::File(f));
+                map.insert(e.name.clone(), EditEntry::File(*f));
             }
-            TreeEntryKind::Dir { digest, file_count } => match map.get_mut(&e.name) {
+            TreeEntryKind::Conflict(t) => {
+                map.insert(e.name.clone(), EditEntry::Conflict(t.clone()));
+            }
+            &TreeEntryKind::Dir {
+                digest,
+                file_count,
+                conflict_count,
+            } => match map.get_mut(&e.name) {
                 Some(EditEntry::Dir(mine)) => {
                     let child = store.get(digest)?;
                     overlay_dir(mine, &child, store)?;
@@ -1000,13 +1166,124 @@ fn overlay_dir(dir: &mut EditDir, other: &TreeNode, store: &mut TreeStore) -> Sy
                 _ => {
                     map.insert(
                         e.name.clone(),
-                        EditEntry::Dir(EditDir::Stored { digest, file_count }),
+                        EditEntry::Dir(EditDir::Stored {
+                            digest,
+                            file_count,
+                            conflict_count,
+                        }),
                     );
                 }
             },
         }
     }
     Ok(())
+}
+
+/// The tree store as the conflict algebra's node access ([`ConflictTrees`], ADR 0003 step D2).
+/// `git_oids` carries the Git blob OID of every file the algebra has read, so a node it writes
+/// can carry that bridge attribute (it never affects a `TreeDigest`).
+pub struct TreeAlgebra<'a> {
+    pub trees: &'a mut TreeStore,
+    pub git_oids: BTreeMap<BlobDigest, GitOid>,
+}
+
+impl<'a> TreeAlgebra<'a> {
+    pub fn new(trees: &'a mut TreeStore) -> Self {
+        Self {
+            trees,
+            git_oids: BTreeMap::new(),
+        }
+    }
+}
+
+impl ConflictTrees for TreeAlgebra<'_> {
+    fn node(&mut self, tree: TreeDigest) -> SynapseResult<Vec<(String, NodeEntry)>> {
+        algebra_node(self.trees, &mut self.git_oids, tree)
+    }
+
+    fn put_node(&mut self, entries: Vec<(String, NodeEntry)>) -> SynapseResult<TreeDigest> {
+        algebra_put_node(self.trees, &self.git_oids, entries)
+    }
+}
+
+/// [`ConflictTrees::node`] over `trees`, remembering every file's Git blob OID in `git_oids`.
+pub(crate) fn algebra_node(
+    trees: &mut TreeStore,
+    git_oids: &mut BTreeMap<BlobDigest, GitOid>,
+    tree: TreeDigest,
+) -> SynapseResult<Vec<(String, NodeEntry)>> {
+    let node = trees.get(tree)?;
+    Ok(node
+        .entries
+        .iter()
+        .map(|e| {
+            let v = match &e.kind {
+                TreeEntryKind::File(f) => {
+                    git_oids.insert(f.blob_digest, f.git_blob_oid);
+                    NodeEntry::State(EntryState::File {
+                        mode: f.mode,
+                        blob_digest: f.blob_digest,
+                        size_bytes: f.size_bytes,
+                    })
+                }
+                TreeEntryKind::Dir { digest, .. } => NodeEntry::State(EntryState::Dir(*digest)),
+                TreeEntryKind::Conflict(t) => NodeEntry::Conflict(t.clone()),
+            };
+            (e.name.to_string(), v)
+        })
+        .collect())
+}
+
+/// [`ConflictTrees::put_node`] over `trees`. A file needs its Git blob OID in `git_oids`
+/// (`BlobNotFound` otherwise) and a directory its child node (for the subtree counts).
+pub(crate) fn algebra_put_node(
+    trees: &mut TreeStore,
+    git_oids: &BTreeMap<BlobDigest, GitOid>,
+    entries: Vec<(String, NodeEntry)>,
+) -> SynapseResult<TreeDigest> {
+    let mut out = Vec::with_capacity(entries.len());
+    for (name, e) in entries {
+        let kind = match e {
+            NodeEntry::State(EntryState::File {
+                mode,
+                blob_digest,
+                size_bytes,
+            }) => {
+                let git_blob_oid = *git_oids.get(&blob_digest).ok_or_else(|| {
+                    SynapseError::new(
+                        RefusalCode::BlobNotFound,
+                        format!("blob {blob_digest} of entry {name} has no known Git blob OID"),
+                    )
+                })?;
+                TreeEntryKind::File(TreeFile {
+                    mode,
+                    blob_digest,
+                    size_bytes,
+                    git_blob_oid,
+                })
+            }
+            NodeEntry::State(EntryState::Dir(digest)) => {
+                let child = trees.get(digest)?;
+                TreeEntryKind::Dir {
+                    digest,
+                    file_count: child.file_count,
+                    conflict_count: child.conflict_count,
+                }
+            }
+            NodeEntry::State(EntryState::Absent) => {
+                return Err(SynapseError::new(
+                    RefusalCode::TreeNodeMalformed,
+                    format!("entry {name} is absent and cannot be stored"),
+                ))
+            }
+            NodeEntry::Conflict(t) => TreeEntryKind::Conflict(t),
+        };
+        out.push(TreeEntry {
+            name: name.into(),
+            kind,
+        });
+    }
+    Ok(trees.insert(TreeNode::new(out)?))
 }
 
 #[cfg(test)]

@@ -282,10 +282,14 @@ pub fn run_merge_t1_cell(spec: &MergeT1Spec) -> Result<MergeT1Result, String> {
                         .map(|m| match &m.op {
                             MutationOp::Upsert {
                                 mode, blob_digest, ..
-                            } => Some((git_mode(*mode).to_string(), *blob_digest)),
-                            MutationOp::Delete => None,
+                            } => Ok(Some((git_mode(*mode).to_string(), *blob_digest))),
+                            MutationOp::Delete => Ok(None),
+                            // Tier T1 never records a conflict term (step D2).
+                            MutationOp::Conflict(_) => {
+                                Err(format!("merge output records a conflict at {path}"))
+                            }
                         })
-                        .ok_or_else(|| format!("merge output lacks touched path {path}"))?;
+                        .ok_or_else(|| format!("merge output lacks touched path {path}"))??;
                     if ours != git_entry(clone, tree, path)? {
                         differing.push(path.to_string());
                     }

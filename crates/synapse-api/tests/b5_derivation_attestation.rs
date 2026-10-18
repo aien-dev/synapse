@@ -770,15 +770,21 @@ fn b5_recomputation_that_disagrees_is_refused_at_admission_and_replay() {
     content.mutations.push(upsert("src/z.rs", b"a1"));
     let forged = forge(&fx.server, content, a.rule, a.inputs.clone(), a.output_tree);
     fx.refused_at_admission_and_replay(at, forged, RefusalCode::DerivationRecomputeMismatch);
-    // `rc` changed docs/x.md, which `B1` also changed: the rebase conflicts and cannot be
-    // derived, so no attestation of it is produced.
+    // `rc` changed docs/x.md, which `B1` also changed: since D2 the rebase is derived with a
+    // conflict term at that path instead of being refused (deriving admits nothing).
     let inputs = fx.rebase_inputs(&fx.rc);
     let server = fx.server.clone();
-    let err = fx
+    let derived = fx
         .svc
         .derive_revision(&server, DerivationRule::Rebase, inputs)
-        .unwrap_err();
-    assert_eq!(err.code, RefusalCode::DerivationRecomputeMismatch);
+        .unwrap();
+    let [m] = derived.content.mutations.as_slice() else {
+        panic!("one mutation expected: {:?}", derived.content.mutations);
+    };
+    assert_eq!(m.path, "docs/x.md");
+    assert!(
+        matches!(&m.op, MutationOp::Conflict(t) if t.kind() == synapse_core::ConflictKind::Content)
+    );
     let live = fx.records();
     assert_eq!(fx.verify(&live), Ok(7));
 }

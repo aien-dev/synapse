@@ -372,7 +372,7 @@ impl WalRecord {
             .iter()
             .filter_map(|m| match &m.op {
                 MutationOp::Upsert { blob_digest, .. } => Some(*blob_digest),
-                MutationOp::Delete => None,
+                MutationOp::Delete | MutationOp::Conflict(_) => None,
             })
             .collect()
     }

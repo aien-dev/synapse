@@ -40,8 +40,8 @@ pub use evidence::{
     StaleReason, VerifyEvidenceReceiptPayload,
 };
 pub use tree::{
-    TreeCacheConfig, TreeDiffEntry, TreeEdit, TreeEntry, TreeEntryKind, TreeFile, TreeNode,
-    TreeStore, TreeStoreStats, DEFAULT_TREE_CACHE_BYTES, MIN_TREE_CACHE_BYTES,
+    TreeAlgebra, TreeCacheConfig, TreeDiffEntry, TreeEdit, TreeEntry, TreeEntryKind, TreeFile,
+    TreeNode, TreeStore, TreeStoreStats, DEFAULT_TREE_CACHE_BYTES, MIN_TREE_CACHE_BYTES,
 };
 
 /// Default maximum page size for bounded API queries.
@@ -1448,6 +1448,10 @@ impl SynapseService {
                     edit.upsert(&mut self.trees, &m.path, file)?;
                 }
                 MutationOp::Delete => edit.delete(&mut self.trees, &m.path)?,
+                // Envelope v1 never carries one (refused at validation); applied for totality.
+                MutationOp::Conflict(term) => {
+                    edit.set_conflict(&mut self.trees, &m.path, term.clone())?
+                }
             }
         }
         let root = edit.finish(&mut self.trees)?;

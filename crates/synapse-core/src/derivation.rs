@@ -31,6 +31,8 @@ pub const DOMAIN_DERIVATION_ATTESTATION_V1: &[u8] = b"SYNAPSE_DERIVATION_ATTESTA
 /// Domain tag of the `ChangeId` of a merge output (a merge starts a new unit of work whose
 /// identity must be recomputable from its inputs).
 pub const DOMAIN_DERIVED_MERGE_CHANGE_V1: &[u8] = b"SYNAPSE_DERIVED_MERGE_CHANGE_V1\0";
+/// Domain tag of the `ChangeId` of a revert output (ADR 0003 step D2).
+pub const DOMAIN_DERIVED_REVERT_CHANGE_V1: &[u8] = b"SYNAPSE_DERIVED_REVERT_CHANGE_V1\0";
 /// Most inputs one attestation names.
 pub const MAX_DERIVATION_INPUTS: usize = 256;
 
@@ -38,6 +40,7 @@ const RULE_TAG_REBASE: u8 = 1;
 const RULE_TAG_MERGE: u8 = 2;
 // Tag 3 is reserved for the derived-file action (the `ActionDigest` of the declared action,
 // ADR 0003 section 5.3); it needs registered executors and is not decodable yet.
+const RULE_TAG_REVERT: u8 = 4;
 const TIER_TAG_T0: u8 = 0;
 const TIER_TAG_T1: u8 = 1;
 const INPUT_TAG_REVISION: u8 = 1;
@@ -73,11 +76,13 @@ pub enum MergeTier {
 /// The deterministic rule a derivation applied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DerivationRule {
-    /// Rebase one admitted revision onto another tree, at path level. Inputs: exactly
-    /// `[Revision(r), Tree(onto)]`. The output keeps `r`'s `ChangeId`, parents, mutations and
-    /// intent and takes `onto` as its base. Refused when `onto` is already `r`'s base, or when
-    /// a path `r` mutates collides with a path that differs between `r`'s base and `onto`
-    /// (that is a conflict, recorded by later steps as a conflict term, never overwritten).
+    /// Rebase one admitted revision onto another tree. Inputs: exactly
+    /// `[Revision(r), Tree(onto)]`. The output keeps `r`'s `ChangeId`, parents and intent and
+    /// takes `onto` as its base. When no path `r` mutates collides with a path that differs
+    /// between `r`'s base and `onto`, it keeps `r`'s mutations as they are. Otherwise its tree
+    /// is the conflict sum `onto + tree(r) - base(r)` ([`crate::sum_trees`], step D2) and its
+    /// mutations turn `onto` into that tree, recording what does not cancel as conflict terms.
+    /// Refused when `onto` is already `r`'s base or the rebase changes nothing.
     Rebase,
     /// Merge admitted revisions that share one base. Inputs: `[Tree(base), Revision(a1), ...,
     /// Revision(an)]` with `n >= 2` and the revisions in the canonical merge order (strictly
@@ -86,12 +91,21 @@ pub enum DerivationRule {
     /// `ChangeId` is the first 16 bytes of `SHA-256(DOMAIN_DERIVED_MERGE_CHANGE_V1 || base ||
     /// u32 n || id*)`, and its intent summary is `merge tier T0 of <n> revisions`.
     Merge { tier: MergeTier },
+    /// Revert an admitted revision on top of a tree (ADR 0003 step D2). Inputs: exactly
+    /// `[Revision(x), Tree(onto)]`. The output's tree is the conflict sum
+    /// `onto + base(x) - tree(x)`; its base is `onto`, its parents are `[x]`, its mutations turn
+    /// `onto` into that tree, its `ChangeId` is the first 16 bytes of
+    /// `SHA-256(DOMAIN_DERIVED_REVERT_CHANGE_V1 || x || onto)`, and its intent summary is
+    /// `revert of <x>`. Reverting a change whose rebase conflicted, on top of that conflicted
+    /// tree, gives a clean tree. Refused when the revert changes nothing.
+    Revert,
 }
 
 impl DerivationRule {
     fn encode_into(&self, buf: &mut Vec<u8>) {
         match self {
             DerivationRule::Rebase => buf.push(RULE_TAG_REBASE),
+            DerivationRule::Revert => buf.push(RULE_TAG_REVERT),
             DerivationRule::Merge { tier } => {
                 buf.push(RULE_TAG_MERGE);
                 buf.push(match tier {
@@ -105,6 +119,7 @@ impl DerivationRule {
     fn decode_from(r: &mut Reader) -> SynapseResult<Self> {
         match r.u8()? {
             RULE_TAG_REBASE => Ok(DerivationRule::Rebase),
+            RULE_TAG_REVERT => Ok(DerivationRule::Revert),
             RULE_TAG_MERGE => match r.u8()? {
                 TIER_TAG_T0 => Ok(DerivationRule::Merge {
                     tier: MergeTier::T0Path,
@@ -435,8 +450,9 @@ pub trait ServerKeyRegistry {
     fn registered_server_key(&self, repo: &RepoId, at: WalSeq) -> ServerKeyLookup;
 }
 
-/// The tree operations a derivation rule needs (the C1 tree store implements them).
-pub trait DerivationTrees {
+/// The tree operations a derivation rule needs (the C1 tree store implements them), including
+/// the node access of the conflict algebra (step D2).
+pub trait DerivationTrees: crate::ConflictTrees {
     /// Whether the tree `tree` can be read (its root node is held).
     fn holds_tree(&mut self, tree: TreeDigest) -> bool;
     /// The root of `base` with `mutations` applied in order.
@@ -445,8 +461,6 @@ pub trait DerivationTrees {
         base: TreeDigest,
         mutations: &[PathMutation],
     ) -> SynapseResult<TreeDigest>;
-    /// Every file path whose entry differs between `from` and `to`.
-    fn changed_paths(&mut self, from: TreeDigest, to: TreeDigest) -> SynapseResult<Vec<String>>;
     /// The file at `path` of `tree` (mode and blob), `None` when there is none (tier T1).
     fn file_at(
         &mut self,
@@ -459,7 +473,10 @@ pub trait DerivationTrees {
     /// mutations can name it and the store can write it with the derived revision; returns
     /// its digest.
     fn put_blob(&mut self, bytes: Vec<u8>) -> SynapseResult<BlobDigest>;
-    /// The bytes of a blob produced by [`DerivationTrees::put_blob`], if any.
+    /// The bytes of a blob a derived revision writes that the store may not hold, if any: one
+    /// produced by [`DerivationTrees::put_blob`], or a file only a base tree holds that a
+    /// conflict sum restores (step D2). The store checks the digest and writes the bytes with
+    /// the derived revision.
     fn produced_blob(&self, digest: BlobDigest) -> Option<&[u8]>;
 }
 
@@ -569,6 +586,12 @@ fn t1_mutations(
                         "deleted by one revision and changed by another".into(),
                     ))
                 }
+                // A recorded conflict term is not merged line by line (step D2).
+                MutationOp::Conflict(_) => {
+                    return Err(conflict(
+                        "a revision records a conflict term at the path".into(),
+                    ))
+                }
             }
         }
         let Some((base_mode, base_blob)) = trees.file_at(base, path)? else {
@@ -600,6 +623,35 @@ fn t1_mutations(
         });
     }
     Ok(out)
+}
+
+/// The tree of a conflict-sum output, built the way every revision tree is built (its base
+/// with its mutations applied), and checked against the sum it was derived from.
+fn applied_sum(
+    trees: &mut dyn DerivationTrees,
+    base: TreeDigest,
+    mutations: &[PathMutation],
+    summed: TreeDigest,
+) -> SynapseResult<TreeDigest> {
+    let tree = trees.apply_mutations(base, mutations)?;
+    if tree != summed {
+        return Err(recompute_mismatch(format!(
+            "applying the derived mutations to {base} gives {tree}, not the conflict sum {summed}"
+        )));
+    }
+    Ok(tree)
+}
+
+/// The `ChangeId` of a revert of `x` on `onto`.
+fn revert_change_id(x: ChangesetId, onto: TreeDigest) -> ChangeId {
+    let mut h = Sha256::new();
+    h.update(DOMAIN_DERIVED_REVERT_CHANGE_V1);
+    h.update(x.0);
+    h.update(onto.0);
+    let d: [u8; 32] = h.finalize().into();
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&d[..16]);
+    ChangeId(out)
 }
 
 fn require_tree(trees: &mut dyn DerivationTrees, t: TreeDigest, what: &str) -> SynapseResult<()> {
@@ -670,20 +722,66 @@ pub fn derive_revision_output(
                     "revision {r} is already based on {onto}: nothing to rebase"
                 )));
             }
-            let changed = trees.changed_paths(source.base_tree, *onto)?;
-            let changed: Vec<&str> = changed.iter().map(String::as_str).collect();
+            let changed = crate::diff_mutations(trees, source.base_tree, *onto)?;
+            let changed: Vec<&str> = changed.iter().map(|m| m.path.as_str()).collect();
             let mutated: Vec<&str> = source.mutations.iter().map(|m| m.path.as_str()).collect();
-            if let Some((m, c)) = first_collision(&mutated, &changed) {
+            if first_collision(&mutated, &changed).is_none() {
+                let content = RevisionContent {
+                    base_tree: *onto,
+                    ..source
+                };
+                content.validate()?;
+                let tree = trees.apply_mutations(*onto, &content.mutations)?;
+                return Ok((content, tree));
+            }
+            // Colliding paths: onto + tree(r) - base(r), conflicts recorded as terms.
+            let source_tree = trees.apply_mutations(source.base_tree, &source.mutations)?;
+            let summed = crate::sum_trees(trees, &[*onto, source_tree], &[source.base_tree])?;
+            let mutations = crate::diff_mutations(trees, *onto, summed)?;
+            if mutations.is_empty() {
                 return Err(recompute_mismatch(format!(
-                    "path-level rebase of {r} conflicts: {m} collides with {c}, which differs between its base and {onto}"
+                    "rebasing {r} onto {onto} changes nothing: {onto} already holds its change"
                 )));
             }
             let content = RevisionContent {
                 base_tree: *onto,
+                mutations,
                 ..source
             };
             content.validate()?;
-            let tree = trees.apply_mutations(*onto, &content.mutations)?;
+            let tree = applied_sum(trees, *onto, &content.mutations, summed)?;
+            Ok((content, tree))
+        }
+        DerivationRule::Revert => {
+            let [DerivationInput::Revision(x), DerivationInput::Tree(onto)] = inputs else {
+                return Err(input_mismatch(
+                    "a revert names exactly [Revision(x), Tree(onto)]",
+                ));
+            };
+            let source = resolve(*x)?;
+            require_tree(trees, *onto, "revert target tree")?;
+            require_tree(
+                trees,
+                source.base_tree,
+                "base tree of the reverted revision",
+            )?;
+            let source_tree = trees.apply_mutations(source.base_tree, &source.mutations)?;
+            let summed = crate::sum_trees(trees, &[*onto, source.base_tree], &[source_tree])?;
+            let mutations = crate::diff_mutations(trees, *onto, summed)?;
+            if mutations.is_empty() {
+                return Err(recompute_mismatch(format!(
+                    "reverting {x} on {onto} changes nothing"
+                )));
+            }
+            let content = RevisionContent {
+                change_id: revert_change_id(*x, *onto),
+                base_tree: *onto,
+                parents: vec![*x],
+                mutations,
+                intent_summary: format!("revert of {x}"),
+            };
+            content.validate()?;
+            let tree = applied_sum(trees, *onto, &content.mutations, summed)?;
             Ok((content, tree))
         }
         DerivationRule::Merge { tier } => {

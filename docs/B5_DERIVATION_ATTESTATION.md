@@ -6,8 +6,8 @@ Code: `crates/synapse-core/src/derivation.rs` (types, codecs, the one recomputat
 
 ## 1. Model and invariants
 
-* **Rules.** `DerivationRule::Rebase` (path level) and `DerivationRule::Merge { tier: MergeTier::T0Path }` (the path-level merge tier) and `MergeTier::T1Region` (the region merge tier, added by D1: [D1_MERGE_TIER_T1.md](D1_MERGE_TIER_T1.md)). The derived-file action rule (`ActionDigest`) is reserved and not decodable yet (section 5).
-* **Rebase.** Inputs exactly `[Revision(r), Tree(onto)]`. The output keeps `r`'s `ChangeId`, parents, mutations and intent, takes `onto` as base, and its tree is `r`'s mutations applied to `onto`. Refused when `onto` is already `r`'s base, or when a path `r` mutates is equal to, or an ancestor or descendant of, a path that differs between `r`'s base and `onto`.
+* **Rules.** `DerivationRule::Rebase` (path level) and `DerivationRule::Merge { tier: MergeTier::T0Path }` (the path-level merge tier) and `MergeTier::T1Region` (the region merge tier, added by D1: [D1_MERGE_TIER_T1.md](D1_MERGE_TIER_T1.md)), and `DerivationRule::Revert` (added by D2: [D2_CONFLICT_TERMS.md](D2_CONFLICT_TERMS.md)). The derived-file action rule (`ActionDigest`) is reserved and not decodable yet (section 5).
+* **Rebase.** Inputs exactly `[Revision(r), Tree(onto)]`. The output keeps `r`'s `ChangeId`, parents, mutations and intent, takes `onto` as base, and its tree is `r`'s mutations applied to `onto`. Refused when `onto` is already `r`'s base. Since D2, when a path `r` mutates is equal to, or an ancestor or descendant of, a path that differs between `r`'s base and `onto`, the rebase is no longer refused: its tree is the conflict sum `onto + tree(r) - base(r)`, its mutations turn `onto` into that tree, and paths that do not cancel are recorded as conflict terms ([D2_CONFLICT_TERMS.md](D2_CONFLICT_TERMS.md)). Such a rebase is refused when the sum equals `onto` (nothing to rebase).
 * **Merge tier T0.** Inputs `[Tree(base), Revision(a1), ..., Revision(an)]`, n >= 2, revisions strictly ascending by `ChangesetId` (the canonical merge order). Every `ai` must be based on `base`, and no two may touch colliding paths (equal or one below the other). The output's parents are the `ai` in that order, its mutations are their union sorted by path, its intent is `merge tier T0 of {n} revisions`, and its `ChangeId` is the first 16 bytes of `SHA-256("SYNAPSE_DERIVED_MERGE_CHANGE_V1\0" || base || u32 n || a1 || ... || an)`, so the same merge always gets the same identity.
 * **Attestation.** `DerivationAttestation` = repository, rule, inputs (1..=256), output `ChangesetId`, output `TreeDigest`, server key, Ed25519 signature (strict) over `"SYNAPSE_DERIVATION_SIGN_V1\0" || body`. Its digest is `SHA-256("SYNAPSE_DERIVATION_ATTESTATION_V1\0" || encoding)`. It carries no time, so a derivation is a pure function of its inputs and key, and a second presentation of one attestation is a replay.
 * **Derived revision** = `RevisionContent` + `DerivationAttestation`; the attestation must name the content's `ChangesetId`. It carries no `AuthorshipAttestation`. The input revisions keep their own agent signatures.
@@ -26,7 +26,7 @@ At admission (`SynapseStore::admit_derived_revision`, sequence `at` = the next `
 | Server key equals the identity document's `server_key` at the sequence | `DerivationServerKeyUnregistered` |
 | Attestation digest not already admitted in this repository | `DerivationAttestationReplayed` |
 | Inputs fit the rule's shape and order; every named revision is admitted; every named tree is held | `DerivationInputMismatch` |
-| The rule applies (rebase target differs from the base, no path conflict, merge revisions share the base) and the recomputed `ChangesetId` and `TreeDigest` equal the attested ones | `DerivationRecomputeMismatch` |
+| The rule applies (rebase target differs from the base, merge revisions share the base, a colliding rebase or a revert changes something) and the recomputed `ChangesetId` and `TreeDigest` equal the attested ones | `DerivationRecomputeMismatch` |
 
 Admission then applies B1's checks: path-count limit, join rule under the asking or proposing chain (`AuthChangeOutOfScope`), parents (`ParentChangesetNotFound`), and every upserted blob already visible (`BlobNotFound`); nothing is written on any refusal. The record must then be written at exactly the sequence `at` it was checked at: a writer whose next sequence differs is refused before anything is written, and a frame that lands at another sequence anyway is not applied and poisons the store until it is reopened (`WalSequenceGap` in both cases, a real check in every build profile). The API also refuses an attestation for another repository (`AuthCrossRepoDenied`).
 
@@ -36,7 +36,7 @@ Replay verification walks the revision records in sequence order with a fresh le
 
 Conventions as in B1 (little-endian, `str` = `u32 len | UTF-8`, lengths checked before allocation, trailing bytes refused, core decoders refuse with `EnvelopeMalformed`).
 
-* Rule: `1` (rebase) or `2 | tier u8` (merge; tier `0` = T0, `1` = T1). Tag 3 is reserved for the derived-file action.
+* Rule: `1` (rebase), `2 | tier u8` (merge; tier `0` = T0, `1` = T1) or `4` (revert, D2). Tag 3 is reserved for the derived-file action.
 * Input: `1 | changeset_id [32]` (revision) or `2 | tree_digest [32]` (tree).
 * Attestation: `repo str | rule | u32 n (1..=256) | input*n | output_changeset [32] | output_tree [32] | server_key [32] | signature [64]` (signed bytes = domain tag + all but the signature).
 * Derived revision: `u32 content_len | content | attestation`.
@@ -60,7 +60,7 @@ Red before green: each acceptance test was run against the B5 commit with one mu
 
 ## 5. Limits and deviations
 
-* **Derived-file rule not implemented.** The `ActionDigest` rule for derived files (lockfiles) needs registered executors and action receipts (E1, E3); rule tag 3 is reserved and refused by the decoder. Rebase and merge tiers T0 and T1 are implemented.
+* **Derived-file rule not implemented.** The `ActionDigest` rule for derived files (lockfiles) needs registered executors and action receipts (E1, E3); rule tag 3 is reserved and refused by the decoder. Rebase, revert (D2) and merge tiers T0 and T1 are implemented.
 * **When the server derives is not decided here.** B5 provides derivation, admission and verification. Lazy rebase policy (who may ask, the obsolescence marker that accompanies an admitted rebase, quota charging: D4) and the promotion queue (E2) are later steps.
 * **Identity log in memory.** E0's identity log is not persisted yet, so the caller passes it to admission and to replay verification. Replay verification is an explicit call (`verify_revision_log`) after reopening: the store's own replay rebuilds state from the records without the identity log or the tree store.
 * **Open and checkpoint load do not verify kind 11 records.** They trust the store's own WAL, as for kind 7; a caller that skips `verify_revision_log` gets no error. A later step could make `open` take a `ServerKeyRegistry` or record "verified up to seq N".

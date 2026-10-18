@@ -36,6 +36,7 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 * [Gate 4 Comparative Qualification Report](docs/GATE4_QUALIFICATION.md)
 * [Gate 4 Qualification Evidence (`evidence/gate4-qualification/`)](evidence/gate4-qualification/report.json), reproduced with `scripts/run_gate4_qualification.sh`
 * [D1 merge tier T1 (`docs/D1_MERGE_TIER_T1.md`)](docs/D1_MERGE_TIER_T1.md): line-level three-way merge of one file, checked against `git merge-tree` and `git merge-file` ([evidence](evidence/d1-merge-tier-t1/))
+* [D2 conflict terms (`docs/D2_CONFLICT_TERMS.md`)](docs/D2_CONFLICT_TERMS.md): conflicts recorded as typed terms in the tree; rebase twice cancels, revert returns a clean tree, conflicted trees refuse materialization and promotion ([evidence](evidence/d2-conflict-terms/))
 
 ## License
 

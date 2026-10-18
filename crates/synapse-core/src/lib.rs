@@ -8,16 +8,21 @@ use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+mod conflict;
 mod derivation;
 pub mod merge;
 mod revision;
 mod revision_state;
 mod tree;
+pub use conflict::{
+    diff_mutations, node_entry_order, reduce, sum_trees, ConflictKind, ConflictTerm, ConflictTrees,
+    EntryState, NodeEntry, Reduced, MAX_CONFLICT_REMOVES,
+};
 pub use derivation::{
     derive_revision_output, DerivationAttestation, DerivationInput, DerivationRule,
     DerivationTrees, DerivedRevision, MergeTier, ServerKeyLookup, ServerKeyRegistry,
     DOMAIN_DERIVATION_ATTESTATION_V1, DOMAIN_DERIVATION_SIGN_V1, DOMAIN_DERIVED_MERGE_CHANGE_V1,
-    MAX_DERIVATION_INPUTS,
+    DOMAIN_DERIVED_REVERT_CHANGE_V1, MAX_DERIVATION_INPUTS,
 };
 pub use revision::{
     AdmissionWitness, AuthorshipAttestation, ChainPath, ChangesetEnvelopeV2, ObsolescenceKind,
@@ -28,7 +33,7 @@ pub use revision::{
 pub use revision_state::RevisionState;
 pub use tree::{
     tree_entry_order, validate_tree_entry_name, TreeDigest, TreeNodeEncoder, DOMAIN_TREE_V1,
-    MAX_TREE_ENTRY_NAME_BYTES, TREE_TAG_DIRECTORY,
+    MAX_TREE_ENTRY_NAME_BYTES, TREE_TAG_CONFLICT, TREE_TAG_DIRECTORY,
 };
 
 /// Current canonical changeset envelope schema version.
@@ -173,6 +178,14 @@ pub enum RefusalCode {
     /// A `DerivationAttestation` already admitted (the same attestation digest) is presented
     /// again (step B5).
     DerivationAttestationReplayed,
+    /// An agent-submitted revision (or an envelope v1) carries a conflict term: conflict terms
+    /// are recorded only by derivation rules, which every replica recomputes (ADR 0003 section
+    /// 5.3, step D2).
+    ConflictNotDerived,
+    /// A tree that holds a conflict entry was asked to be materialized (a whole-tree file
+    /// listing or export) or promoted (a move to `Verified` or `Canonical`): it can be read,
+    /// rebased and resolved, never built or promoted (ADR 0003 section 5.3, step D2).
+    TreeConflicted,
 
     // Git and Radicle canonicality refusals
     GitObjectCorrupt,
@@ -544,6 +557,11 @@ pub enum MutationOp {
         size_bytes: u64,
     },
     Delete,
+    /// Set the entry at the path to a conflict term (ADR 0003 step D2), replacing whatever is
+    /// there, as an upsert does. Only derivation rules write it; envelope v1 (JSON or binary)
+    /// never carries it.
+    #[serde(skip)]
+    Conflict(ConflictTerm),
 }
 
 /// A path-level mutation within a `ChangesetEnvelope`.
@@ -590,6 +608,7 @@ impl ChangesetEnvelope {
         validate_intent_summary(&self.intent_summary)?;
         validate_parent_changesets(&self.parent_changesets)?;
         validate_mutations(&self.mutations)?;
+        refuse_conflict_terms(&self.mutations, "an envelope v1")?;
 
         // Verify author_did and Ed25519 signature
         let pubkey_bytes = decode_did_key_ed25519(&self.author_did)?;
@@ -654,6 +673,11 @@ impl ChangesetEnvelope {
                 MutationOp::Delete => {
                     buf.push(2);
                 }
+                // Never valid in v1 (`validate` refuses it); encoded only so the bytes are total.
+                MutationOp::Conflict(term) => {
+                    buf.push(3);
+                    term.encode_into(&mut buf);
+                }
             }
         }
         buf.extend_from_slice(&(self.evidence_receipts.len() as u32).to_le_bytes());
@@ -712,6 +736,24 @@ pub(crate) fn validate_parent_changesets(parents: &[ChangesetId]) -> SynapseResu
 }
 
 /// Mutations must be non-empty, on valid repository-relative paths, strictly sorted by path.
+/// Refuse `ConflictNotDerived` when `mutations` carry a conflict term: only derivation rules
+/// record conflicts (ADR 0003 step D2). `what` names the submission in the message.
+pub(crate) fn refuse_conflict_terms(mutations: &[PathMutation], what: &str) -> SynapseResult<()> {
+    match mutations
+        .iter()
+        .find(|m| matches!(m.op, MutationOp::Conflict(_)))
+    {
+        Some(m) => Err(SynapseError::new(
+            RefusalCode::ConflictNotDerived,
+            format!(
+                "{what} carries a conflict term at {}; only derivation rules record conflicts",
+                m.path
+            ),
+        )),
+        None => Ok(()),
+    }
+}
+
 pub(crate) fn validate_mutations(mutations: &[PathMutation]) -> SynapseResult<()> {
     if mutations.is_empty() {
         return Err(SynapseError::new(

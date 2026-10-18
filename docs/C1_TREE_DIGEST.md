@@ -31,6 +31,8 @@ Malformed nodes are refused with `RefusalCode::TreeNodeMalformed`; a walk that r
 
 Accounted bytes are every node's heap allocations (requested size plus 16 bytes per allocation for allocator headers), the hash tables by bucket capacity (including the growth an insertion would cause), and the changeset root memo. Before any insertion the store evicts down to seven eighths of the bound if the insertion would cross it, so the accounted total never exceeds the bound. `crates/synapse-api/tests/c1_tree_digest.rs` checks the accounting with a counting global allocator: the live heap the store really holds never exceeded its accounted total (worst ratio 0.884) while 2,000 edits drove it through 21,355 evictions.
 
+**Correction (D2, issue #40).** The hash tables were first accounted at their current `capacity()`. A `HashMap` reports a smaller capacity once deletions leave tombstones, so under heavy eviction the accounted total fell below what the tables still held and the recorded high water could pass the bound (the D2 heap test failed 4 of 6 runs in its recorded red run). The store now accounts each table at the highest capacity it has reached (`nodes_cap`, `roots_cap`); the D2 heap test checks `high_water_bytes <= bound` and passes every run after the fix. See [D2_CONFLICT_TERMS.md](D2_CONFLICT_TERMS.md).
+
 Each sample of the measurement records whether it built a tree, so a rebuild after eviction is counted as cold, never as warm.
 
 ## 3. Acceptance

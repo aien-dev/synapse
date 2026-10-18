@@ -304,6 +304,7 @@ fn lib_blob(content: &RevisionContent) -> (BlobDigest, u64) {
             ..
         } => (*blob_digest, *size_bytes),
         MutationOp::Delete => panic!("merged file deleted"),
+        MutationOp::Conflict(_) => panic!("merged file recorded as a conflict"),
     }
 }
 
