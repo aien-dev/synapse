@@ -1,0 +1,114 @@
+=== unmatched-lines-forced (crates/synapse-core/src/merge.rs): '        if (0..=m).any(|j| f[i * w + j] + s[(i + 1) * w + j] == total) {' -> '        if false {'
+test merge::tests::d1_edits_that_some_minimal_diff_places_together_conflict ... ok
+test merge::tests::d1_forced_matches_are_exactly_the_pairs_every_optimal_alignment_shares ... FAILED
+test merge::tests::d1_disjoint_single_line_edits_merge_and_touching_edits_conflict ... ok
+test merge::tests::d1_binary_missing_final_newline_and_oversized_files_are_refused ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p synapse-core --lib`
+test merge_t1::tests::d1_region_merge_never_merges_what_git_merge_file_refuses ... FAILED
+test merge_t1::tests::d1_gate4_conflict_scenario_t1_merges_match_git_on_all_253_pairs ... ok
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 74 filtered out; finished in 3.34s
+error: test failed, to rerun pass `-p synapse-bench --lib`
+RED unmatched-lines-forced
+=== first-partner-forced (crates/synapse-core/src/merge.rs): '        if let (Some(j), None) = (partners.next(), partners.next()) {' -> '        if let Some(j) = partners.next() {'
+test merge::tests::d1_edits_that_some_minimal_diff_places_together_conflict ... ok
+test merge::tests::d1_forced_matches_are_exactly_the_pairs_every_optimal_alignment_shares ... FAILED
+test merge::tests::d1_binary_missing_final_newline_and_oversized_files_are_refused ... ok
+test merge::tests::d1_disjoint_single_line_edits_merge_and_touching_edits_conflict ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p synapse-core --lib`
+test merge_t1::tests::d1_region_merge_never_merges_what_git_merge_file_refuses ... FAILED
+test merge_t1::tests::d1_gate4_conflict_scenario_t1_merges_match_git_on_all_253_pairs ... ok
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 74 filtered out; finished in 3.60s
+error: test failed, to rerun pass `-p synapse-bench --lib`
+RED first-partner-forced
+=== segment-shared (crates/synapse-core/src/merge.rs): '                if let Some((first, _)) = changed {' -> '                if let Some((first, _)) = changed.filter(|_| false) {'
+test merge::tests::d1_binary_missing_final_newline_and_oversized_files_are_refused ... FAILED
+test merge::tests::d1_edits_that_some_minimal_diff_places_together_conflict ... FAILED
+test merge::tests::d1_disjoint_single_line_edits_merge_and_touching_edits_conflict ... FAILED
+test merge::tests::d1_forced_matches_are_exactly_the_pairs_every_optimal_alignment_shares ... ok
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.12s
+error: test failed, to rerun pass `-p synapse-core --lib`
+test merge_t1::tests::d1_region_merge_never_merges_what_git_merge_file_refuses ... FAILED
+test merge_t1::tests::d1_gate4_conflict_scenario_t1_merges_match_git_on_all_253_pairs ... FAILED
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 74 filtered out; finished in 3.48s
+error: test failed, to rerun pass `-p synapse-bench --lib`
+test d1_api_forged_t1_merge_output_is_refused ... ok
+test d1_api_t1_refuses_touching_regions_and_modify_delete ... FAILED
+test d1_api_t1_merges_disjoint_regions_of_one_file_end_to_end ... FAILED
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+error: test failed, to rerun pass `-p synapse-api --test d1_merge_tier_t1`
+RED segment-shared
+=== t1-tag-undecodable (crates/synapse-core/src/derivation.rs): '                TIER_TAG_T1 => Ok(DerivationRule::Merge {' -> '                99 => Ok(DerivationRule::Merge {'
+test derivation::tests::b5_path_collision_is_equal_or_below ... ok
+test derivation::tests::b5_attestation_round_trips_and_refuses_malformed_bytes ... FAILED
+test derivation::tests::b5_server_witness_round_trips_and_is_not_an_agent ... ok
+test derivation::tests::b5_attestation_signature_binds_every_field ... ok
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-core --lib`
+test d1_api_t1_refuses_touching_regions_and_modify_delete ... ok
+test d1_api_forged_t1_merge_output_is_refused ... ok
+test d1_api_t1_merges_disjoint_regions_of_one_file_end_to_end ... FAILED
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+error: test failed, to rerun pass `-p synapse-api --test d1_merge_tier_t1`
+RED t1-tag-undecodable
+=== t1-is-t0 (crates/synapse-core/src/derivation.rs): '                MergeTier::T1Region => t1_mutations(*base, &sources, trees)?,' -> '                MergeTier::T1Region => t0_mutations(&sources)?,'
+test d1_api_t1_refuses_touching_regions_and_modify_delete ... ok
+test d1_api_forged_t1_merge_output_is_refused ... FAILED
+test d1_api_t1_merges_disjoint_regions_of_one_file_end_to_end ... FAILED
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+error: test failed, to rerun pass `-p synapse-api --test d1_merge_tier_t1`
+test merge_t1::tests::d1_gate4_conflict_scenario_t1_merges_match_git_on_all_253_pairs ... FAILED
+test merge_t1::tests::d1_region_merge_never_merges_what_git_merge_file_refuses ... ok
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 74 filtered out; finished in 15.72s
+error: test failed, to rerun pass `-p synapse-bench --lib`
+RED t1-is-t0
+=== identical-not-deduped (crates/synapse-core/src/derivation.rs): '            if !distinct.contains(m) {' -> '            if true {'
+test merge_t1::tests::d1_gate4_conflict_scenario_t1_merges_match_git_on_all_253_pairs ... FAILED
+test merge_t1::tests::d1_region_merge_never_merges_what_git_merge_file_refuses ... ok
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 74 filtered out; finished in 15.09s
+error: test failed, to rerun pass `-p synapse-bench --lib`
+RED identical-not-deduped
+=== delete-unchecked (crates/synapse-core/src/derivation.rs): '                MutationOp::Delete => {
+                    return Err(conflict(' -> '                MutationOp::Delete => {
+                    continue;
+                    #[allow(unreachable_code)]
+                    return Err(conflict('
+test d1_api_t1_refuses_touching_regions_and_modify_delete ... FAILED
+test d1_api_forged_t1_merge_output_is_refused ... ok
+test d1_api_t1_merges_disjoint_regions_of_one_file_end_to_end ... ok
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+error: test failed, to rerun pass `-p synapse-api --test d1_merge_tier_t1`
+test merge_t1::tests::d1_gate4_conflict_scenario_t1_merges_match_git_on_all_253_pairs ... FAILED
+test merge_t1::tests::d1_region_merge_never_merges_what_git_merge_file_refuses ... ok
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 74 filtered out; finished in 20.22s
+error: test failed, to rerun pass `-p synapse-bench --lib`
+RED delete-unchecked
+=== mode-unchecked (crates/synapse-core/src/derivation.rs): '        if versions.iter().any(|(mode, _)| *mode != base_mode) {' -> '        if false {'
+test d1_api_forged_t1_merge_output_is_refused ... ok
+test d1_api_t1_refuses_touching_regions_and_modify_delete ... FAILED
+test d1_api_t1_merges_disjoint_regions_of_one_file_end_to_end ... ok
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+error: test failed, to rerun pass `-p synapse-api --test d1_merge_tier_t1`
+RED mode-unchecked
+=== produced-blob-not-written (crates/synapse-store/src/revision.rs): '        let wal_seq = self.append_revision_record(record, &blobs, Some(at))?;' -> '        let _ = &blobs;
+        let wal_seq = self.append_revision_record(record, &[], Some(at))?;'
+test d1_api_t1_refuses_touching_regions_and_modify_delete ... ok
+test d1_api_t1_merges_disjoint_regions_of_one_file_end_to_end ... FAILED
+test d1_api_forged_t1_merge_output_is_refused ... ok
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+error: test failed, to rerun pass `-p synapse-api --test d1_merge_tier_t1`
+RED produced-blob-not-written
+=== no-blob-preload (crates/synapse-api/src/derivation.rs): '        if rule
+            != (DerivationRule::Merge {' -> '        if true || rule
+            != (DerivationRule::Merge {'
+test d1_api_t1_refuses_touching_regions_and_modify_delete ... FAILED
+test d1_api_t1_merges_disjoint_regions_of_one_file_end_to_end ... FAILED
+test d1_api_forged_t1_merge_output_is_refused ... FAILED
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+error: test failed, to rerun pass `-p synapse-api --test d1_merge_tier_t1`
+test merge_t1::tests::d1_gate4_conflict_scenario_t1_merges_match_git_on_all_253_pairs ... FAILED
+test merge_t1::tests::d1_region_merge_never_merges_what_git_merge_file_refuses ... ok
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 74 filtered out; finished in 24.19s
+error: test failed, to rerun pass `-p synapse-bench --lib`
+RED no-blob-preload
