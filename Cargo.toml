@@ -28,6 +28,10 @@ curve25519-dalek = { version = "4.1", default-features = false }
 ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "fast"] }
 hex = "0.4"
 libc = "0.2"
+# C3 trigram search: linear-time regular expressions over bytes (no backtracking) and the
+# parsed syntax tree the trigram query is derived from; default features off (no perf deps).
+regex = { version = "1.10", default-features = false, features = ["std", "unicode"] }
+regex-syntax = { version = "0.8", default-features = false, features = ["std", "unicode"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha1 = "0.10"
