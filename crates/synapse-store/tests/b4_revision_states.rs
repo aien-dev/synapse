@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use synapse_core::{
     BlobDigest, ChainPath, ChangeId, ChangesetEnvelopeV2, ChangesetId, FileMode, IdempotencyKey,
-    MutationOp, ObsolescenceMarker, PathMutation, RefusalCode, RevisionContent, RevisionState,
-    TreeDigest,
+    IntentKind, IntentRecord, MutationOp, ObsolescenceMarker, PathMutation, RefusalCode,
+    RevisionContent, RevisionIntent, RevisionState, TreeDigest,
 };
 mod common;
 use common::{key_of, mv, path, repo, signed};
@@ -102,7 +102,10 @@ fn revision(
                 size_bytes: body.len() as u64,
             },
         }],
-        intent_summary: "implement the task".into(),
+        intent: RevisionIntent::Record(IntentRecord::new(
+            IntentKind::Feature,
+            vec!["src/lib.rs".into()],
+        )),
     };
     let env = ChangesetEnvelopeV2::sign_new(author, repo(), content, IdempotencyKey(idem), 1_000);
     (env, vec![(digest, body.to_vec())])

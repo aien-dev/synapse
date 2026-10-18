@@ -3,7 +3,8 @@
 //!
 //! * A **revision** is one immutable version of a change. Its [`RevisionContent`] is what its
 //!   v2 `ChangesetId` covers: the `ChangeId`, the native base `TreeDigest`, parent revisions,
-//!   path mutations, and the intent summary. Who submitted it and when are excluded, so a
+//!   path mutations, and the intent (an `IntentRecord` since B3, content version 3; the free-text
+//!   summary of content version 2 before it). Who submitted it and when are excluded, so a
 //!   rewrite (new content, same `ChangeId`) gets a new `ChangesetId` while identical content
 //!   from two agents is one revision.
 //! * An [`AuthorshipAttestation`] is an agent's signed statement that it produced a revision
@@ -26,17 +27,21 @@
 //! is allocated, and any other byte sequence refused with `EnvelopeMalformed` (or
 //! `EnvelopeVersionUnsupported` for an unknown content version). There is no serde form.
 
+use crate::intent::IntentRecord;
 use crate::{
     encode_did_key_ed25519, validate_intent_summary, validate_mutations,
-    validate_parent_changesets, ChangeId, ChangesetId, FileMode, IdempotencyKey, MutationOp,
-    PathMutation, RefusalCode, RepoId, SynapseError, SynapseResult, TreeDigest, WalSeq,
+    validate_parent_changesets, BlobDigest, ChangeId, ChangesetId, FileMode, IdempotencyKey,
+    MutationOp, PathMutation, RefusalCode, RepoId, SynapseError, SynapseResult, TreeDigest, WalSeq,
     MAX_INTENT_SUMMARY_BYTES,
 };
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
 
-/// Content format version of envelope v2 (the first field of [`RevisionContent::encode`]).
+/// Content format version of envelope v2 with a free-text intent (the first field of
+/// [`RevisionContent::encode`]).
 pub const ENVELOPE_V2_VERSION: u16 = 2;
+/// Content format version of envelope v2 whose intent is an [`IntentRecord`] (step B3).
+pub const INTENT_RECORD_CONTENT_VERSION: u16 = 3;
 /// Domain tag of a v2 `ChangesetId` (v1 uses `SYNAPSE_CHANGESET_V1\0`).
 pub const DOMAIN_CHANGESET_ID_V2: &[u8] = b"SYNAPSE_CHANGESET_V2\0";
 /// Domain tag of the Ed25519 signature of an [`AuthorshipAttestation`].
@@ -96,7 +101,7 @@ pub(crate) fn verify_ed25519(
 // ---------------------------------------------------------------------------------------
 
 /// What a v2 `ChangesetId` covers: the content of one revision, never who submitted it or
-/// when. `IntentRecord` (step B3) and conflict terms (step D2) extend it under a later content
+/// when. Conflict terms (step D2) extend it under a later content
 /// version.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RevisionContent {
@@ -108,25 +113,61 @@ pub struct RevisionContent {
     pub parents: Vec<ChangesetId>,
     /// Path mutations, strictly ascending by path, at least one.
     pub mutations: Vec<PathMutation>,
-    /// Free-text intent, 1..=4096 bytes (replaced by `IntentRecord` in step B3).
-    pub intent_summary: String,
+    /// The revision's intent: an `IntentRecord` (content version 3, step B3), or the free-text
+    /// summary of content version 2 (B1 records; refused at agent admission since B3).
+    pub intent: RevisionIntent,
+}
+
+/// The intent a revision's content carries, which also fixes its content version.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RevisionIntent {
+    /// Content version 2: free text, 1..=4096 bytes. Still decoded, replayed, and produced by
+    /// the B5 derivation rules, so every existing v2 `ChangesetId` keeps its value; an agent
+    /// envelope that carries only this is refused at admission (`IntentRecordRequired`).
+    Summary(String),
+    /// Content version 3: the machine-structured [`IntentRecord`] (ADR 0003 section 5.2).
+    Record(IntentRecord),
+}
+
+impl RevisionIntent {
+    /// The content version this intent is encoded under.
+    pub fn content_version(&self) -> u16 {
+        match self {
+            RevisionIntent::Summary(_) => ENVELOPE_V2_VERSION,
+            RevisionIntent::Record(_) => INTENT_RECORD_CONTENT_VERSION,
+        }
+    }
+
+    /// The intent record, if this is content version 3.
+    pub fn record(&self) -> Option<&IntentRecord> {
+        match self {
+            RevisionIntent::Record(r) => Some(r),
+            RevisionIntent::Summary(_) => None,
+        }
+    }
 }
 
 impl RevisionContent {
-    /// Parents strictly ascending, mutations non-empty on valid sorted unique paths, intent
-    /// summary 1..=4096 bytes (the same rules and refusal codes as envelope v1).
+    /// Parents strictly ascending, mutations non-empty on valid sorted unique paths (the same
+    /// rules and refusal codes as envelope v1); a free-text intent of 1..=4096 bytes, or an
+    /// intent record that is canonical and whose footprint holds every mutation path
+    /// (`MutationOutsideFootprint`).
     pub fn validate(&self) -> SynapseResult<()> {
-        validate_intent_summary(&self.intent_summary)?;
         validate_parent_changesets(&self.parents)?;
-        validate_mutations(&self.mutations)
+        validate_mutations(&self.mutations)?;
+        match &self.intent {
+            RevisionIntent::Summary(s) => validate_intent_summary(s.as_str()),
+            RevisionIntent::Record(r) => r.validate_for(&self.mutations),
+        }
     }
 
-    /// `version u16 (2) | change_id [16] | base_tree [32] | u32 count | parent [32]* |
-    /// u32 count | (path str | op)* | intent_summary str`, where `op` is `1 | mode u8 |
-    /// blob_digest [32] | size u64` (upsert) or `2` (delete) and `str` is `u32 len | UTF-8`.
+    /// `version u16 (2 or 3) | change_id [16] | base_tree [32] | u32 count | parent [32]* |
+    /// u32 count | (path str | op)* | intent`, where `op` is `1 | mode u8 | blob_digest [32] |
+    /// size u64` (upsert) or `2` (delete), `str` is `u32 len | UTF-8`, and `intent` is the
+    /// summary `str` under version 2 or the [`IntentRecord`] encoding under version 3.
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(128 + 96 * self.mutations.len());
-        buf.extend_from_slice(&ENVELOPE_V2_VERSION.to_le_bytes());
+        buf.extend_from_slice(&self.intent.content_version().to_le_bytes());
         buf.extend_from_slice(&self.change_id.0);
         buf.extend_from_slice(&self.base_tree.0);
         buf.extend_from_slice(&(self.parents.len() as u32).to_le_bytes());
@@ -150,7 +191,10 @@ impl RevisionContent {
                 MutationOp::Delete => buf.push(OP_TAG_DELETE),
             }
         }
-        put_str(&mut buf, &self.intent_summary);
+        match &self.intent {
+            RevisionIntent::Summary(s) => put_str(&mut buf, s.as_str()),
+            RevisionIntent::Record(r) => r.encode_into(&mut buf),
+        }
         buf
     }
 
@@ -164,7 +208,7 @@ impl RevisionContent {
 
     pub(crate) fn decode_from(r: &mut Reader) -> SynapseResult<Self> {
         let version = r.u16()?;
-        if version != ENVELOPE_V2_VERSION {
+        if version != ENVELOPE_V2_VERSION && version != INTENT_RECORD_CONTENT_VERSION {
             return Err(SynapseError::new(
                 RefusalCode::EnvelopeVersionUnsupported,
                 format!("unsupported revision content version {version}"),
@@ -197,14 +241,30 @@ impl RevisionContent {
             };
             mutations.push(PathMutation { path, op });
         }
-        let intent_summary = r.string(MAX_INTENT_SUMMARY_BYTES)?;
+        let intent = if version == ENVELOPE_V2_VERSION {
+            RevisionIntent::Summary(r.string(MAX_INTENT_SUMMARY_BYTES)?)
+        } else {
+            RevisionIntent::Record(IntentRecord::decode_from(r)?)
+        };
         Ok(Self {
             change_id,
             base_tree,
             parents,
             mutations,
-            intent_summary,
+            intent,
         })
+    }
+
+    /// Every blob this content references: each upserted blob, then the intent's context blob.
+    /// Retention keeps all of them while the revision is kept.
+    pub fn referenced_blobs(&self) -> impl Iterator<Item = BlobDigest> + '_ {
+        self.mutations
+            .iter()
+            .filter_map(|m| match &m.op {
+                MutationOp::Upsert { blob_digest, .. } => Some(*blob_digest),
+                MutationOp::Delete => None,
+            })
+            .chain(self.intent.record().and_then(|r| r.context))
     }
 
     /// `SHA-256(DOMAIN_CHANGESET_ID_V2 || u64 len || encode())`: content only.
@@ -871,7 +931,7 @@ mod tests {
                     size_bytes: body.len() as u64,
                 },
             }],
-            intent_summary: "add lib".into(),
+            intent: RevisionIntent::Summary("add lib".into()),
         }
     }
 
@@ -885,7 +945,7 @@ mod tests {
         assert_eq!(ea.validate().unwrap(), eb.validate().unwrap());
         assert_ne!(ea.attestation, eb.attestation);
         let mut rewritten = c.clone();
-        rewritten.intent_summary = "add lib, rewritten".into();
+        rewritten.intent = RevisionIntent::Summary("add lib, rewritten".into());
         assert_ne!(rewritten.changeset_id(), c.changeset_id());
         assert_eq!(rewritten.change_id, c.change_id);
     }
@@ -922,7 +982,7 @@ mod tests {
             RefusalCode::EnvelopeMalformed
         );
         let mut version = bytes.clone();
-        version[4] = 3;
+        version[4] = 4; // 2 and 3 are defined (B1, B3)
         assert_eq!(
             ChangesetEnvelopeV2::decode(&version).unwrap_err().code,
             RefusalCode::EnvelopeVersionUnsupported
@@ -952,7 +1012,7 @@ mod tests {
             RefusalCode::AuthSignatureInvalid
         );
         let mut t = env.clone();
-        t.content.intent_summary = "changed".into();
+        t.content.intent = RevisionIntent::Summary("changed".into());
         assert_eq!(
             t.validate().unwrap_err().code,
             RefusalCode::AuthSignatureInvalid
