@@ -21,7 +21,7 @@ use synapse_core::{
 use synapse_core::{ChainPath, ChangeId, ChangesetEnvelopeV2, ObsolescenceMarker, RevisionState};
 use synapse_store::{
     AdmissionAuthority, CompactionReport, FsyncPolicy, IngestOutcome, RecoveryPolicy, ReviewRecord,
-    RevisionOutcome, StoreLimits, StoredChangeset, StoredRevision, SynapseStore,
+    RevisionOutcome, StoreLimits, StoredChangeset, StoredRevision, SynapseStore, ViewOutcome,
 };
 
 mod advisory;
@@ -314,6 +314,94 @@ impl RevisionStateMovePayload {
             to: RevisionState::from_tag_byte(tag[0]).ok_or_else(malformed)?,
             signed_at_ms: u64::from_le_bytes(at.try_into().map_err(|_| malformed())?),
             signature: sig.try_into().map_err(|_| malformed())?,
+        })
+    }
+}
+
+/// Request payload for [`SynapseService::undo`] (ADR 0003 B2): `target u64 | 0` for a whole
+/// undo, or `target u64 | 1 | chain path` (core `ChainPath` encoding) to undo only the
+/// operations of that actor chain and the chains below it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UndoPayload {
+    pub target: WalSeq,
+    pub actor: Option<ChainPath>,
+}
+
+impl UndoPayload {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(9 + 1 + 32 * 4);
+        buf.extend_from_slice(&self.target.0.to_le_bytes());
+        match &self.actor {
+            None => buf.push(0),
+            Some(a) => {
+                buf.push(1);
+                a.encode_into(&mut buf);
+            }
+        }
+        buf
+    }
+
+    /// The one encoding above; anything else is `EnvelopeMalformed`.
+    pub fn decode(bytes: &[u8]) -> SynapseResult<Self> {
+        let malformed = || {
+            SynapseError::new(
+                RefusalCode::EnvelopeMalformed,
+                "undo payload must be target u64 | 0, or target u64 | 1 | chain path",
+            )
+        };
+        if bytes.len() < 9 {
+            return Err(malformed());
+        }
+        let (target, rest) = bytes.split_at(8);
+        let target = WalSeq(u64::from_le_bytes(
+            target.try_into().map_err(|_| malformed())?,
+        ));
+        let actor = match (rest[0], &rest[1..]) {
+            (0, []) => None,
+            (1, chain) => Some(ChainPath::decode(chain).map_err(|_| malformed())?),
+            _ => return Err(malformed()),
+        };
+        Ok(Self { target, actor })
+    }
+}
+
+/// Request payload for [`SynapseService::discard`] (ADR 0003 B2), exactly 33 bytes:
+/// `changeset_id [32] | final u8 (0 plain, 1 final)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiscardPayload {
+    pub changeset_id: ChangesetId,
+    pub final_discard: bool,
+}
+
+impl DiscardPayload {
+    pub const LEN: usize = 33;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::LEN);
+        buf.extend_from_slice(&self.changeset_id.0);
+        buf.push(u8::from(self.final_discard));
+        buf
+    }
+
+    /// Exactly 33 bytes with a final flag of 0 or 1; anything else is `EnvelopeMalformed`.
+    pub fn decode(bytes: &[u8]) -> SynapseResult<Self> {
+        let malformed = || {
+            SynapseError::new(
+                RefusalCode::EnvelopeMalformed,
+                "discard payload must be changeset_id [32] | final u8 (0 or 1)",
+            )
+        };
+        if bytes.len() != Self::LEN {
+            return Err(malformed());
+        }
+        let final_discard = match bytes[32] {
+            0 => false,
+            1 => true,
+            _ => return Err(malformed()),
+        };
+        Ok(Self {
+            changeset_id: ChangesetId(bytes[..32].try_into().map_err(|_| malformed())?),
+            final_discard,
         })
     }
 }
@@ -748,6 +836,80 @@ impl SynapseService {
             signature: mv.signature,
         };
         self.store.advance_revision_state(state_move, now_ms)
+    }
+
+    /// Undo (ADR 0003 B2) under an F1 delegation chain granting `Undo`. `req.payload` is an
+    /// [`UndoPayload`]. The store applies the undo rules: a target not before the undo is
+    /// `UndoTargetInvalid`, an undo reaching a revocation or a final discard is
+    /// `UndoIrreversible`, and an undo reaching an operation of an actor chain the request's
+    /// chain does not dominate is `AuthChainNotDominant`. Undo moves references only.
+    pub fn undo(&mut self, req: &ChainedRequest, now_ms: u64) -> SynapseResult<ViewOutcome> {
+        let p = UndoPayload::decode(&req.payload)?;
+        self.auth.authorize_chain(
+            BoundaryKind::Api,
+            "undo",
+            &self.repo_id,
+            Capability::Undo,
+            req,
+            self.store.committed_seq().next(),
+            now_ms,
+        )?;
+        let chain = admission_authority(req)?.chain;
+        self.store
+            .record_undo(self.repo_id.clone(), p.target, p.actor, chain, now_ms)
+    }
+
+    /// Discard a revision (ADR 0003 B2), plain (undoable) or final (never undone), under an
+    /// F1 delegation chain granting `Propose`. `req.payload` is a [`DiscardPayload`]. The
+    /// store requires the chain to own the revision (`AuthChainNotDominant`) and refuses a
+    /// revision already finally discarded (`DiscardInvalid`).
+    pub fn discard(&mut self, req: &ChainedRequest, now_ms: u64) -> SynapseResult<ViewOutcome> {
+        let p = DiscardPayload::decode(&req.payload)?;
+        self.auth.authorize_chain(
+            BoundaryKind::Api,
+            "discard",
+            &self.repo_id,
+            Capability::Propose,
+            req,
+            self.store.committed_seq().next(),
+            now_ms,
+        )?;
+        let chain = admission_authority(req)?.chain;
+        self.store.record_discard(
+            self.repo_id.clone(),
+            p.changeset_id,
+            p.final_discard,
+            chain,
+            now_ms,
+        )
+    }
+
+    /// Revoke the leaf link of `revoked` on behalf of the chain `by` (operator path, ADR 0003
+    /// B2): the revocation is written to the operation log as a fact no undo reaches, and the
+    /// policy enforcer refuses every chain through the link for requests at that sequence or
+    /// later. `by` must be or dominate `revoked` (`AuthChainNotDominant`); a link the
+    /// enforcer never granted is `AuthChainBroken`. Both checks run before anything is
+    /// written.
+    pub fn revoke_link(
+        &mut self,
+        revoked: ChainPath,
+        by: ChainPath,
+        now_ms: u64,
+    ) -> SynapseResult<ViewOutcome> {
+        let leaf = synapse_auth::LinkDigest(*revoked.links().last().ok_or_else(|| {
+            SynapseError::new(RefusalCode::AuthChainBroken, "revoke: empty chain")
+        })?);
+        if self.auth.unallocated_quota(&leaf).is_none() {
+            return Err(SynapseError::new(
+                RefusalCode::AuthChainBroken,
+                "cannot revoke a link never granted",
+            ));
+        }
+        let out = self
+            .store
+            .record_revocation(self.repo_id.clone(), revoked, by, now_ms)?;
+        self.auth.revoke_link(leaf, out.wal_seq)?;
+        Ok(out)
     }
 
     /// Read an envelope v2 revision (ADR 0003 B4) under an F1 delegation chain granting

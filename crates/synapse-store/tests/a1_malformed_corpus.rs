@@ -162,6 +162,8 @@ fn length_fields(record: &WalRecord, bin: &[u8]) -> Vec<usize> {
         | WalRecord::DerivedRevisionAdmitted { .. } => vec![2],
         // repo_id length first (ADR 0003 B4).
         WalRecord::RevisionStateMoved { .. } => vec![2],
+        // View operation tag, then repo_id length (ADR 0003 B2).
+        WalRecord::ViewOperationRecorded { .. } => vec![3],
     }
 }
 

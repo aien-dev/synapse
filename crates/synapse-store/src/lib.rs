@@ -32,6 +32,9 @@ mod a1_tests;
 pub mod codec;
 #[cfg(test)]
 mod group_tests;
+mod operation;
+#[cfg(test)]
+mod operation_tests;
 mod revision;
 pub mod segment;
 #[cfg(test)]
@@ -40,6 +43,10 @@ mod shared;
 pub mod wal2;
 
 pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
+pub use operation::{
+    UndoFault, View, ViewOperation, ViewOutcome, ViewReplayReport, DOMAIN_VIEW_HEADS_V1,
+    DOMAIN_VIEW_V1,
+};
 pub use revision::{
     verify_revision_log, AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome,
     StateMoveReplayReport, StoredRevision, DOMAIN_STATE_ROOT_REVISIONS_V1,
@@ -342,6 +349,14 @@ pub enum WalRecord {
         chain: ChainPath,
         admitted_at_ms: u64,
     },
+    /// An operation on the references of one repository (undo, plain or final discard,
+    /// revocation) by `chain` at server time `recorded_at_ms` (ADR 0003 B2). Binary codec only.
+    #[serde(skip)]
+    ViewOperationRecorded {
+        op: crate::operation::ViewOperation,
+        chain: ChainPath,
+        recorded_at_ms: u64,
+    },
 }
 
 impl WalRecord {
@@ -357,6 +372,7 @@ impl WalRecord {
             Self::ObsolescenceRecorded { .. } => 8,
             Self::RevisionStateMoved { .. } => 9,
             Self::DerivedRevisionAdmitted { .. } => 11,
+            Self::ViewOperationRecorded { .. } => 12,
         }
     }
 
@@ -2167,7 +2183,8 @@ impl SynapseStore {
                 self.revisions.apply(seq, record);
             }
             record @ (WalRecord::ObsolescenceRecorded { .. }
-            | WalRecord::RevisionStateMoved { .. }) => self.revisions.apply(seq, record),
+            | WalRecord::RevisionStateMoved { .. }
+            | WalRecord::ViewOperationRecorded { .. }) => self.revisions.apply(seq, record),
             record @ WalRecord::DerivedRevisionAdmitted { .. } => {
                 for digest in record.upsert_blobs() {
                     self.blob_first_visible_seq.entry(digest).or_insert(seq);

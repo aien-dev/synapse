@@ -18,6 +18,7 @@
 //! huge length is refused without allocating it.
 
 use super::*;
+use crate::operation::ViewOperation;
 use synapse_auth::CapabilityLink;
 use synapse_core::{FileMode, GitOid, PathMutation};
 
@@ -42,6 +43,10 @@ pub const DOMAIN_CHECKPOINT_CONTENT_V2: &[u8] = b"SYNAPSE_CHECKPOINT_CONTENT_V2\
 pub const DOMAIN_CHECKPOINT_ROOT_V2: &[u8] = b"SYNAPSE_CHECKPOINT_ROOT_V2\0";
 /// Domain tag of `SynapseStore::state_root_digest` (unchanged from v1).
 pub const DOMAIN_STATE_ROOT_V1: &[u8] = b"SYNAPSE_STATE_ROOT_V1\0";
+/// View operation tags inside a kind 12 `ViewOperationRecorded` record (B2).
+const VIEW_OP_UNDO: u8 = 1;
+const VIEW_OP_DISCARD: u8 = 2;
+const VIEW_OP_REVOKE: u8 = 3;
 
 /// Which encoding a WAL record payload uses (declared by the frame header flags).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -363,6 +368,47 @@ pub fn encode_record(record: &WalRecord) -> SynapseResult<Vec<u8>> {
             w.bytes(&derived.encode(), "derived revision")?;
             put_chain(&mut w, chain)?;
             w.u64(*admitted_at_ms);
+        }
+        WalRecord::ViewOperationRecorded {
+            op,
+            chain,
+            recorded_at_ms,
+        } => {
+            match op {
+                ViewOperation::Undo {
+                    repo_id,
+                    target,
+                    actor,
+                } => {
+                    w.u8(VIEW_OP_UNDO);
+                    w.repo(repo_id)?;
+                    w.u64(target.0);
+                    match actor {
+                        None => w.u8(0),
+                        Some(a) => {
+                            w.u8(1);
+                            put_chain(&mut w, a)?;
+                        }
+                    }
+                }
+                ViewOperation::Discard {
+                    repo_id,
+                    changeset_id,
+                    final_discard,
+                } => {
+                    w.u8(VIEW_OP_DISCARD);
+                    w.repo(repo_id)?;
+                    w.raw(&changeset_id.0);
+                    w.u8(u8::from(*final_discard));
+                }
+                ViewOperation::Revoke { repo_id, revoked } => {
+                    w.u8(VIEW_OP_REVOKE);
+                    w.repo(repo_id)?;
+                    put_chain(&mut w, revoked)?;
+                }
+            }
+            put_chain(&mut w, chain)?;
+            w.u64(*recorded_at_ms);
         }
     }
     Ok(w.0)
@@ -786,6 +832,69 @@ pub fn decode_record(bytes: &[u8], cap: u64) -> Result<WalRecord, CodecRefusal> 
             chain: r.embedded("chain path", ChainPath::decode)?,
             admitted_at_ms: r.u64()?,
         },
+        12 => {
+            let at = r.pos;
+            let op = match r.u8()? {
+                VIEW_OP_UNDO => {
+                    let repo_id = r.repo()?;
+                    let target = WalSeq(r.u64()?);
+                    let at = r.pos;
+                    let actor = match r.u8()? {
+                        0 => None,
+                        1 => Some(r.embedded("chain path", ChainPath::decode)?),
+                        tag => {
+                            return Err(CodecRefusal::UnknownTag {
+                                at,
+                                field: "undo actor",
+                                tag,
+                            })
+                        }
+                    };
+                    ViewOperation::Undo {
+                        repo_id,
+                        target,
+                        actor,
+                    }
+                }
+                VIEW_OP_DISCARD => {
+                    let repo_id = r.repo()?;
+                    let changeset_id = ChangesetId(r.array()?);
+                    let at = r.pos;
+                    let final_discard = match r.u8()? {
+                        0 => false,
+                        1 => true,
+                        tag => {
+                            return Err(CodecRefusal::UnknownTag {
+                                at,
+                                field: "final discard",
+                                tag,
+                            })
+                        }
+                    };
+                    ViewOperation::Discard {
+                        repo_id,
+                        changeset_id,
+                        final_discard,
+                    }
+                }
+                VIEW_OP_REVOKE => ViewOperation::Revoke {
+                    repo_id: r.repo()?,
+                    revoked: r.embedded("chain path", ChainPath::decode)?,
+                },
+                tag => {
+                    return Err(CodecRefusal::UnknownTag {
+                        at,
+                        field: "view operation",
+                        tag,
+                    })
+                }
+            };
+            WalRecord::ViewOperationRecorded {
+                op,
+                chain: r.embedded("chain path", ChainPath::decode)?,
+                recorded_at_ms: r.u64()?,
+            }
+        }
         tag => {
             return Err(CodecRefusal::UnknownTag {
                 at,
@@ -1144,7 +1253,7 @@ impl CheckpointState {
                 let tag_at = r.pos + 4 + 1;
                 let bytes = r.bytes()?;
                 let record = decode_record(&bytes, r.cap)?;
-                if !matches!(record.kind_byte(), 7..=9 | 11) {
+                if !matches!(record.kind_byte(), 7..=9 | 11 | 12) {
                     return Err(CodecRefusal::UnknownTag {
                         at: tag_at,
                         field: "revision record kind",

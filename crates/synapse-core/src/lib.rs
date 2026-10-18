@@ -137,6 +137,14 @@ pub enum RefusalCode {
     /// it needs: the change's creating chain for a prune, or for a rewrite or split either the
     /// creating chain or the chain that first admitted the replaced revision (step B1).
     AuthChainNotDominant,
+    /// An undo names a target that is not an earlier operation of the undo window (ADR 0003
+    /// section 5.4, step B2).
+    UndoTargetInvalid,
+    /// An undo would reach a fact that can never be undone: a revocation or a final discard
+    /// (later also canonical promotions, accepted receipts, erasures; step B2).
+    UndoIrreversible,
+    /// A discard names a revision that is already finally discarded (step B2).
+    DiscardInvalid,
     /// An obsolescence marker names an unknown revision, a revision of another change, itself
     /// as its own successor, or would close a cycle of markers (step B1).
     ObsolescenceMarkerInvalid,
