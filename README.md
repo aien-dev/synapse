@@ -35,6 +35,7 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 * [Gate 0 Empirical Baseline Receipt (`evidence/gate0-baseline/`)](evidence/gate0-baseline/baseline_report.json)
 * [Gate 4 Comparative Qualification Report](docs/GATE4_QUALIFICATION.md)
 * [Gate 4 Qualification Evidence (`evidence/gate4-qualification/`)](evidence/gate4-qualification/report.json), reproduced with `scripts/run_gate4_qualification.sh`
+* [Spark verification gates (`docs/PIPELINE.md`)](docs/PIPELINE.md): the interop and Gate 4 scripts honour `CARGO_TARGET_DIR`, so `SYNAPSE-CONFORMANCE` runs the same on the Spark as in a plain checkout
 
 ## License
 
