@@ -518,6 +518,44 @@ fn segments(args: &[String]) -> Result<(), String> {
     synapse_bench::write_json(&out, &raw)
 }
 
+/// R1 store repair (issue #105). Without `--drop-acknowledged-range` it only reports and
+/// never writes. With it, `--backup <new file>` is required: the damaged superblocks and
+/// the bytes about to be zeroed are saved there first.
+fn store_repair(args: &[String]) -> Result<(), String> {
+    use synapse_store::blockdev::repair::{diagnose, repair_dropping_acknowledged_range};
+    use synapse_store::blockdev::DirectFile;
+    let drop_flag = args.iter().any(|a| a == "--drop-acknowledged-range");
+    let rest: Vec<String> = args
+        .iter()
+        .filter(|a| *a != "--drop-acknowledged-range")
+        .cloned()
+        .collect();
+    let opts = parse_pairs(&rest, &["--device", "--backup"])?;
+    let get = |k: &str| {
+        opts.iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| PathBuf::from(v))
+    };
+    let device = get("--device").ok_or("missing --device (absolute path)")?;
+    if !drop_flag {
+        let io = DirectFile::open_read_only(&device).map_err(|e| e.to_string())?;
+        print!("{}", diagnose(&io).map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+    let backup = get("--backup").ok_or("--drop-acknowledged-range needs --backup <new file>")?;
+    let io = DirectFile::open(&device).map_err(|e| e.to_string())?;
+    let report =
+        repair_dropping_acknowledged_range(&io, &backup, true).map_err(|e| e.to_string())?;
+    print!("{report}");
+    if report.verdict == synapse_store::blockdev::repair::Verdict::OlderCheckpointLosesRange {
+        println!("repair applied; backup at {}", backup.display());
+    } else {
+        println!("nothing was written");
+    }
+    Ok(())
+}
+
 /// `segments-report`: recompute the A2 report from `--raw` and a `--floor` report.
 fn segments_report(args: &[String]) -> Result<(), String> {
     use std::io::Write;
@@ -554,6 +592,7 @@ fn main() -> ExitCode {
         Some("crypto-vectors-verify") => crypto_vectors_verify(&args[1..]),
         Some("segments") => segments(&args[1..]),
         Some("segments-report") => segments_report(&args[1..]),
+        Some("store-repair") => store_repair(&args[1..]),
         _ => Err("usage: synapse-bench run ... | synapse-bench child ... (see crate docs)".into()),
     };
     match outcome {

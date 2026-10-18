@@ -53,6 +53,9 @@
 //! * Batch: one aligned positioned write plus one `fdatasync` (unchanged from A2).
 
 use super::*;
+
+pub mod repair;
+
 use std::os::unix::fs::{FileExt, FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::sync::{Arc, Mutex};
 
@@ -153,17 +156,23 @@ impl DirectFile {
     /// was checked (same device and inode). The opened file is held under an exclusive
     /// advisory lock (`flock`): a second opener is refused while this one lives.
     pub fn open(path: &Path) -> SynapseResult<Self> {
-        Self::open_with(path, true)
+        Self::open_with(path, true, true)
+    }
+
+    /// Like [`Self::open`] but the file is opened read-only (still exclusive-locked):
+    /// every write through it fails. The diagnosis mode of the repair tool uses it.
+    pub fn open_read_only(path: &Path) -> SynapseResult<Self> {
+        Self::open_with(path, true, false)
     }
 
     /// Test inspection only: open without taking the lock (the A2 suite shim reads the
     /// device while the store under test holds it).
     #[cfg(test)]
     pub(crate) fn open_unlocked(path: &Path) -> SynapseResult<Self> {
-        Self::open_with(path, false)
+        Self::open_with(path, false, true)
     }
 
-    fn open_with(path: &Path, lock: bool) -> SynapseResult<Self> {
+    fn open_with(path: &Path, lock: bool, write: bool) -> SynapseResult<Self> {
         if !path.is_absolute() {
             return Err(refuse(format!(
                 "block device path must be absolute: {}",
@@ -188,7 +197,7 @@ impl DirectFile {
         }
         let file = OpenOptions::new()
             .read(true)
-            .write(true)
+            .write(write)
             .custom_flags(flags)
             .open(path)
             .map_err(|e| refuse(format!("open {} with O_DIRECT: {e}", path.display())))?;
