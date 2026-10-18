@@ -1,0 +1,304 @@
+=== reduce-keeps-identical-states (crates/synapse-core/src/conflict.rs): '            Ordering::Equal => {
+                i += 1;' -> '            Ordering::Equal => {
+                a.push(adds[i]);
+                r.push(removes[j]);
+                i += 1;'
+test conflict::tests::d2_diff_mutations_write_files_conflicts_and_deletes_in_path_order ... ok
+test conflict::tests::d2_modify_delete_file_directory_and_mode_conflicts_are_typed_terms ... FAILED
+test conflict::tests::d2_reduction_cancels_only_identical_states_in_any_order ... FAILED
+test conflict::tests::d2_typed_terms_round_trip_and_malformed_terms_are_refused ... ok
+test conflict::tests::d2_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test conflict::tests::d2_a_sum_past_the_term_bound_is_refused ... ok
+test conflict::tests::d2_directories_sum_entry_by_entry_and_equal_subtrees_are_not_read ... FAILED
+test result: FAILED. 3 passed; 4 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-core --lib`
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED reduce-keeps-identical-states
+=== nested-term-not-flattened (crates/synapse-core/src/conflict.rs): '                plus.extend_from_slice(&c.adds);
+                minus.extend_from_slice(&c.removes);' -> '                plus.extend_from_slice(&c.removes);
+                minus.extend_from_slice(&c.adds);'
+test conflict::tests::d2_diff_mutations_write_files_conflicts_and_deletes_in_path_order ... ok
+test conflict::tests::d2_a_sum_past_the_term_bound_is_refused ... FAILED
+test conflict::tests::d2_typed_terms_round_trip_and_malformed_terms_are_refused ... ok
+test conflict::tests::d2_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test conflict::tests::d2_modify_delete_file_directory_and_mode_conflicts_are_typed_terms ... ok
+test conflict::tests::d2_directories_sum_entry_by_entry_and_equal_subtrees_are_not_read ... ok
+test conflict::tests::d2_reduction_cancels_only_identical_states_in_any_order ... ok
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.03s
+error: test failed, to rerun pass `-p synapse-core --lib`
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED nested-term-not-flattened
+=== directories-not-summed-by-entry (crates/synapse-core/src/conflict.rs): '        .all(EntryState::is_dir_or_absent)' -> '        .all(|_| false)'
+test conflict::tests::d2_a_sum_past_the_term_bound_is_refused ... FAILED
+test conflict::tests::d2_modify_delete_file_directory_and_mode_conflicts_are_typed_terms ... FAILED
+test conflict::tests::d2_directories_sum_entry_by_entry_and_equal_subtrees_are_not_read ... FAILED
+test conflict::tests::d2_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test conflict::tests::d2_diff_mutations_write_files_conflicts_and_deletes_in_path_order ... ok
+test conflict::tests::d2_typed_terms_round_trip_and_malformed_terms_are_refused ... ok
+test conflict::tests::d2_reduction_cancels_only_identical_states_in_any_order ... ok
+test result: FAILED. 3 passed; 4 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.02s
+error: test failed, to rerun pass `-p synapse-core --lib`
+test d2_tree_conflict_entries_are_counted_read_and_refused_for_materialization ... ok
+test d2_tree_algebra_over_the_store_round_trips_through_mutations ... FAILED
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_tree`
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... FAILED
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... FAILED
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... FAILED
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED directories-not-summed-by-entry
+=== term-bound-unchecked (crates/synapse-core/src/conflict.rs): '    if r.len() > MAX_CONFLICT_REMOVES {' -> '    if false {'
+test conflict::tests::d2_modify_delete_file_directory_and_mode_conflicts_are_typed_terms ... ok
+test conflict::tests::d2_directories_sum_entry_by_entry_and_equal_subtrees_are_not_read ... ok
+test conflict::tests::d2_a_sum_past_the_term_bound_is_refused ... FAILED
+test conflict::tests::d2_diff_mutations_write_files_conflicts_and_deletes_in_path_order ... ok
+test conflict::tests::d2_typed_terms_round_trip_and_malformed_terms_are_refused ... ok
+test conflict::tests::d2_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test conflict::tests::d2_reduction_cancels_only_identical_states_in_any_order ... ok
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.02s
+error: test failed, to rerun pass `-p synapse-core --lib`
+RED term-bound-unchecked
+=== diff-writes-unchanged-entries (crates/synapse-core/src/conflict.rs): '        if x == y {
+            continue;
+        }' -> '        if x == y && false {
+            continue;
+        }'
+test conflict::tests::d2_typed_terms_round_trip_and_malformed_terms_are_refused ... ok
+test conflict::tests::d2_modify_delete_file_directory_and_mode_conflicts_are_typed_terms ... ok
+test conflict::tests::d2_diff_mutations_write_files_conflicts_and_deletes_in_path_order ... FAILED
+test conflict::tests::d2_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test conflict::tests::d2_directories_sum_entry_by_entry_and_equal_subtrees_are_not_read ... ok
+test conflict::tests::d2_a_sum_past_the_term_bound_is_refused ... ok
+test conflict::tests::d2_reduction_cancels_only_identical_states_in_any_order ... ok
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.02s
+error: test failed, to rerun pass `-p synapse-core --lib`
+test d2_tree_algebra_over_the_store_round_trips_through_mutations ... ok
+test d2_tree_conflict_entries_are_counted_read_and_refused_for_materialization ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+RED diff-writes-unchanged-entries
+=== diff-deletes-directory-not-leaves (crates/synapse-core/src/conflict.rs): '            (Some(xe), None) if xe.is_dir() => delete_all(t, dir_of(x), &path, out)?,' -> '            (Some(xe), None) if xe.is_dir() => out.push(PathMutation {
+                path,
+                op: MutationOp::Delete,
+            }),'
+test conflict::tests::d2_typed_terms_round_trip_and_malformed_terms_are_refused ... ok
+test conflict::tests::d2_modify_delete_file_directory_and_mode_conflicts_are_typed_terms ... ok
+test conflict::tests::d2_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test conflict::tests::d2_diff_mutations_write_files_conflicts_and_deletes_in_path_order ... FAILED
+test conflict::tests::d2_directories_sum_entry_by_entry_and_equal_subtrees_are_not_read ... ok
+test conflict::tests::d2_a_sum_past_the_term_bound_is_refused ... ok
+test conflict::tests::d2_reduction_cancels_only_identical_states_in_any_order ... ok
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.02s
+error: test failed, to rerun pass `-p synapse-core --lib`
+RED diff-deletes-directory-not-leaves
+=== agent-v2-may-carry-a-term (crates/synapse-core/src/revision.rs): '        crate::refuse_conflict_terms(&self.content.mutations, "an agent-submitted revision")?;' -> ''
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED agent-v2-may-carry-a-term
+=== envelope-v1-may-carry-a-term (crates/synapse-core/src/lib.rs): '        refuse_conflict_terms(&self.mutations, "an envelope v1")?;' -> ''
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED envelope-v1-may-carry-a-term
+=== v1-codec-writes-a-term (crates/synapse-store/src/codec.rs): '            MutationOp::Conflict(_) => {
+                return Err(SynapseError::new(
+                    RefusalCode::ConflictNotDerived,
+                    format!("envelope v1 cannot carry the conflict term at {}", m.path),
+                ))
+            }' -> '            MutationOp::Conflict(t) => {
+                w.u8(3);
+                w.raw(&t.encode());
+            }'
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED v1-codec-writes-a-term
+=== rebase-collision-refused-as-before-d2 (crates/synapse-core/src/derivation.rs): '            // Colliding paths: onto + tree(r) - base(r), conflicts recorded as terms.' -> '            if true {
+                return Err(recompute_mismatch(format!("rebasing {r} onto {onto} collides")));
+            }'
+test b5_replica_refuses_a_state_move_that_does_not_verify ... ok
+test b5_derivation_written_at_another_sequence_than_it_was_checked_at_is_refused ... ok
+test b5_derived_revision_presented_with_an_agent_signature_it_does_not_have_is_refused ... ok
+test b5_replayed_attestation_is_refused_at_admission_and_replay ... ok
+test b5_attestation_naming_a_different_rule_is_refused_at_admission_and_replay ... ok
+test b5_identity_log_of_another_repository_is_refused_at_admission_and_replay ... ok
+test b5_another_owners_private_revision_is_not_a_derivation_input ... ok
+test b5_recomputation_that_disagrees_is_refused_at_admission_and_replay ... FAILED
+test b5_attestation_signed_by_another_key_is_refused_at_admission_and_replay ... ok
+test b5_attestation_naming_different_inputs_is_refused_at_admission_and_replay ... ok
+test b5_unregistered_server_key_is_refused_at_admission_and_replay ... ok
+test b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests ... ok
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p synapse-api --test b5_derivation_attestation`
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... FAILED
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... FAILED
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED rebase-collision-refused-as-before-d2
+=== revert-sums-like-a-rebase (crates/synapse-core/src/derivation.rs): '            let summed = crate::sum_trees(trees, &[*onto, source.base_tree], &[source_tree])?;' -> '            let summed = crate::sum_trees(trees, &[*onto, source_tree], &[source.base_tree])?;'
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED revert-sums-like-a-rebase
+=== revert-tag-undecodable (crates/synapse-core/src/derivation.rs): '            RULE_TAG_REVERT => Ok(DerivationRule::Revert),' -> '            99 => Ok(DerivationRule::Revert),'
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED revert-tag-undecodable
+=== t1-merges-past-a-term (crates/synapse-core/src/derivation.rs): '                MutationOp::Conflict(_) => {
+                    return Err(conflict(' -> '                MutationOp::Conflict(_) => {
+                    continue;
+                    #[allow(unreachable_code)]
+                    return Err(conflict('
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... FAILED
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED t1-merges-past-a-term
+=== conflict-entries-not-counted (crates/synapse-api/src/tree.rs): '                    enc.conflict(&e.name, term)?;
+                    conflict_count += 1;' -> '                    enc.conflict(&e.name, term)?;
+                    conflict_count += 0;'
+test d2_tree_conflict_entries_are_counted_read_and_refused_for_materialization ... FAILED
+test d2_tree_algebra_over_the_store_round_trips_through_mutations ... FAILED
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_tree`
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... FAILED
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... FAILED
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED conflict-entries-not-counted
+=== conflicted-trees-not-refused (crates/synapse-api/src/tree.rs): '        let n = self.get(root)?.conflict_count;
+        if n == 0 {' -> '        let n = self.get(root)?.conflict_count;
+        if n == 0 || n > 0 {'
+test d2_tree_conflict_entries_are_counted_read_and_refused_for_materialization ... FAILED
+test d2_tree_algebra_over_the_store_round_trips_through_mutations ... ok
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_tree`
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED conflicted-trees-not-refused
+=== set-conflict-deletes (crates/synapse-api/src/tree.rs): '        self.put_leaf(store, path, EditEntry::Conflict(term))' -> '        let _ = term;
+        self.delete(store, path)'
+test d2_tree_conflict_entries_are_counted_read_and_refused_for_materialization ... FAILED
+test d2_tree_algebra_over_the_store_round_trips_through_mutations ... FAILED
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_tree`
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... FAILED
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... FAILED
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED set-conflict-deletes
+=== store-verified-gate-open (crates/synapse-store/src/revision.rs): '                .find(|m| matches!(m.op, synapse_core::MutationOp::Conflict(_)))' -> '                .find(|_| false)'
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED store-verified-gate-open
+=== promotion-gate-open (crates/synapse-api/src/derivation.rs): '        self.trees.refuse_conflicted(tree, "promotion")' -> '        let _ = tree;
+        Ok(())'
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED promotion-gate-open
+=== restored-file-oid-not-looked-up (crates/synapse-api/src/derivation.rs): '                self.git_oid(*blob_digest);' -> '                let _ = blob_digest;'
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED restored-file-oid-not-looked-up
+=== base-tree-blob-not-written (crates/synapse-api/src/derivation.rs): '            .or_else(|| self.base_blobs.get(&digest))
+            .map(Vec::as_slice)' -> '            .map(Vec::as_slice)'
+test d2_api_agent_revisions_cannot_carry_conflict_terms ... ok
+test d2_api_rebase_twice_cancels_to_a_plain_three_way_conflict_and_revert_is_clean ... FAILED
+test d2_api_typed_conflict_terms_round_trip_through_the_revision_log ... ok
+test d2_api_tier_t1_merge_refuses_a_recorded_conflict_term ... ok
+test d2_api_conflicted_trees_refuse_materialization_and_promotion ... ok
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_terms`
+RED base-tree-blob-not-written
+=== node-table-capacity-not-high-water (crates/synapse-api/src/tree.rs): '        self.nodes_cap = self.nodes_cap.max(self.nodes.capacity());' -> '        self.nodes_cap = 0;'
+test d2_conflict_entries_are_inside_the_tree_store_accounting ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_heap`
+test d2_conflict_entries_are_inside_the_tree_store_accounting ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_heap`
+test d2_conflict_entries_are_inside_the_tree_store_accounting ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_heap`
+test d2_conflict_entries_are_inside_the_tree_store_accounting ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.97s
+error: test failed, to rerun pass `-p synapse-api --test d2_conflict_heap`
+test d2_conflict_entries_are_inside_the_tree_store_accounting ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
+test d2_conflict_entries_are_inside_the_tree_store_accounting ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.13s
+RED node-table-capacity-not-high-water
