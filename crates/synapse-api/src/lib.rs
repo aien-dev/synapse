@@ -678,11 +678,20 @@ impl SynapseService {
         let envelope = ChangesetEnvelopeV2::decode(&req.payload)?;
         let content = &envelope.content;
         check_join_scope(req, content.change_id)?;
-        let paths: Vec<String> = content.mutations.iter().map(|m| m.path.clone()).collect();
-        if req.scope.paths != paths {
+        let Some(intent) = content.intent.record() else {
+            return Err(SynapseError::new(
+                RefusalCode::IntentRecordRequired,
+                "an agent revision needs an IntentRecord, not only a free-text summary (B3)",
+            ));
+        };
+        // The request scope is the declared footprint, so F1 checks the whole footprint
+        // against the chain's `Propose` path scope; the content rules already put every
+        // mutation inside the footprint (`MutationOutsideFootprint`).
+        content.validate()?;
+        if req.scope.paths != intent.footprint {
             return Err(SynapseError::new(
                 RefusalCode::AuthPathOutOfScope,
-                "request scope paths must be exactly the revision's mutation paths",
+                "request scope paths must be exactly the revision's declared footprint",
             ));
         }
         self.auth.authorize_chain(

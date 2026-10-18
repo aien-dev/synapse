@@ -11,8 +11,8 @@ use synapse_auth::{
 };
 use synapse_core::{
     encode_did_key_ed25519, BlobDigest, ChangeId, ChangesetEnvelopeV2, ChangesetId, FileMode,
-    GitOid, IdempotencyKey, MutationOp, ObsolescenceMarker, PathMutation, RefusalCode, RepoId,
-    RevisionContent, RevisionState, TreeDigest, WalSeq,
+    GitOid, IdempotencyKey, IntentKind, IntentRecord, MutationOp, ObsolescenceMarker, PathMutation,
+    RefusalCode, RepoId, RevisionContent, RevisionIntent, RevisionState, TreeDigest, WalSeq,
 };
 use synapse_store::{FsyncPolicy, RecoveryPolicy, RevisionOutcome, StoreLimits};
 
@@ -160,7 +160,10 @@ impl Fx {
                     size_bytes: body.len() as u64,
                 },
             }],
-            intent_summary: "implement the task".into(),
+            intent: RevisionIntent::Record(IntentRecord::new(
+                IntentKind::Feature,
+                vec!["src/lib.rs".into()],
+            )),
         };
         ChangesetEnvelopeV2::sign_new(author, repo(), content, IdempotencyKey([idem; 32]), NOW)
     }
@@ -297,6 +300,10 @@ fn b1_api_refuses_paths_outside_scope_foreign_authors_and_unknown_bases() {
     // W's path scope is `src`: a revision touching `docs` is refused by F1.
     let mut env = fx.envelope(&w.0, b"doc", 2);
     env.content.mutations[0].path = "docs/x.md".into();
+    env.content.intent = RevisionIntent::Record(IntentRecord::new(
+        IntentKind::Feature,
+        vec!["docs/x.md".into()],
+    ));
     let env =
         ChangesetEnvelopeV2::sign_new(&w.0, repo(), env.content, IdempotencyKey([2; 32]), NOW);
     let req = fx.request(&w, vec!["docs/x.md".into()], env.encode());
@@ -329,4 +336,121 @@ fn b1_api_refuses_paths_outside_scope_foreign_authors_and_unknown_bases() {
         fx.svc.submit_revision(&req, &blobs, NOW).unwrap_err().code,
         RefusalCode::BaseTreeNotFound
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// ADR 0003 step B3: IntentRecord and claims through the API
+// ---------------------------------------------------------------------------------------
+
+/// An envelope of `author` whose intent is `intent`, upserting `src/lib.rs` with `body`.
+fn b3_envelope(
+    fx: &Fx,
+    author: &SigningKey,
+    intent: RevisionIntent,
+    body: &[u8],
+    idem: u8,
+) -> ChangesetEnvelopeV2 {
+    let mut env = fx.envelope(author, body, idem);
+    env.content.intent = intent;
+    ChangesetEnvelopeV2::sign_new(author, repo(), env.content, IdempotencyKey([idem; 32]), NOW)
+}
+
+fn footprint(paths: &[&str]) -> RevisionIntent {
+    RevisionIntent::Record(IntentRecord::new(
+        IntentKind::Feature,
+        paths.iter().map(|p| p.to_string()).collect(),
+    ))
+}
+
+/// Acceptance: envelopes with only free text are refused. A worker inside its scope sends a
+/// content version 2 envelope (free-text summary only): refused with `IntentRecordRequired`
+/// and nothing is written; the same work with an `IntentRecord` is admitted.
+#[test]
+fn b3_api_free_text_only_envelope_is_refused() {
+    let mut fx = Fx::new("b3-free-text");
+    let w = fx.w.clone();
+    let body = b"free text";
+    let blobs = vec![(BlobDigest::compute(body), body.to_vec())];
+    let env = b3_envelope(
+        &fx,
+        &w.0,
+        RevisionIntent::Summary("implement the task".into()),
+        body,
+        1,
+    );
+    let before = fx.svc.store().committed_seq();
+    let req = fx.request(&w, vec!["src/lib.rs".into()], env.encode());
+    assert_eq!(
+        fx.svc.submit_revision(&req, &blobs, NOW).unwrap_err().code,
+        RefusalCode::IntentRecordRequired
+    );
+    assert_eq!(fx.svc.store().committed_seq(), before, "nothing written");
+    let env = b3_envelope(&fx, &w.0, footprint(&["src/lib.rs"]), body, 2);
+    let req = fx.request(&w, vec!["src/lib.rs".into()], env.encode());
+    assert!(matches!(
+        fx.svc.submit_revision(&req, &blobs, NOW).unwrap(),
+        RevisionOutcome::Admitted { .. }
+    ));
+}
+
+/// Acceptance: a mutation outside the declared footprint is refused (`MutationOutsideFootprint`)
+/// before any write, even when the chain's path scope covers it.
+#[test]
+fn b3_api_mutation_outside_declared_footprint_is_refused() {
+    let mut fx = Fx::new("b3-footprint");
+    let w = fx.w.clone();
+    let body = b"outside";
+    let blobs = vec![(BlobDigest::compute(body), body.to_vec())];
+    let before = fx.svc.store().committed_seq();
+    for declared in [&["src/main.rs"][..], &["src/lib"], &["docs"]] {
+        let env = b3_envelope(&fx, &w.0, footprint(declared), body, 1);
+        let paths = declared.iter().map(|p| p.to_string()).collect();
+        let req = fx.request(&w, paths, env.encode());
+        assert_eq!(
+            fx.svc.submit_revision(&req, &blobs, NOW).unwrap_err().code,
+            RefusalCode::MutationOutsideFootprint,
+            "{declared:?}"
+        );
+    }
+    assert_eq!(fx.svc.store().committed_seq(), before, "nothing written");
+    // A directory footprint holds the mutation.
+    let env = b3_envelope(&fx, &w.0, footprint(&["src"]), body, 2);
+    let req = fx.request(&w, vec!["src".into()], env.encode());
+    assert!(matches!(
+        fx.svc.submit_revision(&req, &blobs, NOW).unwrap(),
+        RevisionOutcome::Admitted { .. }
+    ));
+}
+
+/// ADR 0003 section 5.2: the footprint must lie inside the submitter's `Propose` scope. The
+/// request scope of a revision is exactly its footprint, so F1 checks every footprint entry;
+/// worker `W` (path scope `src`) declaring `docs` beside `src/lib.rs` is refused, and a request
+/// scope that is not exactly the footprint is refused.
+#[test]
+fn b3_api_footprint_must_lie_inside_the_propose_scope() {
+    let mut fx = Fx::new("b3-scope");
+    let w = fx.w.clone();
+    let body = b"scoped";
+    let blobs = vec![(BlobDigest::compute(body), body.to_vec())];
+    let wide = footprint(&["docs", "src/lib.rs"]);
+    let env = b3_envelope(&fx, &w.0, wide, body, 1);
+    let req = fx.request(&w, vec!["docs".into(), "src/lib.rs".into()], env.encode());
+    assert_eq!(
+        fx.svc.submit_revision(&req, &blobs, NOW).unwrap_err().code,
+        RefusalCode::AuthPathOutOfScope
+    );
+    // Hiding the wide footprint behind a request scope of only the mutation paths.
+    let req = fx.request(&w, vec!["src/lib.rs".into()], env.encode());
+    assert_eq!(
+        fx.svc.submit_revision(&req, &blobs, NOW).unwrap_err().code,
+        RefusalCode::AuthPathOutOfScope
+    );
+    // `O` holds the whole repository: the same footprint is admitted.
+    let o = fx.o.clone();
+    let env = b3_envelope(&fx, &o.0, footprint(&["docs", "src/lib.rs"]), body, 3);
+    let req = fx.request(&o, vec!["docs".into(), "src/lib.rs".into()], env.encode());
+    assert!(matches!(
+        fx.svc.submit_revision(&req, &blobs, NOW).unwrap(),
+        RevisionOutcome::Admitted { .. }
+    ));
 }

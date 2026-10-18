@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::fmt;
 
 mod derivation;
+mod intent;
 mod revision;
 mod revision_state;
 mod tree;
@@ -18,11 +19,16 @@ pub use derivation::{
     DOMAIN_DERIVATION_ATTESTATION_V1, DOMAIN_DERIVATION_SIGN_V1, DOMAIN_DERIVED_MERGE_CHANGE_V1,
     MAX_DERIVATION_INPUTS,
 };
+pub use intent::{
+    footprint_entry_covers, Claim, ClaimKind, IntentKind, IntentRecord, PredicateType, TaskRef,
+    MAX_FOOTPRINT_ENTRIES, MAX_INTENT_CLAIMS, MAX_LANE_BYTES, MAX_SUPERSEDES,
+};
 pub use revision::{
     AdmissionWitness, AuthorshipAttestation, ChainPath, ChangesetEnvelopeV2, ObsolescenceKind,
-    ObsolescenceMarker, RevisionContent, WitnessSigner, DOMAIN_ADMISSION_WITNESS_V1,
-    DOMAIN_AUTHORSHIP_SIGN_V2, DOMAIN_CHANGESET_ID_V2, DOMAIN_OBSOLESCENCE_SIGN_V1,
-    ENVELOPE_V2_VERSION, MAX_CHAIN_PATH_DEPTH, MAX_OBSOLESCENCE_SUCCESSORS,
+    ObsolescenceMarker, RevisionContent, RevisionIntent, WitnessSigner,
+    DOMAIN_ADMISSION_WITNESS_V1, DOMAIN_AUTHORSHIP_SIGN_V2, DOMAIN_CHANGESET_ID_V2,
+    DOMAIN_OBSOLESCENCE_SIGN_V1, ENVELOPE_V2_VERSION, INTENT_RECORD_CONTENT_VERSION,
+    MAX_CHAIN_PATH_DEPTH, MAX_OBSOLESCENCE_SUCCESSORS,
 };
 pub use revision_state::RevisionState;
 pub use tree::{
@@ -137,6 +143,12 @@ pub enum RefusalCode {
     /// it needs: the change's creating chain for a prune, or for a rewrite or split either the
     /// creating chain or the chain that first admitted the replaced revision (step B1).
     AuthChainNotDominant,
+    /// An agent envelope v2 whose content carries only a free-text intent summary (content
+    /// version 2) instead of an `IntentRecord` (ADR 0003 section 5.2, step B3).
+    IntentRecordRequired,
+    /// A revision mutates a path outside the footprint its `IntentRecord` declares (ADR 0003
+    /// section 5.2, step B3).
+    MutationOutsideFootprint,
     /// An obsolescence marker names an unknown revision, a revision of another change, itself
     /// as its own successor, or would close a cycle of markers (step B1).
     ObsolescenceMarkerInvalid,

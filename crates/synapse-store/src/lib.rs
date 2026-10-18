@@ -399,21 +399,26 @@ impl WalRecord {
         }
     }
 
-    /// Blob digests the upserts of this record reference (ingest and revision records).
+    /// Blob digests this record references and replay requires present: the upserts of an
+    /// ingest or revision record, and a revision intent's context blob (step B3).
     pub fn upsert_blobs(&self) -> Vec<BlobDigest> {
-        let mutations = match self {
-            Self::ChangesetIngest { envelope, .. } => &envelope.mutations,
-            Self::RevisionAdmitted { envelope, .. } => &envelope.content.mutations,
-            Self::DerivedRevisionAdmitted { derived, .. } => &derived.content.mutations,
-            _ => return Vec::new(),
-        };
-        mutations
-            .iter()
-            .filter_map(|m| match &m.op {
-                MutationOp::Upsert { blob_digest, .. } => Some(*blob_digest),
-                MutationOp::Delete => None,
-            })
-            .collect()
+        match self {
+            Self::ChangesetIngest { envelope, .. } => envelope
+                .mutations
+                .iter()
+                .filter_map(|m| match &m.op {
+                    MutationOp::Upsert { blob_digest, .. } => Some(*blob_digest),
+                    MutationOp::Delete => None,
+                })
+                .collect(),
+            Self::RevisionAdmitted { envelope, .. } => {
+                envelope.content.referenced_blobs().collect()
+            }
+            Self::DerivedRevisionAdmitted { derived, .. } => {
+                derived.content.referenced_blobs().collect()
+            }
+            _ => Vec::new(),
+        }
     }
 }
 
@@ -1735,11 +1740,7 @@ impl SynapseStore {
         // 2. Compute retained blob closure from retained changesets
         let mut retained_blobs: BTreeSet<BlobDigest> = BTreeSet::new();
         for rev in self.revisions.revisions() {
-            for m in &rev.content.mutations {
-                if let MutationOp::Upsert { blob_digest, .. } = &m.op {
-                    retained_blobs.insert(*blob_digest);
-                }
-            }
+            retained_blobs.extend(rev.content.referenced_blobs());
         }
         for stored in self.changesets.values() {
             for m in &stored.envelope.mutations {

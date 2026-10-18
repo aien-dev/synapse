@@ -929,6 +929,14 @@ impl crate::SynapseStore {
         let id = envelope.validate()?;
         let content = &envelope.content;
         let att = &envelope.attestation;
+        let Some(intent) = content.intent.record() else {
+            return Err(SynapseError::new(
+                RefusalCode::IntentRecordRequired,
+                format!(
+                    "revision {id} carries only a free-text intent summary; an agent envelope needs an IntentRecord (content version 3)"
+                ),
+            ));
+        };
         let repo = att.repo_id.clone();
         if let Some((wal_seq, existing)) =
             self.revisions
@@ -1013,6 +1021,20 @@ impl crate::SynapseStore {
                         ),
                     ));
                 }
+            }
+        }
+        // The intent's rationale blob is stored and retained like a mutation blob, so it can
+        // be read, scanned (M1), and kept by compaction.
+        if let Some(ctx) = intent.context {
+            if let Some(raw) = provided.get(&ctx) {
+                if !inline.iter().any(|(d, _)| *d == ctx) {
+                    inline.push((ctx, raw));
+                }
+            } else if !self.blob_first_visible_seq.contains_key(&ctx) {
+                return Err(SynapseError::new(
+                    RefusalCode::BlobNotFound,
+                    format!("intent context references missing blob {ctx}"),
+                ));
             }
         }
         let joined_existing_revision = self.revisions.get_revision(&repo, id).is_some();
@@ -1109,6 +1131,14 @@ impl crate::SynapseStore {
                         ),
                     ));
                 }
+            }
+        }
+        if let Some(ctx) = content.intent.record().and_then(|r| r.context) {
+            if !self.blob_first_visible_seq.contains_key(&ctx) {
+                return Err(SynapseError::new(
+                    RefusalCode::BlobNotFound,
+                    format!("derived intent context references blob {ctx}, which is not visible"),
+                ));
             }
         }
         let joined_existing_revision = self.revisions.get_revision(&repo, id).is_some();
@@ -1364,7 +1394,7 @@ mod b4_tests {
         Capability, CapabilityChain, CapabilityLink, ChainQuotas, ChangeScope, LinkCaveats,
         OperationSet, PathScope, ReferenceScope, ROOT_PARENT,
     };
-    use synapse_core::{FileMode, PathMutation, TreeDigest};
+    use synapse_core::{FileMode, PathMutation, RevisionIntent, TreeDigest};
 
     struct SplitMix64(u64);
 
@@ -1501,6 +1531,20 @@ mod b4_tests {
     }
 
     fn admission(chain: ChainPath, author: &[u8], n: u32) -> WalRecord {
+        let intent = RevisionIntent::Record(synapse_core::IntentRecord::new(
+            synapse_core::IntentKind::Feature,
+            vec!["src/lib.rs".into()],
+        ));
+        admission_with(chain, author, n, intent)
+    }
+
+    /// [`admission`] with the given intent (a content version 2 summary writes a B1-era record).
+    fn admission_with(
+        chain: ChainPath,
+        author: &[u8],
+        n: u32,
+        intent: RevisionIntent,
+    ) -> WalRecord {
         let body = body(n);
         let content = RevisionContent {
             change_id: ChangeId([(n % 7) as u8; 16]),
@@ -1514,7 +1558,7 @@ mod b4_tests {
                     size_bytes: body.len() as u64,
                 },
             }],
-            intent_summary: "implement the task".into(),
+            intent,
         };
         let mut idem = derived("idempotency", &n.to_le_bytes());
         idem[0] ^= author.len() as u8;
@@ -2394,5 +2438,122 @@ mod b4_tests {
                 Err(crate::CodecRefusal::TrailingBytes { .. })
             ));
         }
+    }
+
+    fn owner_authority(owner: &[u8]) -> AdmissionAuthority {
+        AdmissionAuthority {
+            chain: path(owner),
+            change_scope: Vec::new(),
+        }
+    }
+
+    /// B3 acceptance "envelopes with only free text are refused": an agent envelope whose
+    /// content is version 2 (free-text summary) is refused at admission with
+    /// `IntentRecordRequired` and nothing is written; a B1-era version 2 record already in the
+    /// log keeps replaying, through a checkpoint and compaction, with its `ChangesetId`.
+    #[test]
+    fn b3_free_text_envelope_is_refused_at_admission_and_b1_records_still_replay() {
+        const STRICT: RecoveryPolicy = RecoveryPolicy::StrictFailClosed;
+        let owner: &[u8] = &[1, 2];
+        let dir = temp_dir("b3-free-text");
+        let mut s = open(&dir, STRICT).unwrap();
+        let summary = RevisionIntent::Summary("implement the task".into());
+        let v2 = admission_with(path(owner), owner, 1, summary.clone());
+        let WalRecord::RevisionAdmitted { envelope, .. } = v2.clone() else {
+            unreachable!()
+        };
+        let id = envelope.changeset_id();
+        let b = body(1);
+        let before = s.committed_seq();
+        let err = s
+            .admit_revision(
+                envelope,
+                &[(BlobDigest::compute(&b), b.to_vec())],
+                owner_authority(owner),
+                5_000,
+            )
+            .unwrap_err();
+        assert_eq!(err.code, RefusalCode::IntentRecordRequired, "{err:?}");
+        assert_eq!(s.committed_seq(), before, "a refusal writes nothing");
+        assert!(s.get_revision(&repo(), id).is_err());
+
+        s.append_revision_record(v2, &[(BlobDigest::compute(&b), &b[..])], None)
+            .unwrap();
+        drop(s);
+        let mut s = open(&dir, STRICT).unwrap();
+        assert_eq!(s.get_revision(&repo(), id).unwrap().content.intent, summary);
+        s.checkpoint_and_compact(7_000).unwrap();
+        drop(s);
+        let s = open(&dir, STRICT).unwrap();
+        let rev = s.get_revision(&repo(), id).unwrap();
+        assert_eq!(rev.content.intent, summary);
+        assert_eq!(rev.content.changeset_id(), id);
+        assert_eq!(
+            s.get_blob_visible(BlobDigest::compute(&b), None, None)
+                .unwrap(),
+            b
+        );
+    }
+
+    /// B3: the intent's rationale blob is admitted with the revision, readable, required at
+    /// replay, and retained through a checkpoint and compaction; a context naming a blob that
+    /// is neither provided nor stored is refused with `BlobNotFound` and writes nothing.
+    #[test]
+    fn b3_context_blob_is_stored_retained_and_required() {
+        const STRICT: RecoveryPolicy = RecoveryPolicy::StrictFailClosed;
+        let owner: &[u8] = &[1, 2];
+        let dir = temp_dir("b3-context");
+        let mut s = open(&dir, STRICT).unwrap();
+        let rationale = b"plan: split the parser, then the codec".to_vec();
+        let ctx = BlobDigest::compute(&rationale);
+        let mut record =
+            synapse_core::IntentRecord::new(synapse_core::IntentKind::Refactor, vec!["src".into()]);
+        record.context = Some(ctx);
+        let b = body(1);
+        let file = (BlobDigest::compute(&b), b.to_vec());
+
+        let missing = admission_with(
+            path(owner),
+            owner,
+            1,
+            RevisionIntent::Record(record.clone()),
+        );
+        let WalRecord::RevisionAdmitted { envelope, .. } = missing else {
+            unreachable!()
+        };
+        let before = s.committed_seq();
+        let err = s
+            .admit_revision(
+                envelope.clone(),
+                std::slice::from_ref(&file),
+                owner_authority(owner),
+                5_000,
+            )
+            .unwrap_err();
+        assert_eq!(err.code, RefusalCode::BlobNotFound, "{err:?}");
+        assert_eq!(s.committed_seq(), before);
+
+        let id = envelope.changeset_id();
+        let outcome = s
+            .admit_revision(
+                envelope,
+                &[file, (ctx, rationale.clone())],
+                owner_authority(owner),
+                5_000,
+            )
+            .unwrap();
+        assert!(
+            matches!(outcome, RevisionOutcome::Admitted { .. }),
+            "{outcome:?}"
+        );
+        assert_eq!(s.get_blob_visible(ctx, None, None).unwrap(), rationale);
+        s.checkpoint_and_compact(7_000).unwrap();
+        drop(s);
+        let s = open(&dir, STRICT).unwrap();
+        assert_eq!(
+            s.get_revision(&repo(), id).unwrap().content.intent,
+            RevisionIntent::Record(record)
+        );
+        assert_eq!(s.get_blob_visible(ctx, None, None).unwrap(), rationale);
     }
 }

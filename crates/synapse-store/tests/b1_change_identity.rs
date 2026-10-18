@@ -7,9 +7,9 @@ use ed25519_dalek::SigningKey;
 use std::path::{Path, PathBuf};
 use synapse_core::{
     encode_did_key_ed25519, BlobDigest, ChainPath, ChangeId, ChangesetEnvelope,
-    ChangesetEnvelopeV2, ChangesetId, FileMode, GitOid, IdempotencyKey, MutationOp,
-    ObsolescenceMarker, PathMutation, RefusalCode, RepoId, RevisionContent, RevisionState,
-    TreeDigest, WalSeq,
+    ChangesetEnvelopeV2, ChangesetId, FileMode, GitOid, IdempotencyKey, IntentKind, IntentRecord,
+    MutationOp, ObsolescenceMarker, PathMutation, RefusalCode, RepoId, RevisionContent,
+    RevisionIntent, RevisionState, TreeDigest, WalSeq,
 };
 mod common;
 use synapse_store::codec::{decode_record, encode_record};
@@ -99,7 +99,10 @@ fn revision(
                 size_bytes: body.len() as u64,
             },
         }],
-        intent_summary: "implement the task".into(),
+        intent: RevisionIntent::Record(IntentRecord::new(
+            IntentKind::Feature,
+            vec!["src/lib.rs".into()],
+        )),
     };
     let env =
         ChangesetEnvelopeV2::sign_new(author, repo(), content, IdempotencyKey([idem; 32]), 1_000);
