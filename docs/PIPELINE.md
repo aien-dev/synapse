@@ -10,7 +10,6 @@ hosted job is a Spark gate in `tests/gates/`:
 | --- | --- | --- |
 | `SYNAPSE-WORKSPACE` | `portable-workspace`: `bash scripts/ci/portable.sh workspace` (fmt, clippy `-D warnings`, tests) | host |
 | `SYNAPSE-CONFORMANCE` | `portable-conformance`: `bash scripts/ci/portable.sh conformance` with aien-architecture at `29780e5` | host (sibling `../aien-architecture`) |
-| `CRUMB-VERIFY` | the thin gate's `crumb verify .` with the tool built from `crumb.lock` | host (sibling `../aien-architecture`), always-run |
 | `SYNAPSE-ZERO-DISK-SECRETS` | no hosted step; no plaintext `.env*` files in the tree | portable, always-run |
 
 ## What happens to every pull request

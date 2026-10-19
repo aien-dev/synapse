@@ -42,7 +42,6 @@
     }
   ],
   "extensions": {
-    "generated_policy": "on-demand",
     "synapse": {
       "component_paths": {
         "synapse-api": "crates/synapse-api",

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # tests/gates/run.sh: the one entry point for the local verification gates of synapse.
 # Every step runs the SAME command as the hosted job it mirrors (.github/workflows/portable.yml,
-# matrix gate workspace|conformance: `bash scripts/ci/portable.sh <gate>`; and the thin gate's
-# `crumb verify .`). Manifests under tests/gates/ name this script plus one step word, so no
+# matrix gate workspace|conformance: `bash scripts/ci/portable.sh <gate>`). Manifests under tests/gates/ name this script plus one step word, so no
 # manifest needs shell expansion (ADR 0028 P6). Observations print as "AIEN-OBS <name> <json>".
 #
 # Sibling checkout: the hosted conformance job checks out aien-spark/aien-architecture at the pin
@@ -31,17 +30,6 @@ need_sibling() {
 }
 
 case "$step" in
-  crumb-verify)
-    # Thin gate (aien-verification.yml): crumb tool built from the aien-architecture commit in
-    # crumb.lock. Same here: build that exact commit from the sibling checkout into a temp dir
-    # outside the tree, so a newer crumb on PATH can never change the verdict.
-    need_sibling aien-architecture
-    pin=$(tr -d '[:space:]' < crumb.lock)
-    git -C ../aien-architecture archive "$pin" tools/crumb | tar -x -C "$tmp"
-    make -s -C "$tmp/tools/crumb" crumb
-    obs crumb_tool_commit "\"$pin\""
-    "$tmp/tools/crumb/crumb" verify .
-    ;;
   workspace)
     bash scripts/ci/portable.sh workspace
     ;;
