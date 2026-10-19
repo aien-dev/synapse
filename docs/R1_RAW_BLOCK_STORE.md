@@ -183,6 +183,41 @@ A failed flush acknowledges nothing (tested: the batch and every later ingest re
 A device that is full refuses the batch that would need a new slot ("device full") and keeps every
 acknowledged change.
 
+### 4.1 Repair after a `CheckpointCorrupt` refusal (issue #105)
+
+`synapse-bench store-repair --device <abs path>` opens the device read-only under the exclusive lock
+and prints both superblock copies (generation, checksum state, committed segment count), the device
+byte range of the data past the checkpoint in force, the WAL v2 batches found there (first sequence
+number and record count, from the batch headers), and the repair history. It never writes. A device
+carrying a foreign signature is refused before anything else is read.
+
+A write needs exactly one action, `--operator-key <file>` (64 hex characters, an Ed25519 seed) and
+`--backup <new file>`:
+
+- `--roll-forward` commits slot `segment_count + 1`, keeping every acknowledged batch in it byte for
+  byte. Only one commit can be lost with the newest copy, and only a rotation commit puts data in the
+  next slot, so the repair rewrites exactly that commit. Refused when more than one slot past the
+  checkpoint holds data or the slot has no batch header at its start.
+- `--adopt-older-checkpoint` keeps the older checkpoint and zeroes the reported range.
+
+Before the first device write every byte range the repair overwrites (both superblocks, the spare
+metadata region bytes, and for an adopt the dropped range) is saved to the backup file and synced; the
+file must not exist. The repair is one ordinary metadata commit (section 3) into the damaged copy's
+position: the namespace gains the next entry of the `repair.log` object and the superblock points at
+it, one flush. An adopt then zeroes the range and flushes; a crash in between leaves the record and a
+store that still refuses, and running the same action again finishes the zeroing without a second
+record (rolling forward over a recorded drop is refused).
+
+`repair.log` is `u32 len | entry` repeated. An entry is `"SRP1" | u16 version 1 | u8 action (1 roll
+forward, 2 adopt) | u8 0 | uuid[16] | u64 generation | u64 segment_count_before | u64
+segment_count_after | u64 unix_secs | prev_sha256[32] | replaced_copy_sha256[32] | u32 n | n x (u64
+slot | u64 start | u64 end | u64 nonzero_bytes | u32 batches | u64 records | u64 first_seq |
+bytes_sha256[32]) | operator_key[32] | signature[64]`. The signature is Ed25519 over
+`"SYNAPSE_R1_REPAIR_SIGN_V1\0" || entry without signature`; `prev_sha256` is
+`SHA-256("SYNAPSE_R1_REPAIR_ENTRY_V1\0" || previous entry)`, zero for the first. Mount verifies every
+entry (signature, device uuid, chain, increasing generation) and refuses with `CheckpointCorrupt` if
+any check fails. The signature attributes an entry to a key; which keys to trust is not decided here.
+
 ## 5. Acceptance and Tests
 
 | Test | What it proves |
@@ -194,6 +229,14 @@ acknowledged change.
 | `r1_refuses_a_device_whose_signature_is_only_at_its_end` | GPT backup, MD 0.90, MD 1.0, ZFS L2 and L3 placed only at the end of a zeroed device are refused and the device is left unchanged. |
 | `r1_sig_*` (38) and `r1_every_signature_has_a_pin_test` | One test per `SIGNATURES` entry (a sparse 300 GiB device carrying only that magic at its offset), and the table length pinned. |
 | `r1_lost_newest_superblock_never_drops_acknowledged_changes` | 10 acknowledged changes over two slots, newest superblock copy damaged: reopen either refuses with `CheckpointCorrupt` or returns all 10, under both recovery modes; never fewer. |
+| `r1_repair_report_lists_the_records_past_the_older_checkpoint` | Same fixture: the store refuses; the read-only report names the corrupt copy, the range in slot 2, and records 9 and 10 found there; no write. |
+| `r1_repair_roll_forward_recovers_every_record_byte_identical` | Red then green: refused, then after `RollForward` the store opens with all 10 changes identical to the image before the damage, the segment slots unchanged, one signed entry in the log, the backup holding what was overwritten; a second run writes nothing. |
+| `r1_repair_adopt_older_backs_up_drops_only_the_range_and_records_it` | `AdoptOlderCheckpoint`: only backed-up ranges change, the store opens with 8, the entry records the dropped range and its SHA-256. |
+| `r1_repair_interrupted_adopt_finishes_without_a_second_record` | Crash after the record, before the zeroing: still refused; roll forward refused; the same action finishes with one entry. |
+| `r1_repair_refuses_to_roll_forward_a_slot_without_batches` | No batch header in the slot: roll forward refused, no write, no backup. |
+| `r1_repair_intact_image_has_nothing_to_do_and_never_writes` | Negative control: intact image, both actions, device SHA-256 equal before and after, no backup. |
+| `r1_repair_log_that_does_not_verify_refuses_the_mount` | A flipped signature bit, a changed range, an unchained entry: mount refuses with `CheckpointCorrupt`; the untouched log mounts. |
+| `r1_repair_refuses_a_foreign_device`, `r1_repair_holds_the_exclusive_lock` | MBR device refused with no write; diagnosis and repair refused while the store holds the device. |
 | `r1_a_second_opener_of_the_device_is_refused` | A second open while the store holds the device is refused ("in use"). |
 | `r1_refuses_unknown_label_bytes_and_blank_devices_without_format` | Unknown bytes refused; a blank device is not formatted without `FormatIfBlank`. |
 | `r1_opens_only_the_configured_path` | Relative path, directory, symlink, missing path (not created), odd length refused; unaligned writes round-trip through `O_DIRECT`. |
