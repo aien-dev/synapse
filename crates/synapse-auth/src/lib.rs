@@ -1,7 +1,7 @@
 //! Capability-scoped Ed25519 authentication, replay protection, quota enforcement,
 //! and tamper-evident hash-chained security audit logging (`synapse-auth`, Gate 2a).
 
-use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,8 +11,12 @@ use synapse_core::{
 };
 
 mod chain;
+mod digest;
+mod key_cache;
 mod state_move;
 pub use chain::*;
+pub use digest::payload_digest;
+pub use key_cache::KEY_CACHE_CAPACITY;
 pub use state_move::*;
 
 /// Current capability grant schema version.
@@ -155,7 +159,7 @@ impl AgentCapabilityGrant {
             ));
         }
         let pubkey_bytes = decode_did_key_ed25519(&self.issuer_did)?;
-        let verifying_key = VerifyingKey::from_bytes(&pubkey_bytes).map_err(|_| {
+        let verifying_key = key_cache::verifying_key(&pubkey_bytes).map_err(|_| {
             SynapseError::new(
                 RefusalCode::DidKeyInvalid,
                 "invalid authority Ed25519 public key",
@@ -207,11 +211,8 @@ impl<T: Serialize> AuthenticatedRequest<T> {
         declared_payload_bytes_len: u64,
         payload: T,
     ) -> SynapseResult<Self> {
-        let serialized = serde_json::to_vec(&payload).map_err(|e| {
-            SynapseError::new(RefusalCode::IoFailure, format!("serialize payload: {e}"))
-        })?;
-        let payload_sha256: [u8; 32] = Sha256::digest(&serialized).into();
-        let effective_len = declared_payload_bytes_len.max(serialized.len() as u64);
+        let (payload_sha256, serialized_len) = payload_digest(&payload)?;
+        let effective_len = declared_payload_bytes_len.max(serialized_len);
 
         let mut req = Self {
             grant,
@@ -528,10 +529,7 @@ impl PolicyEnforcer {
         }
 
         // 6. Verify payload digest and agent's Ed25519 signature over the request
-        let serialized_payload = serde_json::to_vec(&req.payload).map_err(|e| {
-            SynapseError::new(RefusalCode::IoFailure, format!("serialize payload: {e}"))
-        })?;
-        let actual_payload_sha256: [u8; 32] = Sha256::digest(&serialized_payload).into();
+        let (actual_payload_sha256, serialized_payload_len) = payload_digest(&req.payload)?;
         if actual_payload_sha256 != req.payload_sha256 {
             return Err(SynapseError::new(
                 RefusalCode::AuthSignatureInvalid,
@@ -540,7 +538,7 @@ impl PolicyEnforcer {
         }
 
         let agent_pubkey_bytes = decode_did_key_ed25519(&req.grant.agent_did)?;
-        let agent_verifying_key = VerifyingKey::from_bytes(&agent_pubkey_bytes).map_err(|_| {
+        let agent_verifying_key = key_cache::verifying_key(&agent_pubkey_bytes).map_err(|_| {
             SynapseError::new(RefusalCode::DidKeyInvalid, "invalid agent Ed25519 key")
         })?;
         let sig_arr: [u8; 64] = req.agent_signature.as_slice().try_into().map_err(|_| {
@@ -560,7 +558,7 @@ impl PolicyEnforcer {
             })?;
 
         // 7. Enforce payload byte quota
-        let effective_bytes = req.payload_bytes_len.max(serialized_payload.len() as u64);
+        let effective_bytes = req.payload_bytes_len.max(serialized_payload_len);
         if effective_bytes > req.grant.max_bytes_per_op {
             return Err(SynapseError::new(
                 RefusalCode::QuotaPayloadTooLarge,

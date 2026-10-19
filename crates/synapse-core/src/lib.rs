@@ -2,13 +2,14 @@
 //! [`ChangesetEnvelopeV2`]), `did:key` Ed25519 codec, and deterministic refusal taxonomy for
 //! Synapse (ADR 0001).
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::fmt;
 
 mod derivation;
+mod key_cache;
 mod revision;
 mod revision_state;
 mod tree;
@@ -18,6 +19,7 @@ pub use derivation::{
     DOMAIN_DERIVATION_ATTESTATION_V1, DOMAIN_DERIVATION_SIGN_V1, DOMAIN_DERIVED_MERGE_CHANGE_V1,
     MAX_DERIVATION_INPUTS,
 };
+pub use key_cache::{cached_verifying_key, key_cache_stats, KEY_CACHE_CAPACITY};
 pub use revision::{
     AdmissionWitness, AuthorshipAttestation, ChainPath, ChangesetEnvelopeV2, ObsolescenceKind,
     ObsolescenceMarker, RevisionContent, WitnessSigner, DOMAIN_ADMISSION_WITNESS_V1,
@@ -597,7 +599,7 @@ impl ChangesetEnvelope {
 
         // Verify author_did and Ed25519 signature
         let pubkey_bytes = decode_did_key_ed25519(&self.author_did)?;
-        let verifying_key = VerifyingKey::from_bytes(&pubkey_bytes).map_err(|_| {
+        let verifying_key = cached_verifying_key(&pubkey_bytes).map_err(|_| {
             SynapseError::new(RefusalCode::DidKeyInvalid, "invalid Ed25519 public key")
         })?;
         let sig_arr: [u8; 64] = self.signature.as_slice().try_into().map_err(|_| {
