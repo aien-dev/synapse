@@ -30,6 +30,10 @@ need_sibling() {
 }
 
 case "$step" in
+  # Retired: crumbs are advisory (RFC-0003 Am2). Kept so the CRUMB-VERIFY manifest still resolves.
+  crumb-verify)
+    echo "CRUMB-VERIFY retired: crumbs are advisory notes (RFC-0003 Am2); nothing to check"
+    ;;
   workspace)
     bash scripts/ci/portable.sh workspace
     ;;
