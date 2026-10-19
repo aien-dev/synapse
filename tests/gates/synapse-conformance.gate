@@ -1,27 +1,21 @@
 # tests/gates/synapse-conformance.gate
-# Mirrors hosted: portable.yml matrix gate 'conformance' (bash scripts/ci/portable.sh conformance, Rust 1.98.1)
-# requires host: needs ../aien-architecture (the pinned commit is cloned from it locally, no network).
-# cache: never because the gate reads the sibling aien-architecture checkout.
+# RETIRED (2026-10-19, Drake: "drop the check"): this gate qualified synapse-crumb and synapse-coord against
+# the pinned crumb.c (aien-architecture 29780e5) and its claims store, which RFC-0003 Amendment 2 retired.
+# The manifest stays only because the planner refuses a head that deletes a gate that exists at its base
+# (GATE_REMOVED). The step checks nothing and passes. The scripts and evidence are kept as history.
 gate: SYNAPSE-CONFORMANCE
 manifest_version: 2
 owner: synapse
 requires:
-  - host
+  - portable
 inputs:
-  - .crumb
-  - Cargo.toml
-  - Cargo.lock
-  - crates/
-  - scripts/
-  - evidence/
-  - tests/gates/
+  - tests/gates/synapse-conformance.gate
 run:
   exec: tests/gates/run.sh
   args: ["conformance"]
 expects:
   exit: 0
   verdict: PASS
-timeout: 30m
+timeout: 1m
 exactness: EXACT
-cache_scope: machine
-cache: never
+cache_scope: portable

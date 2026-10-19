@@ -38,11 +38,8 @@ case "$step" in
     bash scripts/ci/portable.sh workspace
     ;;
   conformance)
-    need_sibling aien-architecture
-    git clone -q --no-checkout ../aien-architecture "$tmp/arch"
-    git -C "$tmp/arch" checkout -q --detach "$ARCH_PIN"
-    obs architecture_pin "\"$ARCH_PIN\""
-    AIEN_ARCHITECTURE_REPO="$tmp/arch" bash scripts/ci/portable.sh conformance
+    # RETIRED 2026-10-19 (Drake): this checked synapse against the retired crumb.c claims store. Nothing to check.
+    echo "SYNAPSE-CONFORMANCE retired: the crumb.c parity and interop check was dropped (RFC-0003 Am2)"
     ;;
   zero-disk-secrets)
     # Not a hosted step in this repository; the same invariant the Rust repos enforce.

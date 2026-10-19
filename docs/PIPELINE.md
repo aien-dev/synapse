@@ -9,7 +9,7 @@ hosted job is a Spark gate in `tests/gates/`:
 | Spark gate | Mirrors | Pool |
 | --- | --- | --- |
 | `SYNAPSE-WORKSPACE` | `portable-workspace`: `bash scripts/ci/portable.sh workspace` (fmt, clippy `-D warnings`, tests) | host |
-| `SYNAPSE-CONFORMANCE` | `portable-conformance`: `bash scripts/ci/portable.sh conformance` with aien-architecture at `29780e5` | host (sibling `../aien-architecture`) |
+| `SYNAPSE-CONFORMANCE` | retired 2026-10-19: no-op stub (the crumb.c parity and interop check was dropped, RFC-0003 Am2) | portable |
 | `SYNAPSE-ZERO-DISK-SECRETS` | no hosted step; no plaintext `.env*` files in the tree | portable, always-run |
 
 ## What happens to every pull request
