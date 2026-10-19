@@ -35,6 +35,7 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 * [Gate 0 Empirical Baseline Receipt (`evidence/gate0-baseline/`)](evidence/gate0-baseline/baseline_report.json)
 * [Gate 4 Comparative Qualification Report](docs/GATE4_QUALIFICATION.md)
 * [Gate 4 Qualification Evidence (`evidence/gate4-qualification/`)](evidence/gate4-qualification/report.json), reproduced with `scripts/run_gate4_qualification.sh`
+* [ADR 0003 B3: `IntentRecord` and claims (`docs/B3_INTENT_RECORD.md`)](docs/B3_INTENT_RECORD.md): an agent revision now states its intent as data (a closed kind, a typed task, claims that each name a predicate type, a path footprint, superseded revisions, an optional rationale blob). Free-text-only revisions are refused at admission, and every mutation must lie inside the declared footprint, which must lie inside the agent's `Propose` scope. Shown by host tests on the Spark; no hardware or energy measurement
 * [Spark verification gates (`docs/PIPELINE.md`)](docs/PIPELINE.md): the interop and Gate 4 scripts honour `CARGO_TARGET_DIR`, so `SYNAPSE-CONFORMANCE` runs the same on the Spark as in a plain checkout
 
 ## License
