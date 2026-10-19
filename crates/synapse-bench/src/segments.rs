@@ -470,7 +470,22 @@ fn run_cell(
                 format: FormatPolicy::OpenExisting,
                 ..bc.clone()
             };
-            BlockDevice::open_path(&cfg, 0)
+            // The store was just dropped, but its exclusive device lock can outlive the drop
+            // for a moment: a child process spawned concurrently (other tests in this process
+            // run commands) holds a copy of the descriptor until its exec closes it, and the
+            // lock stays while any copy is open. Retry a bounded number of times on "in use";
+            // any other refusal is returned at once.
+            let mut opened = BlockDevice::open_path(&cfg, 0);
+            for _ in 0..100 {
+                match &opened {
+                    Err(e) if format!("{e:?}").contains("is in use") => {
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                        opened = BlockDevice::open_path(&cfg, 0);
+                    }
+                    _ => break,
+                }
+            }
+            opened
                 .and_then(|d| {
                     d.list_segments()
                         .map_err(|e| SynapseError::new(RefusalCode::IoFailure, e.to_string()))

@@ -678,11 +678,24 @@ impl SynapseStore {
         if let Some(cfg) = blockdev_tests::redirect(&root_dir) {
             // Test hook: a directory holding `raw.device` is a raw block store (the A2
             // crash suite runs unchanged against R1; crash children reopen through here).
-            return Self::open_block_device(&cfg, fsync_policy, recovery_policy, limits);
+            return Self::open_block_device_with(
+                &cfg,
+                fsync_policy,
+                recovery_policy,
+                limits,
+                revision_seal,
+            );
         }
         fs::create_dir_all(root_dir.join("blobs")).map_err(io_err)?;
         let medium = Medium::Dir(root_dir.clone());
-        Self::open_on(root_dir, medium, fsync_policy, recovery_policy, limits)
+        Self::open_on(
+            root_dir,
+            medium,
+            fsync_policy,
+            recovery_policy,
+            limits,
+            revision_seal,
+        )
     }
 
     /// Open or initialize a store on a raw block device with no filesystem (ADR 0003
@@ -695,6 +708,18 @@ impl SynapseStore {
         fsync_policy: FsyncPolicy,
         recovery_policy: RecoveryPolicy,
         limits: StoreLimits,
+    ) -> SynapseResult<Self> {
+        Self::open_block_device_with(cfg, fsync_policy, recovery_policy, limits, None)
+    }
+
+    /// `open_block_device` with an optional revision seal (#101): the test redirect in
+    /// `open_with` keeps a sealed store sealed when it runs on a raw block device.
+    fn open_block_device_with(
+        cfg: &BlockDeviceConfig,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        revision_seal: Option<RevisionSealKey>,
     ) -> SynapseResult<Self> {
         if !fsync_policy.is_group_commit() {
             return Err(SynapseError::new(
@@ -711,6 +736,7 @@ impl SynapseStore {
             fsync_policy,
             recovery_policy,
             limits,
+            revision_seal,
         )
     }
 
@@ -728,6 +754,7 @@ impl SynapseStore {
             FsyncPolicy::GROUP_COMMIT_DEFAULT,
             recovery_policy,
             limits,
+            None,
         )
     }
 
@@ -737,6 +764,7 @@ impl SynapseStore {
         fsync_policy: FsyncPolicy,
         recovery_policy: RecoveryPolicy,
         limits: StoreLimits,
+        revision_seal: Option<RevisionSealKey>,
     ) -> SynapseResult<Self> {
         let blobs_dir = root_dir.join("blobs");
         let wal_path = root_dir.join("wal.log");
