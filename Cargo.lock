@@ -444,6 +444,7 @@ dependencies = [
  "ed25519-dalek",
  "hex",
  "libc",
+ "regex",
  "serde",
  "serde_json",
  "sha2",
