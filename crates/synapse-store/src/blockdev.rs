@@ -890,6 +890,11 @@ impl BlockDevice {
             let Some(names) = decode_meta(&meta) else {
                 continue;
             };
+            // A repair log that does not verify is never skipped: falling back to the
+            // older copy would hide a repair (or a forged one).
+            if let Some(log) = names.get(repair::REPAIR_LOG_NAME) {
+                repair::verify_repair_log(log, &sb.geo.uuid)?;
+            }
             let dev = Self {
                 io,
                 geo: sb.geo,
