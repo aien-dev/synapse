@@ -44,3 +44,13 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; fin
 test revision::b4_tests::b3_context_blob_is_stored_retained_and_required ... FAILED
 thread 'revision::b4_tests::b3_context_blob_is_stored_retained_and_required' (2892352) panicked at crates/synapse-store/src/revision.rs:1978:56:
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 61 filtered out; finished in 0.08s
+
+# Red (2026-10-19, rebase onto main 7b7797b, which added the issue #101 revision seal): the
+# seal's record digest made to skip the envelope bytes (crates/synapse-store/src/revision.rs,
+# record_digest, `let e = envelope.encode();` replaced by an empty vector), the test run, the
+# mutation reverted.
+=== M8 seal does not cover the envelope, so not the IntentRecord (crates/synapse-store/src/revision.rs)
+test revision::b4_tests::b3_sealed_replay_refuses_an_edited_intent_record ... FAILED
+  left: None
+ right: Some(WalSeq(1))
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 68 filtered out; finished in 0.02s

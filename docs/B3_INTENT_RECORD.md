@@ -41,9 +41,9 @@ All integers little-endian, `str` = `u32 len | UTF-8`, every count checked again
 | Every claim kind maps to a predicate type | `b3_every_claim_kind_maps_to_a_predicate_type` |
 | A mutation outside the declared footprint is refused | `b3_mutation_outside_declared_footprint_is_refused` (core, signed envelope and decoded bytes), `b3_api_mutation_outside_declared_footprint_is_refused` (API) |
 
-Also: `b3_api_footprint_must_lie_inside_the_propose_scope`, `b3_intent_record_round_trips_and_non_canonical_bytes_are_refused`, `b3_context_blob_is_stored_retained_and_required`, `b3_content_version_2_keeps_its_bytes_and_changeset_id`.
+Also: `b3_api_footprint_must_lie_inside_the_propose_scope`, `b3_intent_record_round_trips_and_non_canonical_bytes_are_refused`, `b3_context_blob_is_stored_retained_and_required`, `b3_content_version_2_keeps_its_bytes_and_changeset_id`, and `b3_sealed_replay_refuses_an_edited_intent_record` (the issue #101 seal covers the whole envelope, so a rewritten log that edits an admitted intent kind, claim, or footprint does not verify on sealed replay; without a seal key the same edit applies, which shows the seal is what refuses it).
 
-Red before green: `evidence/b3-intent-record/red-green/red.txt` holds one mutation per behaviour (free-text refusal, footprint containment, request scope = footprint, context blob stored, context blob retained, predicate mapping, content version), each turning its test red; `green.txt` holds the passing runs. With the API's own free-text check removed, the API test stays green because the store refuses the same envelope: the store is the authority, the API check is an early exit.
+Red before green: `evidence/b3-intent-record/red-green/red.txt` holds one mutation per behaviour (free-text refusal, footprint containment, request scope = footprint, context blob stored, context blob retained, predicate mapping, content version, seal coverage of the intent), each turning its test red; `green.txt` holds the passing runs. With the API's own free-text check removed, the API test stays green because the store refuses the same envelope: the store is the authority, the API check is an early exit.
 
 ## 5. Limits and deviations
 

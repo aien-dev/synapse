@@ -2556,4 +2556,57 @@ mod b4_tests {
         );
         assert_eq!(s.get_blob_visible(ctx, None, None).unwrap(), rationale);
     }
+
+    /// B3 with the issue #101 seal: the seal's record digest covers the whole envelope, so it
+    /// covers the `IntentRecord`. A rewritten log that changes an admitted revision's intent
+    /// kind, adds a claim, or widens its footprint (seal bytes carried over) no longer
+    /// verifies and no revision is applied (an edit also changes the `ChangesetId`, so the
+    /// check counts every revision). Controls: the unedited log replays clean, and the same
+    /// edited log replayed without a seal key applies the edited revision, so the seal is
+    /// what refuses it.
+    #[test]
+    fn b3_sealed_replay_refuses_an_edited_intent_record() {
+        let key = server_key();
+        let public = Some(key.public_key());
+        let sealing = RevisionLedger::new(public);
+        let mut record = admission(path(&[1, 2]), &[1, 2], 1);
+        let id = match &record {
+            WalRecord::RevisionAdmitted { envelope, .. } => envelope.changeset_id(),
+            _ => unreachable!(),
+        };
+        sealing.seal_record(&key, WalSeq(1), &mut record);
+        let log = vec![(WalSeq(1), record)];
+
+        let honest = RevisionLedger::from_log(log.clone(), public);
+        assert_eq!(honest.seal_report(), SealReplayReport::default());
+        assert!(honest.get_revision(&repo(), id).is_some());
+
+        let edits: [fn(&mut synapse_core::IntentRecord); 3] = [
+            |r| r.kind = synapse_core::IntentKind::Fix,
+            |r| r.claims.push(synapse_core::Claim::BehaviourUnchanged),
+            |r| r.footprint = vec!["src".into()],
+        ];
+        for edit in edits {
+            let mut edited = log.clone();
+            let WalRecord::RevisionAdmitted { envelope, .. } = &mut edited[0].1 else {
+                unreachable!()
+            };
+            let RevisionIntent::Record(r) = &mut envelope.content.intent else {
+                unreachable!()
+            };
+            let before = r.clone();
+            edit(r);
+            assert_ne!(*r, before, "the edit must change the intent record");
+            let unchecked = RevisionLedger::from_log(edited.clone(), None);
+            assert_eq!(unchecked.revisions().count(), 1);
+            let l = RevisionLedger::from_log(edited, public);
+            assert_eq!(l.seal_report().first_unsealed, Some(WalSeq(1)));
+            assert_eq!(l.seal_report().unsealed, 1);
+            assert_eq!(
+                l.revisions().count(),
+                0,
+                "the edited revision must not apply"
+            );
+        }
+    }
 }
