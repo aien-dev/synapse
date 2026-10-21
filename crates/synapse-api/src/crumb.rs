@@ -41,9 +41,9 @@ impl SynapseService {
             now_ms,
         )?;
         let payload = &req.payload;
-        let tree = self.materialize_virtual_tree(payload.target, payload.snapshot_seq)?;
-        let dir = target_dir(&tree, &payload.path)?;
-        self.resolve_crumb_context(&tree, &dir, payload.snapshot_seq)
+        let view = self.snapshot_view(payload.target, payload.snapshot_seq)?;
+        let dir = target_dir(view.tree(), &payload.path)?;
+        self.resolve_crumb_context(view.tree(), &dir, payload.snapshot_seq)
     }
 
     /// Resolve the context chain for `dir` in an already materialized `tree`. No
