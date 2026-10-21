@@ -1,0 +1,17 @@
+mutation M6: rotation writes the header before zeroing (a valid header could then sit on stale bytes)
+test: blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack
+@@ -416,8 +416,8 @@
+         // Zero and flush before the header goes in: a valid header then always sits on a
+         // zeroed slot, so data under a valid header past the committed count can only
+         // be acknowledged batches (`BlockDevice::refuse_data_past_segment_count`).
+-        dev.zero_segment(id)?;
+         dev.write_segment_header(id)?;
++        dev.zero_segment(id)?;
+         #[cfg(test)]
+         self.trace.push(SegEvent::Created(id));
+         dev.flush()?;
+---
+test blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack ... FAILED
+thread 'blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack' (2401803) panicked at crates/synapse-store/src/blockdev_tests.rs:687:19:
+op 32 prefix 0/128: truncating recovery refused with acks up to 8: SynapseError { code: CheckpointCorrupt, message: "segment slot 2 holds data past the committed segment count 1: the newest superblock copy is damaged and the older copy would drop acknowledged changes" }
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 114 filtered out; finished in 3.36s
