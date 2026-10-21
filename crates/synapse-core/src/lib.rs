@@ -188,6 +188,13 @@ pub enum RefusalCode {
     RadicleQuorumInsufficient,
     StaleBaseHead,
     SplitBrainDivergence,
+
+    // Content admission refusals
+    /// An admitted blob matches a rule of the versioned secret-scanning rule set (a private key
+    /// block, a provider token format, or a high-entropy value assigned to a secret-like name).
+    /// The refusal names the rule and byte offset only, never the matched bytes (ADR 0003
+    /// section 5.13, step M1).
+    SecretDetected,
 }
 
 /// Structured error pairing a deterministic `RefusalCode` with diagnostic context.
