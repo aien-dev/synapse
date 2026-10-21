@@ -29,6 +29,7 @@ mod crumb;
 mod derivation;
 pub use derivation::ServiceDerivationTrees;
 mod evidence;
+pub mod secret_scan;
 pub mod tree;
 pub use advisory::{
     ChangesetAdvisory, ChangesetAdvisoryPayload, CoordinationStatus, GuidanceNote,
@@ -636,6 +637,9 @@ impl SynapseService {
             req,
             now_ms,
         )?;
+        // Secret scanning (ADR 0003 section 5.13, step M1) runs here, before the store and the
+        // single writer, so a refused secret never reaches the WAL.
+        secret_scan::check_blobs(&req.payload.blobs)?;
 
         if req.payload.envelope.repo_id != self.repo_id {
             return Err(SynapseError::new(
@@ -718,6 +722,7 @@ impl SynapseService {
             ));
         }
         let authority = admission_authority(req)?;
+        secret_scan::check_blobs(blobs)?;
         self.store
             .admit_revision(envelope, blobs, authority, now_ms)
     }
