@@ -4,11 +4,17 @@
 # a claim made by either tool is refused by the other, and each sees the other in sniff.
 # I11/I12 cover the store identity marker (issue #15): crumb.c ignores STORE_ID, and a
 # misconfigured root is caught by --expect-store-id.
+# I13-I20 (aien-architecture#234) repeat the identity and hostile-file checks against the
+# hardened crumb.c (commit HARD_PIN, override with CRUMB_HARD_REV): it registers the store id
+# with `git config crumb.storeId` (or CRUMB_EXPECT_STORE_ID), refuses the same wrong or
+# unmarked roots the Rust side refuses, and refuses the same FIFO / symlink / oversize records.
+# If the checkout lacks HARD_PIN, I13-I20 are NOT_RUN and the summary line says so.
 #
 # usage: scripts/crumb-coord-interop.sh [path-to-aien-architecture-checkout]
 # needs: bash, git, cc, cargo, sha256sum, grep. No Python.
 set -u
 PIN=29780e5
+HARD_PIN=${CRUMB_HARD_REV:-dbc688c826a9443dbdc46a36d3677a11a60ce140}
 ARCH=${1:-${AIEN_ARCH:-$HOME/workspace/aien-architecture}}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -112,5 +118,98 @@ out=$("$RS" --store "$FRESH" --top /synapse/ws/rust-agent --expect-store-id "$ID
 out=$(rs --expect-store-id "$ID" claim rust-agent . src/split.c "x"); rc=$?
 [ $rc -eq 2 ] && echo "$out" | grep -q 'BLOCKED src/split.c held by c-agent' && ok "I12 expecting open on the right root sees crumb.c's claim (blocked, exit 2)" || bad "I12 right root (rc=$rc: $out)"
 
-echo "interop: $pass passed, $fail failed"
+# ---- I13-I20: the hardened crumb.c (aien-architecture#234) against the same Rust crate ----
+# Every hardened-crumb.c and Rust run below is under a watchdog (kill -9 after W seconds) and a
+# 1 GiB address-space limit, so a hang or an unbounded read is a FAIL, never a stuck script.
+W=${W:-10}
+bounded() {   # bounded <dir> <cmd...>: sets RC, OUT (stdout+stderr), HUNG
+  local d=$1; shift; local o="$T/bounded.out" pid wd; rm -f "$o.hung"
+  ( cd "$d" && ulimit -v 1048576 && exec "$@" ) > "$o" 2>&1 < /dev/null &
+  pid=$!
+  ( n=0; while kill -0 "$pid" 2>/dev/null; do n=$((n + 1)); if [ "$n" -gt $((W * 10)) ]; then : > "$o.hung"; kill -9 "$pid" 2>/dev/null; exit 0; fi; sleep 0.1; done ) &
+  wd=$!; wait "$pid"; RC=$?; wait "$wd" 2>/dev/null
+  HUNG=0; [ -e "$o.hung" ] && HUNG=1; OUT=$(cat "$o")
+}
+hard_ran=0
+if git -C "$ARCH" cat-file -e "$HARD_PIN^{commit}" 2>/dev/null && git -C "$ARCH" show "$HARD_PIN:tools/crumb/crumb.c" > "$T/hard.c" 2>/dev/null; then
+  hard_ran=1
+  echo "hardened crumb.c @ $HARD_PIN sha256 $(sha256sum "$T/hard.c" | cut -c1-64)"
+  if cc -O2 -std=c11 -Wall -Wextra -Werror -o "$T/hard" "$T/hard.c"; then ok "I13 hardened crumb.c builds clean (-Wall -Wextra -Werror)"; else bad "I13 hardened cc build"; fi
+  H="$T/hard"
+  hc() { local d=$1; shift; bounded "$d" "$H" "$@"; }
+  rsb() { bounded "$T" "$RS" --store "$1" --top /synapse/ws/rust-agent --synapse lane/main "$REV" "$BASE" --session rust-sess --no-tree "${@:2}"; }
+
+  # I13 unregistered (compatibility) mode on the shared store: works, keeps the Rust marker, warns once
+  hc "$T/wa" claim h-agent src compat.c "hardened, unregistered"
+  [ "$RC" -eq 0 ] && grep -q 'CLAIMED src/compat.c' <<<"$OUT" && grep -q "STORE_UNREGISTERED (dry run): coordination store .* is store $ID" <<<"$OUT" && ok "I13 unregistered: hardened claim works and prints the dry-run line naming $ID" || bad "I13 unregistered claim (rc=$RC: $OUT)"
+  cmp -s "$STORE/STORE_ID" "$T/marker0" && ok "I13 the Rust-written marker is byte-identical after hardened crumb.c mutations" || bad "I13 marker changed"
+  [ "$("$H" store-id "$T/wa" 2>/dev/null)" = "$ID" ] && ok "I13 crumb store-id reads the Rust-written id" || bad "I13 store-id mismatch"
+  cc_ claim c-agent src compat.c "legacy" >/dev/null; [ $? -eq 2 ] && ok "I13 legacy crumb.c @ $PIN still sees the hardened claim (exit 2)" || bad "I13 legacy vs hardened"
+  hc "$T/wa" close h-agent src compat.c modify done
+
+  # I14 a marker created by the hardened crumb.c is accepted by Rust's expecting open
+  M2="$T/m2/crumb/v1"
+  (cd "$T/wa" && CRUMB_COORD_ROOT="$M2" "$H" claim h-agent src m2.c "hardened creates the marker" >/dev/null 2>&1)
+  ID2=$(cut -d' ' -f2 "$M2/STORE_ID" 2>/dev/null)
+  grep -Eqx 'crumb-coord-store-id/1 [0-9a-f]{32}' "$M2/STORE_ID" 2>/dev/null && [ "$("$RS" --store "$M2" id)" = "$ID2" ] && ok "I14 hardened crumb.c wrote a marker in the synapse-coord format; Rust reads the same id" || bad "I14 marker format"
+  rsb "$M2" --expect-store-id "$ID2" claim rust-agent . src/m2.c x
+  [ "$RC" -eq 2 ] && grep -q 'BLOCKED src/m2.c held by h-agent' <<<"$OUT" && ok "I14 Rust expecting open accepts that marker and sees the claim (exit 2)" || bad "I14 Rust on hardened marker (rc=$RC: $OUT)"
+
+  # I15 registered: one id in git config, shared by both linked worktrees; all three agree
+  git -C "$T/rc" config crumb.storeId "$ID"
+  hc "$T/rc" --strict claim h-main src reg.c "registered, main worktree"
+  [ "$RC" -eq 0 ] && ! grep -q STORE_UNREGISTERED <<<"$OUT" && ok "I15 registered + strict: hardened claim from the main worktree, no warning" || bad "I15 registered claim (rc=$RC: $OUT)"
+  hc "$T/wa" --strict claim h-lane src reg.c "registered, linked worktree"
+  [ "$RC" -eq 2 ] && grep -q 'BLOCKED src/reg.c held by h-main on branch main' <<<"$OUT" && ok "I15 linked worktree reads the same registered id and is blocked by the same holder" || bad "I15 linked worktree (rc=$RC: $OUT)"
+  rsb "$STORE" --expect-store-id "$ID" claim rust-agent . src/reg.c x
+  [ "$RC" -eq 2 ] && grep -q 'BLOCKED src/reg.c held by h-main on branch main' <<<"$OUT" && ok "I15 Rust expecting the same id agrees on the holder" || bad "I15 Rust holder (rc=$RC: $OUT)"
+
+  # I16 the same deliberately wrong registered root is refused by both tools, nothing written
+  WID=$("$RS" --store "$WRONG" id); before=$(find "$WRONG" -type f -exec cksum {} + | sort | cksum)
+  bounded "$T/wa" env CRUMB_COORD_ROOT="$WRONG" "$H" claim h-lane src split3.c x
+  c_rc=$RC; c_out=$OUT
+  rsb "$WRONG" --expect-store-id "$ID" claim rust-agent . src/split3.c x
+  [ "$c_rc" -eq 3 ] && grep -q "STORE_ID_MISMATCH: coordination store .* is store $WID, expected $ID" <<<"$c_out" && ok "I16 hardened crumb.c refuses the wrong root (exit 3, STORE_ID_MISMATCH)" || bad "I16 C wrong root (rc=$c_rc: $c_out)"
+  [ "$RC" -eq 1 ] && grep -q "is store $WID, expected $ID; refusing" <<<"$OUT" && ok "I16 Rust refuses the same root (exit 1)" || bad "I16 Rust wrong root (rc=$RC: $OUT)"
+  [ "$(find "$WRONG" -type f -exec cksum {} + | sort | cksum)" = "$before" ] && ok "I16 wrong root byte-identical after both refusals" || bad "I16 wrong root changed"
+
+  # I17 the same root without a marker (written by legacy crumb.c only) is refused by both, neither creates one
+  bounded "$T/wa" env CRUMB_COORD_ROOT="$FRESH" "$H" claim h-lane src nomark.c x
+  c_rc=$RC; c_out=$OUT
+  rsb "$FRESH" --expect-store-id "$ID" claim rust-agent . src/nomark.c x
+  [ "$c_rc" -eq 3 ] && grep -q 'STORE_ID_MISSING' <<<"$c_out" && [ "$RC" -eq 1 ] && grep -q 'has no STORE_ID marker; refusing' <<<"$OUT" && [ ! -e "$FRESH/STORE_ID" ] && ok "I17 unmarked root: crumb.c exit 3 STORE_ID_MISSING, Rust exit 1, no marker created" || bad "I17 unmarked root (C rc=$c_rc, Rust rc=$RC)"
+
+  # I18 strict mode refuses an unregistered repository before creating anything
+  mkdir "$T/ur" && (cd "$T/ur" && git init -q . )
+  bounded "$T/ur" env -u CRUMB_COORD_ROOT CRUMB_STRICT_STORE_ID=1 "$H" claim h-x . f.c x
+  [ "$RC" -eq 3 ] && grep -q STORE_UNREGISTERED <<<"$OUT" && [ ! -e "$T/ur/.git/crumb" ] && ok "I18 strict mode refuses an unregistered repo (exit 3), no store created" || bad "I18 strict unregistered (rc=$RC: $OUT)"
+
+  # I19 hostile records: both tools refuse the same FIFO, /dev/zero symlink and oversize record, bounded
+  REC="$STORE/dirs/src.json"; mv "$REC" "$T/src.aside"
+  hostile() {   # hostile <label> <reason regex>
+    hc "$T/wa" sniff h-lane src; c_rc=$RC; c_h=$HUNG; c_out=$OUT
+    rsb "$STORE" --expect-store-id "$ID" sniff rust-agent src
+    [ "$c_h" -eq 0 ] && [ "$c_rc" -eq 4 ] && grep -Eq "REFUSED_RECORD: .*src.json $2; refusing to read it" <<<"$c_out" && ok "I19 $1: hardened crumb.c refuses (exit 4, REFUSED_RECORD), no hang" || bad "I19 $1 C (rc=$c_rc hung=$c_h: $(head -c 200 <<<"$c_out"))"
+    [ "$HUNG" -eq 0 ] && [ "$RC" -eq 1 ] && grep -Eq "src.json $2; refusing to read it" <<<"$OUT" && ok "I19 $1: Rust refuses with the same reason, no hang" || bad "I19 $1 Rust (rc=$RC hung=$HUNG: $(head -c 200 <<<"$OUT"))"
+  }
+  mkfifo "$REC"; hostile "FIFO record" 'is a fifo, not a regular file'; [ -p "$REC" ] || bad "I19 FIFO replaced"
+  rm -f "$REC"; ln -s /dev/zero "$REC"; hostile "record symlinked to /dev/zero" 'is a symbolic link'
+  rm -f "$REC"; { printf '{"schema_version": "1.0.0", "directory": "src", "pad": "'; head -c 1100000 /dev/zero | tr '\0' x; printf '"}\n'; } > "$REC"
+  hostile "record over 1 MiB" 'is larger than 1048576 bytes'
+  rm -f "$REC"; mv "$T/src.aside" "$REC"
+  hc "$T/wa" --strict sniff h-lane src
+  [ "$RC" -eq 0 ] && grep -q 'lock    src/reg.c .*held by h-main' <<<"$OUT" && ok "I19 record moved back: both tools work again" || bad "I19 restore (rc=$RC)"
+
+  # I20 byte format parity after the hardened crumb.c has written: Rust parse+print is still the identity
+  hc "$T/rc" close h-main src reg.c modify "registered done"
+  n=0; same=0
+  for f in $(find "$STORE/dirs" "$STORE/agents" -name '*.json'); do n=$((n + 1)); "$RS" canon "$f" | cmp -s - "$f" && same=$((same + 1)); done
+  [ $n -gt 0 ] && [ $n -eq $same ] && ok "I20 all $n records byte-identical after Rust re-serialization (hardened crumb.c wrote last)" || bad "I20 format drift ($same of $n identical)"
+  cmp -s "$STORE/STORE_ID" "$T/marker0" && [ -z "$(git -C "$T/wa" status --porcelain)" ] && ok "I20 marker unchanged and worktree untouched at the end" || bad "I20 final state"
+else
+  echo "NOT_RUN I13-I20: $ARCH has no commit $HARD_PIN (set CRUMB_HARD_REV to the hardened crumb.c commit)"
+fi
+
+[ $hard_ran -eq 1 ] && hard="hardened crumb.c @ $HARD_PIN checked" || hard="hardened crumb.c NOT_RUN"
+echo "interop: $pass passed, $fail failed ($hard)"
 [ $fail -eq 0 ]
