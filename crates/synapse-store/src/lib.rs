@@ -37,6 +37,8 @@ mod blockdev_tests;
 pub mod codec;
 #[cfg(test)]
 mod group_tests;
+#[cfg(test)]
+mod j1_corpus;
 mod revision;
 pub mod seal;
 pub mod segment;
