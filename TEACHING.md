@@ -16,3 +16,8 @@ cargo test --locked --offline --lib -p synapse-bench conformance::tests::git_sui
 ```
 
 Expected exit is 0 with the named test passed. It asserts all seven Git suite cases, including the corrupt-object negative case. [TEACHING-REPLAY.txt](TEACHING-REPLAY.txt) records the observed attempt and whether dependencies were available. This is a host fixture, not a live Radicle promotion or full service deployment. The [qualification report](docs/GATE4_QUALIFICATION.md) and [pipeline](docs/PIPELINE.md) cover broader, separately pinned claims.
+
+
+### Parent fresh-checkout replay
+
+A separate coordination replay is retained in [the parent receipt](docs/parent-replay-2026-10-22.txt). Its scope and observed exit are explicit; source review and final desk qualification remain separate. A recorded absence or expected failing baseline is not a passing implementation.

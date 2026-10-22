@@ -1,0 +1,75 @@
+2026-10-22 parent coordination replay
+Repository: aien-dev/synapse
+Exact executable source: 5b732e5d353bbcc3f6d0cd1eac60f2e543601521
+Observed exit: 0; expected by the documented bounded recipe: 0
+Scope: Host Git conformance fixture passed 7 cases; no live Radicle promotion
+
+This is a separate fresh temporary checkout, not reuse of the author build directory. Git objects may be shared as immutable source storage; compiled outputs were not copied. The original author receipt is preserved. This replay is not a fresh-context source review, full repository suite, protected-branch admission, live service check, security audit or physical-hardware qualification. The website's nonzero baseline is a retained FAIL, not a passing product build. Missing implementation inspections remain absence checks, not executed features.
+Host: Spark Linux7.0.0-1019-nvidia aarch64; relevant tool versions appear below. Builds were run serially via quiet-build.
+
+RAW OBSERVED OUTPUT:
+PARENT FRESH REPLAY
+REPO aien-dev/synapse
+SOURCE 5b732e5d353bbcc3f6d0cd1eac60f2e543601521
+COMMAND
+cargo test --locked --offline --lib -p synapse-bench conformance::tests::git_suite_cases_pass -- --exact
+
+ENVIRONMENT
+Linux aarch64
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+rustc 1.98.1 (48a229cea 2026-09-01)
+5b732e5d353bbcc3f6d0cd1eac60f2e543601521
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling libc v0.2.189
+   Compiling find-msvc-tools v0.1.14
+   Compiling shlex v2.0.1
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling semver v1.0.28
+   Compiling unicode-ident v1.0.26
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling subtle v2.6.1
+   Compiling zeroize v1.9.0
+   Compiling serde_json v1.0.151
+   Compiling signature v2.2.0
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling hex v0.4.3
+   Compiling cc v1.8.0
+   Compiling ed25519 v2.2.3
+   Compiling rustc_version v0.4.1
+   Compiling generic-array v0.14.7
+   Compiling curve25519-dalek v4.1.3
+   Compiling syn v3.0.6
+   Compiling cpufeatures v0.2.17
+   Compiling synapse-coord v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-coord)
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling sha2-asm v0.6.4
+   Compiling digest v0.10.7
+   Compiling sha1 v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling ed25519-dalek v2.2.0
+   Compiling serde_derive v1.0.229
+   Compiling synapse-core v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-core)
+   Compiling synapse-auth v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-auth)
+   Compiling synapse-crumb v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-crumb)
+   Compiling synapse-evidence v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-evidence)
+   Compiling synapse-store v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-store)
+   Compiling synapse-api v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-api)
+   Compiling synapse-radicle v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-radicle)
+   Compiling synapse-wire v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-wire)
+   Compiling synapse-git v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-git)
+   Compiling synapse-bench v0.1.0 (/home/drakestapleton/workspace/hermes-desk/teaching-parent-20261022/synapse/crates/synapse-bench)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.27s
+     Running unittests src/lib.rs (target/debug/deps/synapse_bench-ff0e3b8f4bedcee0)
+
+running 1 test
+test conformance::tests::git_suite_cases_pass ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 75 filtered out; finished in 0.28s
+
