@@ -82,7 +82,7 @@ Verdicts: **Adopt** (take the idea as is), **Adapt** (take the idea, change the 
 | Fossil: integrated tickets, wiki, forum [S10] | Reject | N8 | Human collaboration features; agents reference tasks by typed IDs (section 5.2) |
 | Radicle: signed refs, identity document, delegate threshold [S11] | Adopt | N10 | Machine-verifiable quorum for canonical promotion; delegates can be machines |
 | Radicle: collaborative objects as Git commit graphs [S11] | Reject | N9 | Synapse stores its own records natively; Git encoding only at the bridge |
-| Google Piper and CitC: server-side workspaces that overlay only changed files [S12] | Adopt | N1, N2, N3 | A fork is a pointer plus an overlay, so speculative attempts cost almost nothing. Adopted on our own measurements (Gate 0, Gate 4 G1); the Google source is secondary (primary paper not fetched) and no Google figure is relied on |
+| Google Piper and CitC: server-side workspaces that overlay only changed files [S12] | Adopt | N1, N2, N3 | A fork is a pointer plus an overlay, so speculative attempts cost almost nothing. Adopted on my own measurements (Gate 0, Gate 4 G1); the Google source is secondary (primary paper not fetched) and no Google figure is relied on |
 | Google: trunk-based development, few branches [S12] | Adopt | N5 | One canonical line; everything else is short-lived stacked changes |
 | Scion: per-agent container with its own worktree or clone and credentials [S13] | Adapt | N7 | Keep per-agent scoped credentials; reject its workspace model, which uses worktrees or clones, the cost Gate 0 measured. (The brief named it "Anthropic Scion"; the repository is GoogleCloudPlatform/scion and states it is not an officially supported Google product.) |
 | Bazel Remote Execution: Action = digest of command plus input root; action cache; FindMissingBlobs [S14] | Adopt | N4, N3, N9 | Evidence keyed by exact input digests; repeated tests on identical inputs reuse results; only missing content is sent |
@@ -249,7 +249,7 @@ What Omega needs, as dependencies:
 | Energy instrument | `aien_spbm` hwmon driver on the Linux host (section 6.2) | Availability under AIENOS: UNVERIFIED |
 | Omega able to express all of the above | Omega is research-grade and pre-alpha, not self-hosting, with no general compiler yet (omega README, 2026-10-14) | Omega's current capability for this port: UNVERIFIED |
 
-Omega code gets one more native benefit: Omega already identifies programs by `SEMANTIC_ID` (SHA-256 of the canonical encoding). Synapse can store Omega definitions by that identity, so equivalent Omega programs collapse to one object and evidence attaches to meaning rather than to text (the Unison idea [S16], applied to our own language). Candidate X8.
+Omega code gets one more native benefit: Omega already identifies programs by `SEMANTIC_ID` (SHA-256 of the canonical encoding). Synapse can store Omega definitions by that identity, so equivalent Omega programs collapse to one object and evidence attaches to meaning rather than to text (the Unison idea [S16], applied to my own language). Candidate X8.
 
 ### 5.13 Leaked secrets (N15)
 

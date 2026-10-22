@@ -29,7 +29,7 @@ real raw partition (section 7).
 - **Length.** The device length must be a multiple of 4 KiB and hold the label area, two metadata
   regions, and at least two segment slots.
 
-### 1.1 Refusing a disk that is not ours
+### 1.1 Refusing a disk that is not mine
 
 Before anything is written, the device is classified (`classify_device`) from its label area (the first
 128 KiB) and from fixed offsets near its end:
