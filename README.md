@@ -1,3 +1,7 @@
+<!-- github-native-navigation -->
+[Source](https://github.com/aien-dev/synapse) · [Walkthrough](TEACHING.md) · [Replay receipt](TEACHING-REPLAY.txt) · [Issues](https://github.com/aien-dev/synapse/issues)
+<!-- /github-native-navigation -->
+
 # Synapse
 
 Synapse is AIEN's high-throughput, agent-native changeset and integration service with deterministic Git object materialization and Radicle canonicality verification ([aien-spark/aien-sovereign-core#515](https://github.com/aien-spark/aien-sovereign-core/issues/515)).
