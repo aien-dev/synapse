@@ -1,0 +1,24 @@
+# Teaching replay record, 2026-10-22
+
+Repository: `aien-dev/synapse`
+Base source revision: `5b732e5d353bbcc3f6d0cd1eac60f2e543601521` (fresh detached Spark checkout; documentation branch is a separate checkout)
+Host: `spark-b87b`, Linux 7.0.0-1019-nvidia aarch64
+Tools: gcc 13.3.0, git 2.43.0, QEMU 8.2.2, Rust/cargo 1.98.1 (only relevant tools used)
+Invocation: `quiet-build` wrapped CPU-heavy compilation where used; it does not change the test's assertion.
+
+From a fresh checkout detached at the base revision:
+
+```sh
+cargo test --locked --offline --lib -p synapse-bench conformance::tests::git_suite_cases_pass -- --exact
+```
+
+Observed process exit: `0`
+Observed result: 1 named test passed; 75 filtered out
+Raw stdout/stderr: [TEACHING-REPLAY.raw.txt](TEACHING-REPLAY.raw.txt) (SHA-256 `ee2bba7fe83210bc689b1c792c7225542631347ad36074db58e206bef1e93027`).
+
+Source file hashes at the tested base:
+- `crates/synapse-bench/src/conformance.rs`: SHA-256 `0a959db871e86b882afd7b930aa91d2d067206e14d65efbb565367aa84da7965`
+- `crates/synapse-api/src/lib.rs`: SHA-256 `345161c8bf930e6952455dd60d89160b4c46f221ff6fa2b4bfd9165c48966432`
+- `crates/synapse-git/src/lib.rs`: SHA-256 `aa475f6906c3e0e45c6bee9cc4342d43dd311080ff553d5c63622e78bf26ee14`
+
+Limits: this is a scoped fixture, not a qualification of unrelated gates or physical hardware. The Omega program fixture is separate from OSC source compilation. No model was loaded.

@@ -4,6 +4,10 @@ Synapse is AIEN's high-throughput, agent-native changeset and integration servic
 
 **Direction (2026-10-14):** Synapse is becoming the new Git for AI: source control for AI agents only, built from the best ideas of every system, with Git kept as a small machine bridge for import, export, and existing tooling ([ADR 0002](docs/adr/0002-synapse-first-git-as-bridge.md), tracked in [aien-spark/synapse#8](https://github.com/aien-spark/synapse/issues/8)).
 
+## How I built it: a small result you can reproduce
+
+I follow a changeset from submission and WAL persistence to a checkout-free tree and standard Git objects. [The worked lesson](TEACHING.md) includes a corrupt-object refusal; [the replay record](TEACHING-REPLAY.txt) is a host fixture, separate from canonical Radicle promotion.
+
 ## Architecture Overview
 
 Synapse accelerates the high-frequency multi-agent inner loop (changeset creation, virtual tree/diff inspection without working-tree checkout, test evidence attachment, conflict detection, and integration queueing) while enforcing three non-negotiable boundaries:
