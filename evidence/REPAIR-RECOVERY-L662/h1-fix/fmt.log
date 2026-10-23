@@ -1,0 +1,66 @@
+Diff in /home/drakestapleton/workspace/hermes-loop-synapse-H1-L664/crates/synapse-git/src/repo.rs:203:
+     visiting: &mut BTreeSet<String>,
+ ) -> SynapseResult<GitOid> {
+     if !valid_ref_name(name) {
+-        return Err(corrupt(format!("invalid symbolic reference target {name:?}")));
++        return Err(corrupt(format!(
++            "invalid symbolic reference target {name:?}"
++        )));
+     }
+     if !visiting.insert(name.to_string()) {
+         return Err(corrupt(format!("symbolic reference cycle at {name}")));
+Diff in /home/drakestapleton/workspace/hermes-loop-synapse-H1-L664/crates/synapse-git/src/repo.rs:429:
+         }
+         let mut refs = BTreeMap::new();
+         for name in ref_values.keys() {
+-            refs.insert(name.clone(), resolve_ref(name, &ref_values, &mut BTreeSet::new())?);
++            refs.insert(
++                name.clone(),
++                resolve_ref(name, &ref_values, &mut BTreeSet::new())?,
++            );
+         }
+         let head = match self.head_state()? {
+             HeadState::Symbolic(name) => Some(name),
+Diff in /home/drakestapleton/workspace/hermes-loop-synapse-H1-L664/crates/synapse-git/tests/h1_git_bridge.rs:300:
+     build_fixture(&dir);
+     let packed_target = git_text(&dir, &["rev-parse", "refs/heads/main"]);
+     let loose_target = git_text(&dir, &["rev-parse", "refs/heads/feature"]);
+-    git(&dir, &["update-ref", "refs/remotes/origin/main", &packed_target]);
++    git(
++        &dir,
++        &["update-ref", "refs/remotes/origin/main", &packed_target],
++    );
+     git(&dir, &["pack-refs", "--all"]);
+     // The loose symbolic ref shadows the packed direct ref of the same name.
+     git(
+Diff in /home/drakestapleton/workspace/hermes-loop-synapse-H1-L664/crates/synapse-git/tests/h1_git_bridge.rs:328:
+         ],
+     );
+ 
+-    let (refs, _) = GitRepository::open(&dir.join(".git")).unwrap().refs().unwrap();
++    let (refs, _) = GitRepository::open(&dir.join(".git"))
++        .unwrap()
++        .refs()
++        .unwrap();
+     let resolved = GitOid::from_hex(&loose_target).unwrap();
+     for name in [
+         "refs/remotes/origin/HEAD",
+Diff in /home/drakestapleton/workspace/hermes-loop-synapse-H1-L664/crates/synapse-git/tests/h1_git_bridge.rs:362:
+         let dir = temp_dir(label);
+         build_fixture(&dir);
+         for (name, target) in aliases {
+-            write(&dir.join(".git"), name, format!("ref: {target}\n").as_bytes());
++            write(
++                &dir.join(".git"),
++                name,
++                format!("ref: {target}\n").as_bytes(),
++            );
+         }
+-        let err = GitRepository::open(&dir.join(".git")).unwrap().refs().unwrap_err();
++        let err = GitRepository::open(&dir.join(".git"))
++            .unwrap()
++            .refs()
++            .unwrap_err();
+         assert_eq!(err.code, RefusalCode::GitObjectCorrupt, "{label}: {err}");
+         fs::remove_dir_all(&dir).unwrap();
+     }
