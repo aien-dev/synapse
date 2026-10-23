@@ -836,9 +836,11 @@ fn write_backup(
     };
     f.write_all(&body).map_err(io_err)?;
     f.sync_all().map_err(io_err)?;
-    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-        File::open(dir).and_then(|d| d.sync_all()).map_err(io_err)?;
-    }
+    let dir = path
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    File::open(dir).and_then(|d| d.sync_all()).map_err(io_err)?;
     Ok(())
 }
 

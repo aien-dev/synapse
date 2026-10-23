@@ -1410,6 +1410,26 @@ mod repair_tests {
     }
 
     #[test]
+    fn r1_repair_bare_relative_backup_is_created_and_verified() {
+        let (io, _, _) = damaged_fixture();
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let backup = PathBuf::from(format!(
+            "relative-repair-backup-{}-{nonce}.bin",
+            std::process::id()
+        ));
+        assert!(!backup.exists());
+        let receipt = repair(&io, RepairAction::RollForward, &operator(), &backup, NOW).unwrap();
+        assert!(receipt.wrote);
+        assert!(!read_backup(&backup).unwrap().sections.is_empty());
+        fs::remove_file(&backup).unwrap();
+        // The paired syscall-trace regression additionally requires the real parent
+        // directory fsync after the backup file fsync, including for this bare name.
+    }
+
+    #[test]
     fn r1_repair_backup_overflow_length_is_refused_without_panicking() {
         let dir = temp_dir("repair-backup-overflow");
         let path = dir.join("overflow.backup");
