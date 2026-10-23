@@ -1,0 +1,18 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_store-67e309c4eb45f3e9)
+
+running 1 test
+test blockdev_tests::repair_tests::r1_repair_parent_drop_releases_lock_despite_inherited_helper_fd ... 
+thread 'blockdev_tests::repair_tests::r1_repair_parent_drop_releases_lock_despite_inherited_helper_fd' (1939164) panicked at crates/synapse-store/src/blockdev_tests.rs:1494:13:
+a helper that never uses the device retained the departed owner's lock: Err(SynapseError { code: IoFailure, message: "/home/drakestapleton/handoffs/L662-behavioral-red/tmp/synapse-store-test-r1-repair-inherited-lock-1939162-1792738899135273740/device.img is in use: another opener holds its exclusive lock" })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    blockdev_tests::repair_tests::r1_repair_parent_drop_releases_lock_despite_inherited_helper_fd
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 138 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p synapse-store --lib`
