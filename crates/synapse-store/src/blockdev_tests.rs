@@ -1410,6 +1410,30 @@ mod repair_tests {
     }
 
     #[test]
+    fn r1_repair_backup_overflow_length_is_refused_without_panicking() {
+        let dir = temp_dir("repair-backup-overflow");
+        let path = dir.join("overflow.backup");
+        let mut body = b"SYNREPAIRBAK001\n".to_vec();
+        body.extend_from_slice(&[0u8; 16]);
+        body.extend_from_slice(&1u32.to_le_bytes());
+        body.extend_from_slice(&0u64.to_le_bytes());
+        body.extend_from_slice(&u64::MAX.to_le_bytes());
+        let digest = sha(&body);
+        body.extend_from_slice(&digest);
+        fs::write(&path, &body).unwrap();
+        assert!(
+            read_backup(&path).is_err(),
+            "an impossible section length must be refused"
+        );
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            body,
+            "a refused backup must not change"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn r1_repair_refuses_a_foreign_device() {
         let mut img = vec![0u8; 4 << 20];
         img[510] = 0x55;
@@ -1420,6 +1444,56 @@ mod repair_tests {
         assert!(repair(&io, RepairAction::RollForward, &operator(), &b, NOW).is_err());
         assert_eq!(writes(&io), 0);
         assert!(!b.exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn r1_repair_parent_drop_releases_lock_despite_inherited_helper_fd() {
+        let dir = temp_dir("repair-inherited-lock");
+        let path = dir.join("device.img");
+        fs::File::create(&path).unwrap().set_len(4 * BLOCK).unwrap();
+        let io = DirectFile::open(&path).unwrap();
+        let mut ready = [0i32; 2];
+        let mut release = [0i32; 2];
+        // The child models a helper between fork and exec. It runs only async-signal-safe
+        // libc calls, never accesses the device, and closes on parent EOF as well.
+        unsafe {
+            assert_eq!(libc::pipe2(ready.as_mut_ptr(), libc::O_CLOEXEC), 0);
+            assert_eq!(libc::pipe2(release.as_mut_ptr(), libc::O_CLOEXEC), 0);
+            let pid = libc::fork();
+            if pid == 0 {
+                libc::close(ready[0]);
+                libc::close(release[1]);
+                let sent = libc::write(ready[1], b"r".as_ptr().cast(), 1);
+                libc::close(ready[1]);
+                let mut byte = 0u8;
+                let received = libc::read(release[0], (&mut byte as *mut u8).cast(), 1);
+                libc::close(release[0]);
+                libc::_exit(if sent == 1 && received == 1 { 0 } else { 1 });
+            }
+            if pid < 0 {
+                for fd in ready.into_iter().chain(release) {
+                    libc::close(fd);
+                }
+                panic!("fork failed");
+            }
+            libc::close(ready[1]);
+            libc::close(release[0]);
+            let mut byte = 0u8;
+            let received = libc::read(ready[0], (&mut byte as *mut u8).cast(), 1);
+            libc::close(ready[0]);
+            // The helper is alive with the inherited descriptor, but the actual owner
+            // is gone. Capture the result, then reap the child before any assertion.
+            drop(io);
+            let reopened = DirectFile::open(&path);
+            let sent = libc::write(release[1], b"x".as_ptr().cast(), 1);
+            libc::close(release[1]);
+            let mut status = 0;
+            let waited = libc::waitpid(pid, &mut status, 0);
+            assert_eq!((received, sent, waited, status), (1, 1, pid, 0));
+            assert!(reopened.is_ok(), "a helper that never uses the device retained the departed owner's lock: {reopened:?}");
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

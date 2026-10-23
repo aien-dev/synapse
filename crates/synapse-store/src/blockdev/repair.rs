@@ -775,20 +775,27 @@ pub fn read_backup(path: &Path) -> SynapseResult<Backup> {
     }
     let device_uuid: [u8; 16] = body[16..32].try_into().expect("16");
     let n = u32::from_le_bytes(body[32..36].try_into().expect("4"));
-    let mut at = 36;
+    let mut at = 36usize;
     let mut sections = Vec::new();
     for _ in 0..n {
+        let data_start = at
+            .checked_add(16)
+            .ok_or_else(|| refuse("repair backup section header overflow"))?;
         let hdr = body
-            .get(at..at + 16)
+            .get(at..data_start)
             .ok_or_else(|| refuse("truncated repair backup"))?;
         let offset = u64::from_le_bytes(hdr[..8].try_into().expect("8"));
-        let len = u64::from_le_bytes(hdr[8..].try_into().expect("8")) as usize;
+        let len = usize::try_from(u64::from_le_bytes(hdr[8..].try_into().expect("8")))
+            .map_err(|_| refuse("repair backup section length does not fit this host"))?;
+        let end = data_start
+            .checked_add(len)
+            .ok_or_else(|| refuse("repair backup section length overflow"))?;
         let bytes = body
-            .get(at + 16..at + 16 + len)
+            .get(data_start..end)
             .ok_or_else(|| refuse("truncated repair backup"))?
             .to_vec();
         sections.push(BackupSection { offset, bytes });
-        at += 16 + len;
+        at = end;
     }
     Ok(Backup {
         device_uuid,

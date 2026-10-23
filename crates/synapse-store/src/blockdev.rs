@@ -241,6 +241,16 @@ impl DirectFile {
     }
 }
 
+impl Drop for DirectFile {
+    fn drop(&mut self) {
+        // flock belongs to an open file description, which a helper briefly inherits
+        // between fork and exec. Release our advisory lock explicitly before close so
+        // that helper cannot retain it after this actual owner has gone away.
+        // Arc owners still keep this wrapper alive until its final drop.
+        let _ = self.file.unlock();
+    }
+}
+
 impl BlockIo for DirectFile {
     fn len(&self) -> u64 {
         self.len
