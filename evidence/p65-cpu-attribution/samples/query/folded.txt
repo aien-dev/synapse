@@ -1,0 +1,56 @@
+stack samples (all threads stopped): 800
+thread-samples with run_leg on stack: 793 (run 785)
+
+# state
+    785  run
+      6  wait:__libc_open64 <- std::sys::fs::unix::{impl#20}::open_c::{closure#0}@unix.rs:1390
+      1  wait:__GI___libc_read
+      1  wait:__GI_fsync <- std::fs::File::sync_all@fs.rs:780
+
+# phase (callee under anchor) | run or wait
+    516  measure<synapse_bench::pmu_diag::query_window::{closure_env#0}>@pmu_diag.rs | run
+    267  {closure#0}@pmu_diag.rs | run
+      6  measure<synapse_bench::pmu_diag::query_window::{closure_env#0}>@pmu_diag.rs | wait
+      2  query_prepare@pmu_diag.rs | run
+      1  query_prepare@pmu_diag.rs | wait
+      1  {closure#0}@pmu_diag.rs | wait
+
+# leaf (self) of run samples
+    263  serde_json
+    184  curve25519-dalek
+     85  rust:alloc
+     69  libc:mem*
+     47  serde_core
+     26  signature
+     25  synapse-auth:lib.rs
+     22  ed25519-dalek
+     14  libc:malloc/free
+     13  itoa
+     10  sha2
+      8  subtle
+      6  synapse-core:lib.rs
+      6  synapse-api:lib.rs
+      3  synapse-api:tree.rs
+      2  sha1
+      1  synapse-store:lib.rs
+      1  synapse-core:tree.rs
+
+# inclusive crate presence in run samples
+    785  synapse-bench
+    655  synapse-api
+    417  serde_json
+    417  serde_core
+    358  synapse-auth
+    249  synapse-core
+    184  curve25519-dalek
+    164  rust
+     83  libc
+     33  signature
+     25  ed25519-dalek
+     13  itoa
+     13  digest
+     13  block-buffer
+     11  sha2
+      9  synapse-store
+      8  subtle
+      2  sha1
