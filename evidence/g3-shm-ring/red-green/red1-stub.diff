@@ -1,0 +1,95 @@
+--- /tmp/g3red/ring.rs.orig	2026-10-16 03:46:19.566396941 -0500
++++ /tmp/g3red/ring.rs.red1	2026-10-16 03:46:19.568696686 -0500
+@@ -600,75 +600,17 @@
+ 
+     /// Copy the next record into `out` (replacing its contents) if one is published.
+     pub fn try_recv(&mut self, out: &mut Vec<u8>) -> Result<RecvStatus, RingRefusal> {
+-        if let Some(r) = &self.poisoned {
+-            return Err(r.clone());
+-        }
+-        // Closed first, then head: a sender stores head before closed (both release), so
+-        // seeing closed means the head loaded next is final.
++        // RED STUB 1: trusts the writer (no index, length, torn or sequence checks).
+         let closed = self.view.ctl(layout::CLOSED).load(Ordering::Acquire) != 0;
+         let head = self.view.ctl(layout::HEAD).load(Ordering::Acquire);
+-        if !head.is_multiple_of(8) {
+-            return Err(self.poison(RingRefusal::IndexMisaligned {
+-                which: "head",
+-                found: head,
+-            }));
+-        }
+-        let cap = self.cfg.capacity as u64;
+-        let available = head.wrapping_sub(self.tail);
+-        if available > cap {
+-            return Err(self.poison(RingRefusal::IndexOutOfRange {
+-                which: "head",
+-                found: head,
+-                low: self.tail,
+-                high: self.tail.wrapping_add(cap),
+-            }));
+-        }
+-        if available < self.head_seen.wrapping_sub(self.tail) {
+-            return Err(self.poison(RingRefusal::IndexRegressed {
+-                found: head,
+-                seen: self.head_seen,
+-            }));
+-        }
+-        self.head_seen = head;
+-        if available == 0 {
++        if head == self.tail {
+             return Ok(if closed {
+                 RecvStatus::Closed
+             } else {
+                 RecvStatus::Empty
+             });
+         }
+-        if available < RECORD_HEADER_LEN as u64 {
+-            return Err(self.poison(RingRefusal::TornRecord {
+-                need: RECORD_HEADER_LEN as u64,
+-                available,
+-            }));
+-        }
+-        // Each header word is loaded once; the checks and the copy use these locals.
+-        let len = self.view.data(self.tail).load(Ordering::Relaxed);
+-        let seq = self
+-            .view
+-            .data(self.tail.wrapping_add(8))
+-            .load(Ordering::Relaxed);
+-        if len > self.cfg.max_record as u64 {
+-            return Err(self.poison(RingRefusal::LengthOverCap {
+-                declared: len,
+-                cap: self.cfg.max_record as u64,
+-            }));
+-        }
+-        let len = len as usize;
+-        let span = record_span(len) as u64;
+-        if span > available {
+-            return Err(self.poison(RingRefusal::TornRecord {
+-                need: span,
+-                available,
+-            }));
+-        }
+-        if seq != self.seq {
+-            return Err(self.poison(RingRefusal::SequenceMismatch {
+-                expected: self.seq,
+-                found: seq,
+-            }));
+-        }
++        let len = self.view.data(self.tail).load(Ordering::Relaxed) as usize;
+         out.clear();
+         out.reserve(len);
+         let mut at = self.tail.wrapping_add(RECORD_HEADER_LEN as u64);
+@@ -680,11 +622,9 @@
+             left -= n;
+             at = at.wrapping_add(8);
+         }
+-        self.tail = self.tail.wrapping_add(span);
++        self.tail = self.tail.wrapping_add((RECORD_HEADER_LEN + len.div_ceil(8) * 8) as u64);
+         self.seq += 1;
+-        self.view
+-            .ctl(layout::TAIL)
+-            .store(self.tail, Ordering::Release);
++        self.view.ctl(layout::TAIL).store(self.tail, Ordering::Release);
+         Ok(RecvStatus::Record)
+     }
+ 

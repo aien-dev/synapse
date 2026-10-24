@@ -1,0 +1,12 @@
+--- /tmp/g3red/ring.rs.orig	2026-10-16 03:46:19.566396941 -0500
++++ /tmp/g3red/ring.rs.red2	2026-10-16 03:49:30.630784992 -0500
+@@ -418,7 +418,8 @@
+     /// The data word holding byte index `index` (a multiple of 8). The mask keeps the
+     /// position inside the data area for every `index`; the slice index is bounds-checked.
+     fn data(&self, index: u64) -> &AtomicU64 {
+-        let pos = ((index / 8) & self.data_mask) as usize;
++        // RED STUB 2: no mask; the position is used as given.
++        let pos = (index / 8) as usize;
+         &self.region.words()[self.base + CONTROL_WORDS + pos]
+     }
+ 

@@ -1,18 +1,30 @@
-//! G1 transport measurement: seconds and joules per accepted change across the wire
-//! transport (Unix socket, binary frames, have-want negotiation), against the ADR 0003
-//! section 6 bound for one durable change (`docs/PHASE5_GROUP_COMMIT.md` section 5).
+//! G1 and G3 transport measurement: seconds and joules per accepted change across the wire
+//! transports (Unix socket or shared-memory ring, binary frames, have-want negotiation),
+//! against the ADR 0003 section 6 bound for one durable change
+//! (`docs/PHASE5_GROUP_COMMIT.md` section 5).
 //!
 //! ```text
 //! wire-transport --out DIR [--changes N] [--reps R] [--idle-s S] [--store-root DIR]
+//!                [--arms wire,ring,direct_auth,direct] [--step G1|G3] [--rule FILE]
+//!                [--echo N]
 //! ```
 //!
-//! Three arms per repetition, order rotated, each on a fresh store directory with
-//! `GROUP_COMMIT_DEFAULT` and one agent submitting one change at a time:
+//! Arms (default `wire,direct_auth,direct`, the G1 set), order rotated per repetition, each
+//! on a fresh store directory with `GROUP_COMMIT_DEFAULT` and one agent submitting one change
+//! at a time:
 //! * `wire`: client and server threads joined by a Unix socket; per change Have, Want,
 //!   Chunk (only the blobs the server lacks), Submit, Accepted after durable commit.
 //! * `direct_auth`: the same chain authorisation and store admission in process, no
 //!   transport (isolates framing and socket cost).
 //! * `direct`: store admission only (no chain check).
+//! * `ring` (G3): as `wire`, over a `RingStream` on a sealed shared-memory region
+//!   (`RingConfig::default()`) instead of the Unix socket.
+//!
+//! `--rule FILE` (G3, experiment X5): the decision rule, which must be a file committed in
+//! git with no uncommitted change, so it is fixed before the run; its commit and SHA-256
+//! go into `spec.json`, and `result.json` gets the verdict computed by [`x5_verdict`] (the
+//! rule written as code). `--echo N`: also time N round trips of one 3,967-byte `Chunk`
+//! frame per transport per repetition, echoed back unchanged (supporting figure only).
 //!
 //! Every change upserts one new 3,967-byte blob (the Gate 4 median new content per change)
 //! and one blob shared by every change (sent once, then skipped by negotiation).
@@ -20,6 +32,8 @@
 //! the first change; `result.json` holds every per-change latency in nanoseconds.
 
 use serde_json::json;
+use sha2::{Digest, Sha256};
+use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -29,9 +43,10 @@ use synapse_auth::{BoundaryKind, Capability, ChainedRequest, PolicyEnforcer};
 use synapse_bench::energy::{idle_window, EnergyReading, EnergyWindow};
 use synapse_core::{BlobDigest, ChangesetEnvelope, WalSeq};
 use synapse_store::{FsyncPolicy, RecoveryPolicy, SharedStore, StoreLimits};
+use synapse_wire::frame::{Chunk, Frame, FrameBody};
 use synapse_wire::session::submit_request;
 use synapse_wire::testkit::{envelope, repo, server, ChainFixture, FIXTURE_NOW_MS};
-use synapse_wire::{WireClient, WireLimits};
+use synapse_wire::{FrameConn, RingConfig, RingRegion, RingStream, Side, WireClient, WireLimits};
 
 /// Bound inputs, `docs/PHASE5_GROUP_COMMIT.md` section 5 (W1 floor, one agent).
 const FLUSH_FLOOR_S: f64 = 0.805e-3;
@@ -110,10 +125,26 @@ struct ArmRun {
     chunk_bytes_sent: u64,
 }
 
-fn run_wire(fx: &ChainFixture, dir: &Path, changes: &[Change]) -> ArmRun {
+/// A connected Unix socket pair: (client end, server end).
+fn socket_pair() -> (UnixStream, UnixStream) {
+    UnixStream::pair().expect("socket pair")
+}
+
+/// A shared-memory ring region (sealed memfd) with both ends in this process: (client end,
+/// server end).
+fn ring_pair() -> (RingStream, RingStream) {
+    let region = RingRegion::create_shared(RingConfig::default()).expect("ring region");
+    (region.stream(Side::Creator), region.stream(Side::Attacher))
+}
+
+fn run_wire<S: Read + Write + Send + 'static>(
+    fx: &ChainFixture,
+    dir: &Path,
+    changes: &[Change],
+    (a, b): (S, S),
+) -> ArmRun {
     let store = open(dir);
     let srv = server(fx, store.clone());
-    let (a, b) = UnixStream::pair().expect("socket pair");
     let s = srv.clone();
     let t = std::thread::spawn(move || s.serve(b));
     let mut client = WireClient::connect(a, WireLimits::default()).expect("connect");
@@ -184,6 +215,99 @@ fn run_direct(fx: &ChainFixture, dir: &Path, changes: &[Change], auth: bool) -> 
     }
 }
 
+/// Round trips of one 3,967-byte `Chunk` frame, echoed back unchanged by a server thread;
+/// nanoseconds per round trip. Supporting figure only (not part of the X5 rule).
+fn run_echo<S: Read + Write + Send + 'static>((a, b): (S, S), n: usize) -> Vec<u64> {
+    let t = std::thread::spawn(move || {
+        let mut conn = FrameConn::new(b, WireLimits::default());
+        while let Some(f) = conn.recv().expect("echo server recv") {
+            conn.send(&f).expect("echo server send");
+        }
+    });
+    let mut conn = FrameConn::new(a, WireLimits::default());
+    let frame = Frame {
+        request_id: 1,
+        body: FrameBody::Chunk(Chunk {
+            digest: BlobDigest([7; 32]),
+            bytes: blob(0xEC40, NEW_BLOB_BYTES),
+        }),
+    };
+    let mut lat = Vec::with_capacity(n);
+    for _ in 0..n {
+        let t0 = Instant::now();
+        conn.send(&frame).expect("echo send");
+        let back = conn.recv().expect("echo recv").expect("echo frame");
+        lat.push(t0.elapsed().as_nanos() as u64);
+        assert_eq!(back, frame);
+    }
+    drop(conn);
+    t.join().expect("echo server");
+    lat
+}
+
+/// The X5 decision rule of `evidence/g3-shm-ring/x5/RULE.md`, as code: adopt the ring only
+/// if it is lower than the Unix socket (`wire`) in seconds per accepted change AND in
+/// package joules per accepted change, each beyond run-to-run spread (median lower, and its
+/// worst repetition below the socket's best). Joules need a valid meter window for every
+/// repetition of both arms; otherwise they are `INSTRUMENT_UNAVAILABLE` and the ring is not
+/// adopted.
+fn x5_verdict(ring: &[RepFigures], wire: &[RepFigures]) -> serde_json::Value {
+    let max = |v: &[f64]| v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let min = |v: &[f64]| v.iter().copied().fold(f64::INFINITY, f64::min);
+    let mut rs: Vec<f64> = ring.iter().map(|x| x.0).collect();
+    let mut ws: Vec<f64> = wire.iter().map(|x| x.0).collect();
+    let seconds_lower = median(&mut rs) < median(&mut ws) && max(&rs) < min(&ws);
+    let rj: Option<Vec<f64>> = ring.iter().map(|x| x.1).collect();
+    let wj: Option<Vec<f64>> = wire.iter().map(|x| x.1).collect();
+    let (joules, joules_lower) = match (rj, wj) {
+        (Some(mut rj), Some(mut wj)) => {
+            let lower = median(&mut rj) < median(&mut wj) && max(&rj) < min(&wj);
+            (
+                json!({"ring_j_per_change_reps": rj, "wire_j_per_change_reps": wj, "lower_beyond_spread": lower}),
+                lower,
+            )
+        }
+        _ => (json!("INSTRUMENT_UNAVAILABLE"), false),
+    };
+    let adopt = seconds_lower && joules_lower;
+    json!({
+        "rule": "evidence/g3-shm-ring/x5/RULE.md",
+        "seconds": {
+            "ring_s_per_change_reps": rs,
+            "wire_s_per_change_reps": ws,
+            "lower_beyond_spread": seconds_lower,
+        },
+        "joules": joules,
+        "verdict": if adopt { "ADOPTED" } else { "NOT_ADOPTED" },
+    })
+}
+
+/// The rule file must be tracked by git with no change against `HEAD`, so the rule was
+/// fixed (committed) before this run. Returns its path, commit and SHA-256.
+fn committed_rule(path: &Path) -> Result<serde_json::Value, String> {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .output()
+            .map_err(|e| format!("git: {e}"))
+    };
+    let p = path.to_str().ok_or("rule path is not UTF-8")?;
+    if !git(&["ls-files", "--error-unmatch", p])?.status.success() {
+        return Err(format!("{p} is not committed"));
+    }
+    if !git(&["diff", "--quiet", "HEAD", "--", p])?.status.success() {
+        return Err(format!("{p} has uncommitted changes"));
+    }
+    let log = git(&["log", "-1", "--format=%H", "--", p])?;
+    let commit = String::from_utf8_lossy(&log.stdout).trim().to_string();
+    let bytes = std::fs::read(path).map_err(|e| format!("{p}: {e}"))?;
+    Ok(json!({
+        "path": p,
+        "commit": commit,
+        "sha256": hex::encode(Sha256::digest(&bytes)),
+    }))
+}
+
 fn nearest_rank(sorted: &[u64], q: f64) -> u64 {
     let rank = (q * sorted.len() as f64).ceil() as usize;
     sorted[rank.clamp(1, sorted.len()) - 1]
@@ -206,7 +330,8 @@ fn git_rev() -> String {
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: wire-transport --out DIR [--changes N] [--reps R] [--idle-s S] [--store-root DIR]"
+        "usage: wire-transport --out DIR [--changes N] [--reps R] [--idle-s S] [--store-root DIR] \
+         [--arms wire,ring,direct_auth,direct] [--step LABEL] [--rule FILE] [--echo N]"
     );
     ExitCode::from(2)
 }
@@ -215,6 +340,8 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (mut out, mut changes_n, mut reps, mut idle_s) = (None, 2000usize, 3usize, 30u64);
     let mut store_root = PathBuf::from("target/wire-transport-stores");
+    let mut arms: Vec<String> = ["wire", "direct_auth", "direct"].map(String::from).to_vec();
+    let (mut step, mut rule, mut echo_n) = (String::from("G1"), None::<PathBuf>, 0usize);
     let mut i = 0;
     while i < args.len() {
         let Some(v) = args.get(i + 1) else {
@@ -235,23 +362,45 @@ fn main() -> ExitCode {
                 Err(_) => return usage(),
             },
             "--store-root" => store_root = PathBuf::from(v),
+            "--arms" => arms = v.split(',').map(String::from).collect(),
+            "--step" => step = v.clone(),
+            "--rule" => rule = Some(PathBuf::from(v)),
+            "--echo" => match v.parse() {
+                Ok(n) => echo_n = n,
+                Err(_) => return usage(),
+            },
             _ => return usage(),
         }
         i += 2;
     }
     let Some(out) = out else { return usage() };
-    if changes_n == 0 || reps == 0 {
+    const KNOWN: [&str; 4] = ["wire", "ring", "direct_auth", "direct"];
+    if changes_n == 0
+        || reps == 0
+        || arms.is_empty()
+        || arms.iter().any(|a| !KNOWN.contains(&a.as_str()))
+    {
         return usage();
     }
+    // The X5 rule must be committed before the run (checked here, before any measurement).
+    let rule_info = match &rule {
+        Some(p) => match committed_rule(p) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                eprintln!("refusing to run: decision rule not fixed: {e}");
+                return ExitCode::from(2);
+            }
+        },
+        None => None,
+    };
     std::fs::create_dir_all(&out).expect("out dir");
     std::fs::create_dir_all(&store_root).expect("store root");
     let t_floor =
         FLUSH_FLOOR_S + FLOOR_BYTES_PER_CHANGE * SEQ_WRITE_S_PER_GIB / (1u64 << 30) as f64;
     let e_floor = IDLE_W_FLOOR * t_floor + ESSENTIAL_CPU_J;
-    let arms = ["wire", "direct_auth", "direct"];
     let spec = json!({
         "tool": "wire-transport",
-        "step": "G1",
+        "step": step,
         "git_rev": git_rev(),
         "changes_per_arm": changes_n,
         "reps": reps,
@@ -261,7 +410,18 @@ fn main() -> ExitCode {
         "fsync_policy": "GROUP_COMMIT_DEFAULT",
         "chain_depth": 2,
         "per_change": {"new_blob_bytes": NEW_BLOB_BYTES, "shared_blob_bytes": NEW_BLOB_BYTES, "paths": 2},
-        "transport": "std::os::unix::net::UnixStream pair, client and server threads in one process",
+        "transport": {
+            "wire": "std::os::unix::net::UnixStream pair, client and server threads in one process",
+            "ring": "synapse_wire::RingStream over one sealed memfd region (MAP_SHARED), client and server threads in one process",
+        },
+        "ring_config": {
+            "capacity_bytes_per_direction": RingConfig::default().capacity,
+            "max_record_bytes": RingConfig::default().max_record,
+            "spin_s": RingConfig::default().spin.as_secs_f64(),
+            "sleep": "futex on the doorbell word, 10 ms timeout",
+        },
+        "echo_round_trips_per_transport_per_rep": echo_n,
+        "rule": rule_info,
         "store_root": store_root.display().to_string(),
         "idle_window_s": idle_s,
         "bound": {
@@ -287,13 +447,15 @@ fn main() -> ExitCode {
     let shared = blob(0xFEED, NEW_BLOB_BYTES);
     let mut runs: Vec<serde_json::Value> = Vec::new();
     let mut per_arm: std::collections::BTreeMap<&str, Vec<RepFigures>> = Default::default();
+    let mut echo: std::collections::BTreeMap<&str, Vec<u64>> = Default::default();
     for rep in 0..reps {
         for k in 0..arms.len() {
-            let arm = arms[(k + rep) % arms.len()];
+            let arm = arms[(k + rep) % arms.len()].as_str();
             let changes = build_changes(&fx, rep, changes_n, &shared);
             let dir = store_root.join(format!("{arm}-{rep}"));
             let r = match arm {
-                "wire" => run_wire(&fx, &dir, &changes),
+                "wire" => run_wire(&fx, &dir, &changes, socket_pair()),
+                "ring" => run_wire(&fx, &dir, &changes, ring_pair()),
                 "direct_auth" => run_direct(&fx, &dir, &changes, true),
                 _ => run_direct(&fx, &dir, &changes, false),
             };
@@ -334,6 +496,33 @@ fn main() -> ExitCode {
                 "latencies_ns": r.latencies_ns,
             }));
         }
+        if echo_n > 0 {
+            for k in 0..2 {
+                let transport = ["wire", "ring"][(k + rep) % 2];
+                let mut lat = if transport == "wire" {
+                    run_echo(socket_pair(), echo_n)
+                } else {
+                    run_echo(ring_pair(), echo_n)
+                };
+                let raw = lat.clone();
+                lat.sort_unstable();
+                eprintln!(
+                    "rep {rep} echo {transport}: p50 {:.2} us per round trip",
+                    nearest_rank(&lat, 0.5) as f64 / 1e3
+                );
+                echo.entry(transport)
+                    .or_default()
+                    .push(nearest_rank(&lat, 0.5));
+                runs.push(json!({
+                    "rep": rep,
+                    "echo": transport,
+                    "round_trips": raw.len(),
+                    "p50_s": nearest_rank(&lat, 0.50) as f64 / 1e9,
+                    "p99_s": nearest_rank(&lat, 0.99) as f64 / 1e9,
+                    "round_trip_ns": raw,
+                }));
+            }
+        }
     }
     let mut summary = serde_json::Map::new();
     for (arm, v) in &per_arm {
@@ -349,15 +538,28 @@ fn main() -> ExitCode {
                 "s_per_change_reps": v.iter().map(|x| x.0).collect::<Vec<_>>(),
                 "fraction_of_time_floor": t_floor / s_med,
                 "pkg_j_per_change_median": j_med,
+                "pkg_j_per_change_reps": v.iter().map(|x| x.1).collect::<Vec<_>>(),
                 "fraction_of_energy_floor": j_med.map(|j| e_floor / j),
                 "pkg_above_idle_j_per_change_median": (!a.is_empty()).then(|| median(&mut a)),
             }),
         );
     }
+    for (transport, p50s) in &echo {
+        let mut v: Vec<f64> = p50s.iter().map(|&ns| ns as f64 / 1e9).collect();
+        summary.insert(
+            format!("echo_{transport}"),
+            json!({"p50_s_reps": v.clone(), "p50_s_median": median(&mut v), "role": "supporting only, not in the X5 rule"}),
+        );
+    }
+    let verdict = match (&rule_info, per_arm.get("ring"), per_arm.get("wire")) {
+        (Some(_), Some(ring), Some(wire)) => Some(x5_verdict(ring, wire)),
+        _ => None,
+    };
     let result = json!({
         "spec": spec,
         "idle": idle,
         "summary": summary,
+        "x5_verdict": verdict,
         "runs": runs,
     });
     std::fs::write(
@@ -366,5 +568,11 @@ fn main() -> ExitCode {
     )
     .expect("write result");
     eprintln!("{}", serde_json::to_string_pretty(&summary).expect("json"));
+    if let Some(v) = &verdict {
+        eprintln!(
+            "X5 verdict: {}",
+            serde_json::to_string_pretty(v).expect("json")
+        );
+    }
     ExitCode::SUCCESS
 }
