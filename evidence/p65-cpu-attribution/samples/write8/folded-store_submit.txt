@@ -1,0 +1,41 @@
+stack samples (all threads stopped): 507
+thread-samples with submit on stack: 2511 (run 99)
+
+# state
+   1954  wait:syscall <- std::sys::pal::unix::futex::futex_wait@futex.rs:73
+    448  wait:__GI_fdatasync <- std::fs::File::sync_data@fs.rs:812
+     99  run
+      7  wait:__libc_pwrite64 <- __libc_pwrite64@pwrite64.c:23
+      2  wait:__GI_fsync <- std::fs::File::sync_all@fs.rs:780
+      1  wait:syscall
+
+# phase (callee under anchor) | run or wait
+   1954  wait<synapse_store::shared::Queue>@condvar.rs | wait
+    458  lead@shared.rs | wait
+     91  prepare_ingest@lib.rs | run
+      6  lead@shared.rs | run
+      2  drop_glue<alloc::sync::Arc<std::sync::poison::mutex::Mutex<core::option::Option<core::result::Result<synapse_store::IngestOutcome, synapse_core::SynapseError>>>, alloc::alloc::Global>>@mod.rs | run
+
+# leaf (self) of run samples
+     44  curve25519-dalek
+     25  sha2
+      7  synapse-core:lib.rs
+      5  synapse-store:lib.rs
+      5  rust:alloc
+      4  libc:mem*
+      4  ed25519-dalek
+      3  libc:malloc/free
+      1  subtle
+      1  digest
+
+# inclusive crate presence in run samples
+     97  synapse-store
+     74  synapse-core
+     45  curve25519-dalek
+     26  digest
+     25  sha2
+     25  block-buffer
+     11  rust
+      7  libc
+      4  ed25519-dalek
+      1  subtle

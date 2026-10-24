@@ -1,0 +1,36 @@
+stack samples (all threads stopped): 507
+thread-samples with admit_submit on stack: 260 (run 260)
+
+# state
+    260  run
+
+# phase (callee under anchor) | run or wait
+    260  authorize<synapse_api::SubmitChangesetPayload>@lib.rs | run
+
+# leaf (self) of run samples
+    100  curve25519-dalek
+     40  libc:mem*
+     33  sha2
+     31  rust:alloc
+     18  itoa
+     17  ed25519-dalek
+     13  synapse-auth:lib.rs
+      3  synapse-core:lib.rs
+      2  serde_core
+      2  libc:malloc/free
+      1  serde_json
+
+# inclusive crate presence in run samples
+    260  synapse-auth
+    100  curve25519-dalek
+     90  synapse-api
+     90  serde_json
+     90  serde_core
+     73  rust
+     42  libc
+     33  sha2
+     33  digest
+     33  block-buffer
+     18  itoa
+     17  ed25519-dalek
+     11  synapse-core

@@ -1,0 +1,6443 @@
+{
+  "schema": "synapse-bench/pmu-diag-raw/v1",
+  "protocol_sha256": "f4076275591aa21043f4c67be9449304e241f4030d58153e9938a49cff30496c",
+  "manifest": {
+    "invocation": [
+      "./target/release/synapse-bench",
+      "pmu-diag",
+      "--evidence",
+      "evidence/p65-cpu-attribution/stage-a",
+      "--work-dir",
+      "../work-65/scratch",
+      "--fixture-repo",
+      ".",
+      "--source-rev",
+      "1d777389f9b3c89df5e8ab8232a6c62f3226c4b5"
+    ],
+    "started_at": "2026-10-17T01:40:08Z",
+    "host": {
+      "hostname": "spark-b87b",
+      "kernel_release": "7.0.0-1019-nvidia",
+      "arch": "aarch64",
+      "cpu_models": [
+        "Cortex-X925",
+        "Cortex-A725"
+      ],
+      "cpu_model_source": "lscpu",
+      "logical_cpus": 20,
+      "mem_total_kib": 127598752,
+      "git_version": "git version 2.43.0",
+      "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "cargo_version": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+      "work_dir": "../work-65/scratch",
+      "work_dir_fs_type": "ext4",
+      "work_dir_source": "/dev/nvme0n1p2",
+      "work_dir_free_bytes_at_start": 711105024000
+    },
+    "build_profile": "release",
+    "target_arch": "aarch64",
+    "source_rev": "1d777389f9b3c89df5e8ab8232a6c62f3226c4b5",
+    "fixture_repo": ".",
+    "fixture_commit": "e863c87b581ddd0d33183667d6d4842d2de1f4fe",
+    "siblings": [],
+    "clock": "std::time::Instant (CLOCK_MONOTONIC), wall nanoseconds per window",
+    "energy": "NOT_MEASURED by pmu-diag (energy stays with run, floor and bounds)"
+  },
+  "discovery": {
+    "sysfs_root": "/sys",
+    "perf_event_paranoid": 4,
+    "devices": [
+      {
+        "name": "armv8_pmuv3_0",
+        "perf_type": 10,
+        "cpus": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          10,
+          11,
+          12,
+          13,
+          14
+        ],
+        "core_class": "CortexA725",
+        "midr": "0x00000000410fd871",
+        "events": [
+          {
+            "name": "cpu_cycles",
+            "arm_event": 17,
+            "sysfs_encoding": "event=0x0011",
+            "verified": true
+          },
+          {
+            "name": "inst_retired",
+            "arm_event": 8,
+            "sysfs_encoding": "event=0x0008",
+            "verified": true
+          },
+          {
+            "name": "br_pred",
+            "arm_event": 18,
+            "sysfs_encoding": "event=0x0012",
+            "verified": true
+          },
+          {
+            "name": "br_mis_pred",
+            "arm_event": 16,
+            "sysfs_encoding": "event=0x0010",
+            "verified": true
+          }
+        ]
+      },
+      {
+        "name": "armv8_pmuv3_1",
+        "perf_type": 11,
+        "cpus": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "core_class": "CortexX925",
+        "midr": "0x00000000410fd851",
+        "events": [
+          {
+            "name": "cpu_cycles",
+            "arm_event": 17,
+            "sysfs_encoding": "event=0x0011",
+            "verified": true
+          },
+          {
+            "name": "inst_retired",
+            "arm_event": 8,
+            "sysfs_encoding": "event=0x0008",
+            "verified": true
+          },
+          {
+            "name": "br_pred",
+            "arm_event": 18,
+            "sysfs_encoding": "event=0x0012",
+            "verified": true
+          },
+          {
+            "name": "br_mis_pred",
+            "arm_event": 16,
+            "sysfs_encoding": "event=0x0010",
+            "verified": true
+          }
+        ]
+      }
+    ]
+  },
+  "windows": [
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111881290,
+      "cpu_user_us": 111784,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111746281,
+      "cpu_user_us": 111747,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111743208,
+      "cpu_user_us": 111744,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111729577,
+      "cpu_user_us": 111730,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111739192,
+      "cpu_user_us": 111739,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111753433,
+      "cpu_user_us": 111753,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111756121,
+      "cpu_user_us": 111753,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111739913,
+      "cpu_user_us": 111740,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111755097,
+      "cpu_user_us": 111754,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111741032,
+      "cpu_user_us": 111738,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111735465,
+      "cpu_user_us": 111735,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111765753,
+      "cpu_user_us": 111760,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111747000,
+      "cpu_user_us": 111747,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111739497,
+      "cpu_user_us": 111739,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 118921762,
+      "cpu_user_us": 118860,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 118826530,
+      "cpu_user_us": 118821,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 119240005,
+      "cpu_user_us": 119240,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 118800130,
+      "cpu_user_us": 118801,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 119052915,
+      "cpu_user_us": 119038,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 119057316,
+      "cpu_user_us": 119058,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 118808274,
+      "cpu_user_us": 118809,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 118774849,
+      "cpu_user_us": 118775,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 119210260,
+      "cpu_user_us": 119210,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 119242533,
+      "cpu_user_us": 119229,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 118774562,
+      "cpu_user_us": 118775,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 118779825,
+      "cpu_user_us": 118780,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 119044931,
+      "cpu_user_us": 119046,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 119039395,
+      "cpu_user_us": 119028,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111804025,
+      "cpu_user_us": 111806,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111746953,
+      "cpu_user_us": 111747,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111757401,
+      "cpu_user_us": 111757,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111751224,
+      "cpu_user_us": 111751,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111769786,
+      "cpu_user_us": 111765,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111758856,
+      "cpu_user_us": 111759,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111759721,
+      "cpu_user_us": 111759,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111769033,
+      "cpu_user_us": 111762,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111759145,
+      "cpu_user_us": 111759,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111743913,
+      "cpu_user_us": 111744,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111746985,
+      "cpu_user_us": 111747,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111758473,
+      "cpu_user_us": 111758,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 20000,
+      "wall_ns": 111740777,
+      "cpu_user_us": 111741,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 20000,
+      "wall_ns": 111758921,
+      "cpu_user_us": 111757,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47593604,
+      "cpu_user_us": 47593,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47609989,
+      "cpu_user_us": 47610,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47618020,
+      "cpu_user_us": 47618,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47602388,
+      "cpu_user_us": 47600,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47610405,
+      "cpu_user_us": 47607,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47607156,
+      "cpu_user_us": 47607,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47602021,
+      "cpu_user_us": 47602,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47590996,
+      "cpu_user_us": 47591,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47598949,
+      "cpu_user_us": 47599,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47585124,
+      "cpu_user_us": 47585,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47592484,
+      "cpu_user_us": 47593,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47586165,
+      "cpu_user_us": 47586,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47595508,
+      "cpu_user_us": 47595,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47589988,
+      "cpu_user_us": 47590,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 98188426,
+      "cpu_user_us": 98174,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 98257099,
+      "cpu_user_us": 98259,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 98144282,
+      "cpu_user_us": 98137,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 98164506,
+      "cpu_user_us": 98165,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 98228186,
+      "cpu_user_us": 98230,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 98209355,
+      "cpu_user_us": 98210,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 98198091,
+      "cpu_user_us": 98194,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 98347275,
+      "cpu_user_us": 98343,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 98145402,
+      "cpu_user_us": 98147,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 98559756,
+      "cpu_user_us": 98562,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 98196410,
+      "cpu_user_us": 98197,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 98382395,
+      "cpu_user_us": 98384,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 98764686,
+      "cpu_user_us": 98758,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 98521197,
+      "cpu_user_us": 98522,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47662484,
+      "cpu_user_us": 47659,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47631541,
+      "cpu_user_us": 47631,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47632405,
+      "cpu_user_us": 47633,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47616340,
+      "cpu_user_us": 47616,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47606101,
+      "cpu_user_us": 47606,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47615444,
+      "cpu_user_us": 47615,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47603173,
+      "cpu_user_us": 47603,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47613156,
+      "cpu_user_us": 47613,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47602645,
+      "cpu_user_us": 47602,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47609844,
+      "cpu_user_us": 47602,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47605749,
+      "cpu_user_us": 47606,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47612308,
+      "cpu_user_us": 47612,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 47611285,
+      "cpu_user_us": 47612,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 47603045,
+      "cpu_user_us": 47604,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55612163,
+      "cpu_user_us": 55612,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55648419,
+      "cpu_user_us": 55648,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55640163,
+      "cpu_user_us": 55637,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55622996,
+      "cpu_user_us": 55623,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55616931,
+      "cpu_user_us": 55617,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55645619,
+      "cpu_user_us": 55645,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55621811,
+      "cpu_user_us": 55622,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55640339,
+      "cpu_user_us": 55639,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55605523,
+      "cpu_user_us": 55606,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55599491,
+      "cpu_user_us": 55599,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55608355,
+      "cpu_user_us": 55609,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55594051,
+      "cpu_user_us": 55595,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55606627,
+      "cpu_user_us": 55607,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55624979,
+      "cpu_user_us": 55625,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 110873204,
+      "cpu_user_us": 110857,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 110817604,
+      "cpu_user_us": 110819,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 110848180,
+      "cpu_user_us": 110839,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 110812692,
+      "cpu_user_us": 110805,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 111078470,
+      "cpu_user_us": 111073,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 111140342,
+      "cpu_user_us": 111141,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 110882180,
+      "cpu_user_us": 110865,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 110832515,
+      "cpu_user_us": 110833,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 110843092,
+      "cpu_user_us": 110844,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 110810339,
+      "cpu_user_us": 110811,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 110852036,
+      "cpu_user_us": 110852,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 110843668,
+      "cpu_user_us": 110844,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 110981781,
+      "cpu_user_us": 110974,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 112114155,
+      "cpu_user_us": 112116,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55587619,
+      "cpu_user_us": 55590,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55578051,
+      "cpu_user_us": 55578,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55594979,
+      "cpu_user_us": 55595,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55583603,
+      "cpu_user_us": 55584,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55588579,
+      "cpu_user_us": 55589,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55584211,
+      "cpu_user_us": 55584,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55581155,
+      "cpu_user_us": 55582,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55578994,
+      "cpu_user_us": 55579,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55629284,
+      "cpu_user_us": 55629,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55670099,
+      "cpu_user_us": 55670,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55666596,
+      "cpu_user_us": 55667,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55672803,
+      "cpu_user_us": 55673,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 55623907,
+      "cpu_user_us": 55624,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 55589331,
+      "cpu_user_us": 55590,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153408075,
+      "cpu_user_us": 153404,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153309323,
+      "cpu_user_us": 153309,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153484124,
+      "cpu_user_us": 153484,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153273627,
+      "cpu_user_us": 153273,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153483211,
+      "cpu_user_us": 153483,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153359036,
+      "cpu_user_us": 153359,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153250186,
+      "cpu_user_us": 153247,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153193403,
+      "cpu_user_us": 153193,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153263915,
+      "cpu_user_us": 153263,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153331915,
+      "cpu_user_us": 153332,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153226171,
+      "cpu_user_us": 153226,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153638428,
+      "cpu_user_us": 153638,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153278059,
+      "cpu_user_us": 153278,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153220443,
+      "cpu_user_us": 153219,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 344911029,
+      "cpu_user_us": 344906,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 344921172,
+      "cpu_user_us": 344921,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 344929797,
+      "cpu_user_us": 344916,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 344295761,
+      "cpu_user_us": 344281,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 344300769,
+      "cpu_user_us": 344301,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 344261425,
+      "cpu_user_us": 344253,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 344220721,
+      "cpu_user_us": 344219,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 345232631,
+      "cpu_user_us": 345233,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 344560259,
+      "cpu_user_us": 344560,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 344794484,
+      "cpu_user_us": 344794,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 344236433,
+      "cpu_user_us": 344236,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 344245777,
+      "cpu_user_us": 344245,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 344625540,
+      "cpu_user_us": 344618,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 344774325,
+      "cpu_user_us": 344775,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153158715,
+      "cpu_user_us": 153160,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153183723,
+      "cpu_user_us": 152544,
+      "cpu_sys_us": 639,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153240267,
+      "cpu_user_us": 153239,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153114442,
+      "cpu_user_us": 153114,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153119146,
+      "cpu_user_us": 153119,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153088875,
+      "cpu_user_us": 153089,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153169994,
+      "cpu_user_us": 153165,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153380268,
+      "cpu_user_us": 153380,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153357852,
+      "cpu_user_us": 153353,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153426428,
+      "cpu_user_us": 153426,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153408124,
+      "cpu_user_us": 153408,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153403245,
+      "cpu_user_us": 153398,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 2000,
+      "wall_ns": 153415260,
+      "cpu_user_us": 153415,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 2000,
+      "wall_ns": 153455388,
+      "cpu_user_us": 153453,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 529855898,
+      "cpu_user_us": 13101,
+      "cpu_sys_us": 14991,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 515504583,
+      "cpu_user_us": 17352,
+      "cpu_sys_us": 5003,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 503740338,
+      "cpu_user_us": 17869,
+      "cpu_sys_us": 4017,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 526806825,
+      "cpu_user_us": 13082,
+      "cpu_sys_us": 5014,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 553881990,
+      "cpu_user_us": 14636,
+      "cpu_sys_us": 4011,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 542495492,
+      "cpu_user_us": 21011,
+      "cpu_sys_us": 29,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 503764115,
+      "cpu_user_us": 12050,
+      "cpu_sys_us": 7010,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 469777709,
+      "cpu_user_us": 7287,
+      "cpu_sys_us": 13005,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 556387174,
+      "cpu_user_us": 16812,
+      "cpu_sys_us": 6994,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 623766877,
+      "cpu_user_us": 14397,
+      "cpu_sys_us": 11982,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 566689313,
+      "cpu_user_us": 11416,
+      "cpu_sys_us": 9019,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 434047838,
+      "cpu_user_us": 12490,
+      "cpu_sys_us": 5000,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 524805054,
+      "cpu_user_us": 6664,
+      "cpu_sys_us": 7970,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 523209733,
+      "cpu_user_us": 8204,
+      "cpu_sys_us": 7990,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 520880312,
+      "cpu_user_us": 17946,
+      "cpu_sys_us": 6016,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 520149860,
+      "cpu_user_us": 11952,
+      "cpu_sys_us": 10996,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 513113915,
+      "cpu_user_us": 14940,
+      "cpu_sys_us": 10002,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 533226288,
+      "cpu_user_us": 18981,
+      "cpu_sys_us": 8021,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 513450861,
+      "cpu_user_us": 11836,
+      "cpu_sys_us": 11975,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 524606894,
+      "cpu_user_us": 17778,
+      "cpu_sys_us": 3291,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 473255540,
+      "cpu_user_us": 15388,
+      "cpu_sys_us": 6996,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 463970510,
+      "cpu_user_us": 14973,
+      "cpu_sys_us": 6012,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 548417882,
+      "cpu_user_us": 20906,
+      "cpu_sys_us": 7035,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 544118929,
+      "cpu_user_us": 17440,
+      "cpu_sys_us": 13001,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 413920939,
+      "cpu_user_us": 13296,
+      "cpu_sys_us": 5041,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 423546355,
+      "cpu_user_us": 15522,
+      "cpu_sys_us": 5081,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 507789485,
+      "cpu_user_us": 15986,
+      "cpu_sys_us": 5065,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 479288344,
+      "cpu_user_us": 21742,
+      "cpu_sys_us": 1144,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 689499776,
+      "cpu_user_us": 13089,
+      "cpu_sys_us": 3055,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 531628105,
+      "cpu_user_us": 8024,
+      "cpu_sys_us": 7977,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 540753151,
+      "cpu_user_us": 7036,
+      "cpu_sys_us": 9704,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 534207768,
+      "cpu_user_us": 10959,
+      "cpu_sys_us": 6023,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 609132461,
+      "cpu_user_us": 9061,
+      "cpu_sys_us": 6066,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 604264449,
+      "cpu_user_us": 8130,
+      "cpu_sys_us": 8961,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 543958994,
+      "cpu_user_us": 4766,
+      "cpu_sys_us": 9984,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 498702523,
+      "cpu_user_us": 7536,
+      "cpu_sys_us": 4956,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 599391701,
+      "cpu_user_us": 6980,
+      "cpu_sys_us": 11970,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 625933248,
+      "cpu_user_us": 13213,
+      "cpu_sys_us": 7484,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 479433002,
+      "cpu_user_us": 8838,
+      "cpu_sys_us": 5051,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 477242221,
+      "cpu_user_us": 8327,
+      "cpu_sys_us": 5965,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 16,
+      "wall_ns": 589137547,
+      "cpu_user_us": 10627,
+      "cpu_sys_us": 5082,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 16,
+      "wall_ns": 634233906,
+      "cpu_user_us": 10486,
+      "cpu_sys_us": 5014,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 67542985,
+      "cpu_user_us": 16636,
+      "cpu_sys_us": 975,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 138059413,
+      "cpu_user_us": 22710,
+      "cpu_sys_us": 2073,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 109764000,
+      "cpu_user_us": 24085,
+      "cpu_sys_us": 3986,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 105772777,
+      "cpu_user_us": 24892,
+      "cpu_sys_us": 2022,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 109591887,
+      "cpu_user_us": 14859,
+      "cpu_sys_us": 4069,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 99897958,
+      "cpu_user_us": 16089,
+      "cpu_sys_us": 352,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 110070914,
+      "cpu_user_us": 23371,
+      "cpu_sys_us": 5088,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 119334488,
+      "cpu_user_us": 25996,
+      "cpu_sys_us": 2002,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 105641496,
+      "cpu_user_us": 20272,
+      "cpu_sys_us": 106,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 105990090,
+      "cpu_user_us": 15992,
+      "cpu_sys_us": 3957,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 118024385,
+      "cpu_user_us": 23051,
+      "cpu_sys_us": 2005,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 119316615,
+      "cpu_user_us": 17605,
+      "cpu_sys_us": 4051,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 110857559,
+      "cpu_user_us": 19858,
+      "cpu_sys_us": 997,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 100574875,
+      "cpu_user_us": 11842,
+      "cpu_sys_us": 3918,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 111920749,
+      "cpu_user_us": 25935,
+      "cpu_sys_us": 3945,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 108371784,
+      "cpu_user_us": 26260,
+      "cpu_sys_us": 1980,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 106134891,
+      "cpu_user_us": 24463,
+      "cpu_sys_us": 2987,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 105847145,
+      "cpu_user_us": 22000,
+      "cpu_sys_us": 5882,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 117863616,
+      "cpu_user_us": 22761,
+      "cpu_sys_us": 4835,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 113581479,
+      "cpu_user_us": 26440,
+      "cpu_sys_us": 2113,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 112797154,
+      "cpu_user_us": 28023,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 117775423,
+      "cpu_user_us": 26028,
+      "cpu_sys_us": 2037,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 113767096,
+      "cpu_user_us": 25180,
+      "cpu_sys_us": 5836,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 114706750,
+      "cpu_user_us": 24055,
+      "cpu_sys_us": 6900,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 110021810,
+      "cpu_user_us": 22886,
+      "cpu_sys_us": 3111,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 113304693,
+      "cpu_user_us": 24937,
+      "cpu_sys_us": 1807,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 104313536,
+      "cpu_user_us": 21651,
+      "cpu_sys_us": 3912,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 100753660,
+      "cpu_user_us": 24583,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 92879054,
+      "cpu_user_us": 17054,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 95863968,
+      "cpu_user_us": 16477,
+      "cpu_sys_us": 1129,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 95872511,
+      "cpu_user_us": 14205,
+      "cpu_sys_us": 5014,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 98093356,
+      "cpu_user_us": 17269,
+      "cpu_sys_us": 1097,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 91461158,
+      "cpu_user_us": 15707,
+      "cpu_sys_us": 936,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 90916803,
+      "cpu_user_us": 13782,
+      "cpu_sys_us": 3081,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 95199100,
+      "cpu_user_us": 18103,
+      "cpu_sys_us": 961,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 94137622,
+      "cpu_user_us": 17374,
+      "cpu_sys_us": 966,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 99927847,
+      "cpu_user_us": 14724,
+      "cpu_sys_us": 6086,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 85806629,
+      "cpu_user_us": 18573,
+      "cpu_sys_us": 25,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 87277278,
+      "cpu_user_us": 17423,
+      "cpu_sys_us": 111,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 86183543,
+      "cpu_user_us": 15995,
+      "cpu_sys_us": 1094,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 32,
+      "wall_ns": 92286987,
+      "cpu_user_us": 15233,
+      "cpu_sys_us": 1966,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 32,
+      "wall_ns": 86155671,
+      "cpu_user_us": 14097,
+      "cpu_sys_us": 2609,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 152429642,
+      "cpu_user_us": 179271,
+      "cpu_sys_us": 4298,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 155231162,
+      "cpu_user_us": 163032,
+      "cpu_sys_us": 7785,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 155872414,
+      "cpu_user_us": 151234,
+      "cpu_sys_us": 6812,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 160670970,
+      "cpu_user_us": 158412,
+      "cpu_sys_us": 6266,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 170066449,
+      "cpu_user_us": 166940,
+      "cpu_sys_us": 8400,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 181886150,
+      "cpu_user_us": 184791,
+      "cpu_sys_us": 11455,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 167095344,
+      "cpu_user_us": 166435,
+      "cpu_sys_us": 10979,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 174020664,
+      "cpu_user_us": 166118,
+      "cpu_sys_us": 16191,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 169087740,
+      "cpu_user_us": 166970,
+      "cpu_sys_us": 16024,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 169292541,
+      "cpu_user_us": 164884,
+      "cpu_sys_us": 16726,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 167862404,
+      "cpu_user_us": 192156,
+      "cpu_sys_us": 8327,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 168510265,
+      "cpu_user_us": 174810,
+      "cpu_sys_us": 8588,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 161226142,
+      "cpu_user_us": 176811,
+      "cpu_sys_us": 4688,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 255208179,
+      "cpu_user_us": 161935,
+      "cpu_sys_us": 13110,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 191910706,
+      "cpu_user_us": 211971,
+      "cpu_sys_us": 9333,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 196818334,
+      "cpu_user_us": 212794,
+      "cpu_sys_us": 8672,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 185891182,
+      "cpu_user_us": 196674,
+      "cpu_sys_us": 10861,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 188340524,
+      "cpu_user_us": 195595,
+      "cpu_sys_us": 10627,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 180356238,
+      "cpu_user_us": 204191,
+      "cpu_sys_us": 9659,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 187658009,
+      "cpu_user_us": 202112,
+      "cpu_sys_us": 15631,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 180667391,
+      "cpu_user_us": 216362,
+      "cpu_sys_us": 15709,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 195107444,
+      "cpu_user_us": 225021,
+      "cpu_sys_us": 12289,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 165476199,
+      "cpu_user_us": 198608,
+      "cpu_sys_us": 13150,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 176096821,
+      "cpu_user_us": 200759,
+      "cpu_sys_us": 11358,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 187115349,
+      "cpu_user_us": 232994,
+      "cpu_sys_us": 13497,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 190612586,
+      "cpu_user_us": 238407,
+      "cpu_sys_us": 12837,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 178920421,
+      "cpu_user_us": 209001,
+      "cpu_sys_us": 18912,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 181153923,
+      "cpu_user_us": 208703,
+      "cpu_sys_us": 19806,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 178380403,
+      "cpu_user_us": 129793,
+      "cpu_sys_us": 12248,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 172956275,
+      "cpu_user_us": 129932,
+      "cpu_sys_us": 12346,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 177147340,
+      "cpu_user_us": 116357,
+      "cpu_sys_us": 15826,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 172434432,
+      "cpu_user_us": 119987,
+      "cpu_sys_us": 12232,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 165160517,
+      "cpu_user_us": 132781,
+      "cpu_sys_us": 5766,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 163614813,
+      "cpu_user_us": 122176,
+      "cpu_sys_us": 6743,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 223365242,
+      "cpu_user_us": 129244,
+      "cpu_sys_us": 9156,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 176298407,
+      "cpu_user_us": 130424,
+      "cpu_sys_us": 20239,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 156680165,
+      "cpu_user_us": 113639,
+      "cpu_sys_us": 16538,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 172093582,
+      "cpu_user_us": 129481,
+      "cpu_sys_us": 11834,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 176804890,
+      "cpu_user_us": 149512,
+      "cpu_sys_us": 8585,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 163989663,
+      "cpu_user_us": 143239,
+      "cpu_sys_us": 11961,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 256,
+      "wall_ns": 164039311,
+      "cpu_user_us": 124870,
+      "cpu_sys_us": 18235,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 256,
+      "wall_ns": 170762710,
+      "cpu_user_us": 129423,
+      "cpu_sys_us": 15233,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 310916283,
+      "cpu_user_us": 709759,
+      "cpu_sys_us": 64535,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 262652400,
+      "cpu_user_us": 698090,
+      "cpu_sys_us": 37288,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 249278338,
+      "cpu_user_us": 719179,
+      "cpu_sys_us": 20829,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 278621086,
+      "cpu_user_us": 714675,
+      "cpu_sys_us": 38766,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 315340436,
+      "cpu_user_us": 760183,
+      "cpu_sys_us": 47926,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 277714857,
+      "cpu_user_us": 745128,
+      "cpu_sys_us": 40015,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 316527548,
+      "cpu_user_us": 760009,
+      "cpu_sys_us": 35355,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 251481583,
+      "cpu_user_us": 688210,
+      "cpu_sys_us": 46389,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 263344533,
+      "cpu_user_us": 694952,
+      "cpu_sys_us": 39877,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 307480407,
+      "cpu_user_us": 729089,
+      "cpu_sys_us": 40216,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 280208392,
+      "cpu_user_us": 690563,
+      "cpu_sys_us": 46844,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 250428426,
+      "cpu_user_us": 672284,
+      "cpu_sys_us": 51340,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 312397781,
+      "cpu_user_us": 744845,
+      "cpu_sys_us": 44450,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 311623552,
+      "cpu_user_us": 748294,
+      "cpu_sys_us": 45789,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 342513044,
+      "cpu_user_us": 868832,
+      "cpu_sys_us": 45274,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 366382673,
+      "cpu_user_us": 869665,
+      "cpu_sys_us": 47080,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 369991798,
+      "cpu_user_us": 865501,
+      "cpu_sys_us": 69161,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 375090372,
+      "cpu_user_us": 887874,
+      "cpu_sys_us": 49961,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 328748949,
+      "cpu_user_us": 919175,
+      "cpu_sys_us": 45340,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 348415144,
+      "cpu_user_us": 912802,
+      "cpu_sys_us": 56491,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 370139560,
+      "cpu_user_us": 882172,
+      "cpu_sys_us": 55157,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 370622746,
+      "cpu_user_us": 892636,
+      "cpu_sys_us": 41745,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 369574436,
+      "cpu_user_us": 865940,
+      "cpu_sys_us": 64820,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 357976896,
+      "cpu_user_us": 867455,
+      "cpu_sys_us": 60212,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 374718130,
+      "cpu_user_us": 858007,
+      "cpu_sys_us": 54803,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 318870395,
+      "cpu_user_us": 853304,
+      "cpu_sys_us": 48675,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 462967816,
+      "cpu_user_us": 898919,
+      "cpu_sys_us": 62834,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 392713900,
+      "cpu_user_us": 912006,
+      "cpu_sys_us": 53062,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 228349306,
+      "cpu_user_us": 517329,
+      "cpu_sys_us": 23998,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 267289022,
+      "cpu_user_us": 531480,
+      "cpu_sys_us": 33609,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 284321010,
+      "cpu_user_us": 539910,
+      "cpu_sys_us": 49013,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 265334866,
+      "cpu_user_us": 551793,
+      "cpu_sys_us": 26925,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 291577117,
+      "cpu_user_us": 592326,
+      "cpu_sys_us": 23190,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 256380334,
+      "cpu_user_us": 561917,
+      "cpu_sys_us": 34704,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 260127012,
+      "cpu_user_us": 538166,
+      "cpu_sys_us": 23544,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 230241173,
+      "cpu_user_us": 532304,
+      "cpu_sys_us": 22798,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 245000139,
+      "cpu_user_us": 535232,
+      "cpu_sys_us": 29532,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 258651563,
+      "cpu_user_us": 532053,
+      "cpu_sys_us": 37480,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 277875340,
+      "cpu_user_us": 525906,
+      "cpu_sys_us": 45758,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 257094770,
+      "cpu_user_us": 533932,
+      "cpu_sys_us": 29115,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 1024,
+      "wall_ns": 272629341,
+      "cpu_user_us": 565960,
+      "cpu_sys_us": 34151,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 1024,
+      "wall_ns": 247165992,
+      "cpu_user_us": 550174,
+      "cpu_sys_us": 36236,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35402064,
+      "cpu_user_us": 35404,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35338495,
+      "cpu_user_us": 35340,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35354687,
+      "cpu_user_us": 35344,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35389680,
+      "cpu_user_us": 35390,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35338591,
+      "cpu_user_us": 35334,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35350927,
+      "cpu_user_us": 35352,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35393871,
+      "cpu_user_us": 35394,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35363056,
+      "cpu_user_us": 35363,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35368063,
+      "cpu_user_us": 34662,
+      "cpu_sys_us": 708,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35429616,
+      "cpu_user_us": 35424,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35376015,
+      "cpu_user_us": 35377,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35427840,
+      "cpu_user_us": 35428,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35409135,
+      "cpu_user_us": 35409,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35463472,
+      "cpu_user_us": 35464,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 70621278,
+      "cpu_user_us": 70626,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 70331612,
+      "cpu_user_us": 70334,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 70648718,
+      "cpu_user_us": 69666,
+      "cpu_sys_us": 832,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 70638206,
+      "cpu_user_us": 70626,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 70569022,
+      "cpu_user_us": 70572,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 70606190,
+      "cpu_user_us": 69823,
+      "cpu_sys_us": 786,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 70526957,
+      "cpu_user_us": 70528,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 70550974,
+      "cpu_user_us": 70554,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 70601310,
+      "cpu_user_us": 70604,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 70679806,
+      "cpu_user_us": 70682,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 70615006,
+      "cpu_user_us": 70618,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 70457853,
+      "cpu_user_us": 70451,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 70618782,
+      "cpu_user_us": 70621,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 70501917,
+      "cpu_user_us": 70505,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35435808,
+      "cpu_user_us": 35439,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35390975,
+      "cpu_user_us": 35392,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35398400,
+      "cpu_user_us": 35385,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35381871,
+      "cpu_user_us": 35377,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35461488,
+      "cpu_user_us": 34689,
+      "cpu_sys_us": 773,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35486704,
+      "cpu_user_us": 35487,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35391312,
+      "cpu_user_us": 34386,
+      "cpu_sys_us": 1006,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35434015,
+      "cpu_user_us": 35435,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35444960,
+      "cpu_user_us": 35445,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35560177,
+      "cpu_user_us": 35561,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35453919,
+      "cpu_user_us": 35455,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35420223,
+      "cpu_user_us": 35421,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 150,
+      "wall_ns": 35447136,
+      "cpu_user_us": 35447,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 150,
+      "wall_ns": 35484144,
+      "cpu_user_us": 35484,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13984274,
+      "cpu_user_us": 13985,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13930529,
+      "cpu_user_us": 13930,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13890626,
+      "cpu_user_us": 13891,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13859825,
+      "cpu_user_us": 13860,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13898225,
+      "cpu_user_us": 13898,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13891154,
+      "cpu_user_us": 13892,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13892481,
+      "cpu_user_us": 13893,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13870018,
+      "cpu_user_us": 13871,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13887201,
+      "cpu_user_us": 13887,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13867905,
+      "cpu_user_us": 13869,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13833777,
+      "cpu_user_us": 13834,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13847234,
+      "cpu_user_us": 13848,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13832401,
+      "cpu_user_us": 13833,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13824193,
+      "cpu_user_us": 13825,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 26525707,
+      "cpu_user_us": 26530,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 26566427,
+      "cpu_user_us": 26569,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 26405227,
+      "cpu_user_us": 26407,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 26446843,
+      "cpu_user_us": 26449,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 26484204,
+      "cpu_user_us": 26486,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 26408298,
+      "cpu_user_us": 26410,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 26634188,
+      "cpu_user_us": 26623,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 26514859,
+      "cpu_user_us": 26517,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 26573628,
+      "cpu_user_us": 26575,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 26698140,
+      "cpu_user_us": 26685,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 26588444,
+      "cpu_user_us": 26590,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 26543804,
+      "cpu_user_us": 26545,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 26494331,
+      "cpu_user_us": 26496,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 26553244,
+      "cpu_user_us": 26555,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 14051634,
+      "cpu_user_us": 14053,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 0,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 14041954,
+      "cpu_user_us": 14043,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13964930,
+      "cpu_user_us": 13965,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 1,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13897778,
+      "cpu_user_us": 13898,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13910465,
+      "cpu_user_us": 13911,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 2,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13919698,
+      "cpu_user_us": 13920,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13944962,
+      "cpu_user_us": 13945,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 3,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13925169,
+      "cpu_user_us": 13926,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13892082,
+      "cpu_user_us": 13893,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 4,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13903297,
+      "cpu_user_us": 13903,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13864386,
+      "cpu_user_us": 13865,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 5,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13849969,
+      "cpu_user_us": 13851,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": false,
+      "ops": 100,
+      "wall_ns": 13813121,
+      "cpu_user_us": 13814,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "DISABLED"
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "rep": 6,
+      "instrumented": true,
+      "ops": 100,
+      "wall_ns": 13837457,
+      "cpu_user_us": 13838,
+      "cpu_sys_us": 0,
+      "error": null,
+      "pmu": {
+        "status": "INSTRUMENT_UNAVAILABLE",
+        "reason": "PERMISSION_DENIED",
+        "detail": "perf_event_open(armv8_pmuv3_0 type 10 event 0x0011 cpu_cycles): Permission denied (os error 13)"
+      }
+    }
+  ],
+  "not_run": []
+}
