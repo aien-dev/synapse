@@ -577,14 +577,16 @@ mod tests {
 
     #[test]
     fn test_real_host_radicle_storage_sigrefs_verification() {
-        // If `/home/drakestapleton/.radicle/storage/z21SQF1DVwRmpxbTMnSiYxXveiRp1` exists on this host,
+        // If `$HOME/.radicle/storage/z21SQF1DVwRmpxbTMnSiYxXveiRp1` exists on this host,
         // verify our parser and Ed25519 `sigrefs` verifier against the live Radicle storage!
-        let real_repo =
-            Path::new("/home/drakestapleton/.radicle/storage/z21SQF1DVwRmpxbTMnSiYxXveiRp1");
+        let Some(home) = std::env::var_os("HOME") else {
+            return;
+        };
+        let real_repo = Path::new(&home).join(".radicle/storage/z21SQF1DVwRmpxbTMnSiYxXveiRp1");
         if !real_repo.exists() {
             return;
         }
-        let (doc, id_oid, sigrefs) = load_radicle_state_from_bare_repo(real_repo).unwrap();
+        let (doc, id_oid, sigrefs) = load_radicle_state_from_bare_repo(&real_repo).unwrap();
         assert_eq!(doc.threshold, 1);
         assert_eq!(doc.delegates.len(), 1);
         assert_eq!(sigrefs.len(), 1);
