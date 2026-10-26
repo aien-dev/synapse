@@ -1709,13 +1709,22 @@ impl SynapseStore {
         let stored = self
             .changesets
             .get(&changeset_id)
-            .filter(|cs| &cs.envelope.repo_id == repo_id && cs.committed_seq <= effective_snapshot)
+            .filter(|cs| &cs.envelope.repo_id == repo_id)
             .ok_or_else(|| {
                 SynapseError::new(
                     RefusalCode::ChangesetNotFound,
                     format!("changeset {changeset_id} not found"),
                 )
             })?;
+        if stored.committed_seq > effective_snapshot {
+            return Err(SynapseError::new(
+                RefusalCode::ChangesetNotFound,
+                format!(
+                    "changeset {changeset_id} committed at {} is not visible at snapshot {}",
+                    stored.committed_seq, effective_snapshot
+                ),
+            ));
+        }
         Ok(stored.clone())
     }
 

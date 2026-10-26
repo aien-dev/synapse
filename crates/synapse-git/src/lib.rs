@@ -510,7 +510,7 @@ pub fn project_github_pull_request(
 
     let stored = service
         .store()
-        .get_changeset(req.payload.changeset_id, None, None)?;
+        .get_changeset_in_repo(&repo_id, req.payload.changeset_id, None, None)?;
     let head_git_oid = index
         .commit_for_changeset(req.payload.changeset_id)
         .ok_or_else(|| {
