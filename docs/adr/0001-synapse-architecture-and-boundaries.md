@@ -6,7 +6,7 @@
 
 ## 1. Context
 
-AIEN executes concurrent multi-agent builder, reviewer, verifier, and benchmark lanes on the NVIDIA DGX Spark (Grace Blackwell GB10). Empirical inspection of `/home/drakestapleton/workspace` on `spark-b87b` shows 291 worktrees in `hive-worktrees` consuming 27.05 GB (25.19 GiB), 276 additional agent clone directories in the workspace root, and 460 registered Git worktrees across `aien-sovereign-core` (150) and `omega` (310). Each `git worktree add` on `aien-sovereign-core` writes 138.98 MiB to disk and takes 588.511 ms at p50, capping checkout throughput at 1.713 worktrees/sec.
+AIEN executes concurrent multi-agent builder, reviewer, verifier, and benchmark lanes on the NVIDIA DGX Spark (Grace Blackwell GB10). Empirical inspection of `~/workspace` on the DGX Spark (`spark`) shows 291 worktrees in `hive-worktrees` consuming 27.05 GB (25.19 GiB), 276 additional agent clone directories in the workspace root, and 460 registered Git worktrees across `aien-sovereign-core` (150) and `omega` (310). Each `git worktree add` on `aien-sovereign-core` writes 138.98 MiB to disk and takes 588.511 ms at p50, capping checkout throughput at 1.713 worktrees/sec.
 
 High-frequency agent loops need to create changesets, attach machine test receipts, inspect trees and diffs without cloning or checking out a full working tree, detect path-level conflicts across concurrent lanes, and project accepted changes into Git and Radicle without compromising cryptographic canonicality.
 
