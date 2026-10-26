@@ -49,6 +49,8 @@ use synapse_store::{IngestOutcome, SharedStore};
 
 /// Default cap on chunk bytes buffered for one negotiation (64 MiB).
 pub const DEFAULT_MAX_PENDING_CHUNK_BYTES: u64 = 64 << 20;
+/// Refusals close a connection before one peer can consume the shared audit capacity.
+const MAX_SESSION_REFUSALS: u32 = 64;
 
 fn violation(msg: impl Into<String>) -> SynapseError {
     SynapseError::new(RefusalCode::WireProtocolViolation, msg)
@@ -150,6 +152,7 @@ impl WireServer {
         Session {
             server: self,
             hello_done: false,
+            refusals: 0,
             neg: Negotiation::default(),
         }
     }
@@ -234,12 +237,16 @@ pub struct Reply {
 pub struct Session<'a> {
     server: &'a WireServer,
     hello_done: bool,
+    refusals: u32,
     neg: Negotiation,
 }
 
 impl Session<'_> {
     fn refuse(&mut self, request_id: u32, e: SynapseError) -> Reply {
         self.neg = Negotiation::default();
+        self.refusals += 1;
+        let close = self.refusals >= MAX_SESSION_REFUSALS
+            || e.code == RefusalCode::BackpressureOverCapacity;
         Reply {
             frames: vec![Frame {
                 request_id,
@@ -248,7 +255,7 @@ impl Session<'_> {
                     message: e.message,
                 }),
             }],
-            close: false,
+            close,
         }
     }
 
@@ -368,6 +375,9 @@ impl Session<'_> {
     }
 
     fn submit(&mut self, req: ChainedRequest) -> SynapseResult<Accepted> {
+        // Before envelope decoding or signature verification, refuse if the shared audit
+        // cannot retain the next decision. The enforcer rechecks under its mutex at admission.
+        lock(&self.server.auth).audit_log().ensure_capacity()?;
         let srv = self.server;
         if let Some(missing) = self
             .neg

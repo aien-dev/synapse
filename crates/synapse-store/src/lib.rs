@@ -1696,6 +1696,29 @@ impl SynapseStore {
         Ok(stored.clone())
     }
 
+    /// Read a changeset for a repository-scoped caller. A foreign ID is indistinguishable
+    /// from an unknown ID, even when the shared store contains it.
+    pub fn get_changeset_in_repo(
+        &self,
+        repo_id: &RepoId,
+        changeset_id: ChangesetId,
+        min_visible_seq: Option<WalSeq>,
+        snapshot_seq: Option<WalSeq>,
+    ) -> SynapseResult<StoredChangeset> {
+        let effective_snapshot = self.resolve_snapshot_seq(min_visible_seq, snapshot_seq)?;
+        let stored = self
+            .changesets
+            .get(&changeset_id)
+            .filter(|cs| &cs.envelope.repo_id == repo_id && cs.committed_seq <= effective_snapshot)
+            .ok_or_else(|| {
+                SynapseError::new(
+                    RefusalCode::ChangesetNotFound,
+                    format!("changeset {changeset_id} not found"),
+                )
+            })?;
+        Ok(stored.clone())
+    }
+
     /// Read an immutable blob ONLY if it is associated with a WAL commit at `<= snapshot_seq`,
     /// recomputing its `BlobDigest` on read to detect disk corruption.
     pub fn get_blob_visible(

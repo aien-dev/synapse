@@ -338,6 +338,111 @@ fn frame(id: u32, body: FrameBody) -> Frame {
 }
 
 #[test]
+fn repeated_unauthenticated_submissions_close_session_before_unbounded_audit() {
+    let dir = temp_dir("audit-budget");
+    let fx = ChainFixture::new(1, None);
+    let srv = server(&fx, open_store(&dir));
+    let (env, _) = envelope(&fx.agent, "audit-budget", &[], &["x"], 5);
+    let mut req = submit_request(&fx.agent, fx.chain.clone(), &env, [9; 32], 5).unwrap();
+    req.chain.links[0].signature[0] ^= 1; // Well-encoded, but not signed by the authority.
+    let submitted = frame(2, FrameBody::Submit(Box::new(req)));
+    let encoded = encode_frame(&submitted).unwrap();
+    let (submitted, consumed) = decode_frame(&encoded, &WireLimits::default()).unwrap();
+    assert_eq!(consumed, encoded.len());
+    let mut session = srv.session();
+    assert!(
+        !session
+            .handle(frame(
+                0,
+                FrameBody::Hello(Hello {
+                    max_frame_body: 65_536,
+                    max_pending_chunk_bytes: 0,
+                })
+            ))
+            .close
+    );
+    let mut closed = false;
+    for _ in 0..65 {
+        session.handle(frame(
+            1,
+            FrameBody::Have(Have {
+                repo_id: repo(),
+                digests: vec![],
+            }),
+        ));
+        let reply = session.handle(submitted.clone());
+        assert_eq!(
+            refused_code(reply.frames.first().cloned()),
+            RefusalCode::AuthGrantSignatureInvalid
+        );
+        if reply.close {
+            closed = true;
+            break;
+        }
+    }
+    assert!(
+        closed,
+        "a connection must stop spending audit capacity on untrusted submissions"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn full_shared_audit_refuses_before_submit_payload_decode_and_closes() {
+    use synapse_auth::{AuditOutcome, BoundaryKind, MAX_AUDIT_ENTRIES};
+    use synapse_wire::{ServerConfig, WireServer};
+    let dir = temp_dir("audit-full");
+    let fx = ChainFixture::new(1, None);
+    let store = open_store(&dir);
+    let mut auth = fx.enforcer();
+    for _ in 0..MAX_AUDIT_ENTRIES {
+        auth.audit_log_mut()
+            .record(
+                1,
+                BoundaryKind::Api,
+                repo(),
+                "untrusted".into(),
+                Capability::Propose,
+                "wire_submit",
+                AuditOutcome::Refused {
+                    code: RefusalCode::AuthChainBroken,
+                    reason: "untrusted".into(),
+                },
+            )
+            .unwrap();
+    }
+    let srv = WireServer::new(
+        ServerConfig {
+            repo_id: repo(),
+            read_limits: WireLimits::default(),
+            max_pending_chunk_bytes: 64,
+        },
+        store,
+        auth,
+        std::sync::Arc::new(|| 5),
+    )
+    .unwrap();
+    let (env, _) = envelope(&fx.agent, "full-audit", &[], &["x"], 5);
+    let mut req = submit_request(&fx.agent, fx.chain.clone(), &env, [9; 32], 5).unwrap();
+    req.payload.clear(); // Negative control: decoder would return WireFrameMalformed without preflight.
+    let mut session = srv.session();
+    session.handle(frame(
+        0,
+        FrameBody::Hello(Hello {
+            max_frame_body: 65_536,
+            max_pending_chunk_bytes: 0,
+        }),
+    ));
+    let reply = session.handle(frame(1, FrameBody::Submit(Box::new(req))));
+    assert_eq!(
+        refused_code(reply.frames.into_iter().next()),
+        RefusalCode::BackpressureOverCapacity
+    );
+    assert!(reply.close);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn server_refuses_protocol_violations_with_typed_refusals() {
     let dir = temp_dir("refusals");
     let fx = ChainFixture::new(1, Some(vec!["lib".into()]));
