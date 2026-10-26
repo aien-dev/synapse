@@ -206,7 +206,7 @@ impl SynapseService {
     ) -> SynapseResult<EvidenceBase> {
         let envelope = self
             .store
-            .get_changeset(changeset_id, None, snapshot_seq)?
+            .get_changeset_in_repo(&self.repo_id, changeset_id, None, snapshot_seq)?
             .envelope;
         let base_tree = self.base_tree(&envelope, snapshot_seq)?;
         // The changeset's own tree is the v1 input root: the tree the runner tested.

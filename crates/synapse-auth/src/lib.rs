@@ -295,8 +295,27 @@ impl AuditEntry {
     }
 }
 
+/// Maximum retained audit decisions. Exhaustion stops authorization rather than dropping
+/// evidence; the caller must persist the complete log and restart with a fresh enforcer.
+pub const MAX_AUDIT_ENTRIES: usize = 4_096;
+/// Maximum retained bytes per attacker-controlled audit string. Oversized values retain a
+/// SHA-256 commitment and original length rather than occupying an unbounded log entry.
+const MAX_AUDIT_FIELD_BYTES: usize = 1_024;
+
+fn bounded_audit_field(value: String) -> String {
+    if value.len() <= MAX_AUDIT_FIELD_BYTES {
+        value
+    } else {
+        format!(
+            "[oversize {} bytes sha256={}]",
+            value.len(),
+            hex::encode(Sha256::digest(value.as_bytes()))
+        )
+    }
+}
+
 /// Tamper-evident hash-chained security audit log.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct AuditLog {
     entries: Vec<AuditEntry>,
     last_sha256: [u8; 32],
@@ -311,8 +330,19 @@ impl AuditLog {
         &self.entries
     }
 
+    #[cfg(test)]
     pub fn entries_mut_for_testing(&mut self) -> &mut Vec<AuditEntry> {
         &mut self.entries
+    }
+    /// Reserve space before any authorization state (nonce or quota) is changed.
+    pub fn ensure_capacity(&self) -> SynapseResult<()> {
+        if self.entries.len() >= MAX_AUDIT_ENTRIES {
+            return Err(SynapseError::new(
+                RefusalCode::BackpressureOverCapacity,
+                "audit log full; no authorization decision was made",
+            ));
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -325,16 +355,24 @@ impl AuditLog {
         capability: Capability,
         operation: impl Into<String>,
         outcome: AuditOutcome,
-    ) -> &AuditEntry {
-        let audit_seq = (self.entries.len() as u64).saturating_add(1);
+    ) -> SynapseResult<&AuditEntry> {
+        self.ensure_capacity()?;
+        let audit_seq = (self.entries.len() as u64) + 1;
+        let outcome = match outcome {
+            AuditOutcome::Refused { code, reason } => AuditOutcome::Refused {
+                code,
+                reason: bounded_audit_field(reason),
+            },
+            admitted => admitted,
+        };
         let mut entry = AuditEntry {
             audit_seq,
             timestamp_ms,
             boundary,
             repo_id,
-            actor_did,
+            actor_did: bounded_audit_field(actor_did),
             capability,
-            operation: operation.into(),
+            operation: bounded_audit_field(operation.into()),
             outcome,
             prev_entry_sha256: self.last_sha256,
             entry_sha256: [0u8; 32],
@@ -342,7 +380,7 @@ impl AuditLog {
         entry.entry_sha256 = entry.compute_sha256();
         self.last_sha256 = entry.entry_sha256;
         self.entries.push(entry);
-        self.entries.last().expect("just pushed")
+        Ok(self.entries.last().expect("just pushed"))
     }
 
     /// Verify the entire hash chain and sequence continuity of the audit log.
@@ -437,6 +475,7 @@ impl PolicyEnforcer {
         req: &AuthenticatedRequest<T>,
         now_ms: u64,
     ) -> SynapseResult<()> {
+        self.audit_log.ensure_capacity()?;
         let result = self.check_request_inner(expected_repo_id, expected_capability, req, now_ms);
         match &result {
             Ok(()) => {
@@ -448,7 +487,7 @@ impl PolicyEnforcer {
                     expected_capability,
                     operation,
                     AuditOutcome::Admitted,
-                );
+                )?;
             }
             Err(err) => {
                 self.audit_log.record(
@@ -462,7 +501,7 @@ impl PolicyEnforcer {
                         code: err.code,
                         reason: err.message.clone(),
                     },
-                );
+                )?;
             }
         }
         result
@@ -612,6 +651,139 @@ fn put_str(buf: &mut Vec<u8>, s: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unauthenticated_refusals_cannot_grow_audit_without_bound() {
+        let mut log = AuditLog::new();
+        let repo = RepoId::new("example/repo").unwrap();
+        for _ in 0..MAX_AUDIT_ENTRIES {
+            log.record(
+                1,
+                BoundaryKind::Api,
+                repo.clone(),
+                "untrusted".into(),
+                Capability::Propose,
+                "wire_submit",
+                AuditOutcome::Refused {
+                    code: RefusalCode::AuthChainBroken,
+                    reason: "untrusted chain".into(),
+                },
+            )
+            .unwrap();
+        }
+        let head = log.verify_chain().unwrap();
+        assert_eq!(
+            log.record(
+                1,
+                BoundaryKind::Api,
+                repo,
+                "untrusted".into(),
+                Capability::Propose,
+                "wire_submit",
+                AuditOutcome::Admitted
+            )
+            .unwrap_err()
+            .code,
+            RefusalCode::BackpressureOverCapacity
+        );
+        assert_eq!(log.entries().len(), MAX_AUDIT_ENTRIES);
+        assert_eq!(log.verify_chain().unwrap(), head);
+    }
+
+    #[test]
+    fn oversized_untrusted_audit_fields_keep_explicit_digest_not_payload() {
+        let mut log = AuditLog::new();
+        let value = "x".repeat(MAX_AUDIT_FIELD_BYTES + 1);
+        let entry = log
+            .record(
+                1,
+                BoundaryKind::Api,
+                RepoId::new("example/repo").unwrap(),
+                value.clone(),
+                Capability::Propose,
+                "wire_submit",
+                AuditOutcome::Refused {
+                    code: RefusalCode::AuthChainBroken,
+                    reason: value.clone(),
+                },
+            )
+            .unwrap();
+        let digest = hex::encode(Sha256::digest(value.as_bytes()));
+        assert!(entry.actor_did.contains(&digest));
+        assert!(
+            matches!(&entry.outcome, AuditOutcome::Refused { reason, .. }
+            if reason.contains(&digest) && reason.len() < MAX_AUDIT_FIELD_BYTES)
+        );
+        assert!(log.verify_chain().is_ok());
+    }
+
+    #[test]
+    fn full_audit_refuses_before_consuming_nonce_or_rate_quota() {
+        let authority = SigningKey::from_bytes(&[31; 32]);
+        let agent = SigningKey::from_bytes(&[32; 32]);
+        let repo = RepoId::new("example/repo").unwrap();
+        let grant = AgentCapabilityGrant::issue(
+            &authority,
+            [7; 32],
+            repo.clone(),
+            encode_did_key_ed25519(&agent.verifying_key().to_bytes()),
+            vec![Capability::Propose],
+            1024,
+            1,
+            60_000,
+            0,
+            100_000,
+        );
+        let req = AuthenticatedRequest::sign_new(
+            &agent,
+            grant,
+            repo.clone(),
+            Capability::Propose,
+            [8; 32],
+            2_000,
+            0,
+            "proposal",
+        )
+        .unwrap();
+        let mut auth = PolicyEnforcer::new();
+        auth.register_repo_authority(
+            repo.clone(),
+            encode_did_key_ed25519(&authority.verifying_key().to_bytes()),
+        );
+        for _ in 0..MAX_AUDIT_ENTRIES {
+            auth.audit_log
+                .record(
+                    1,
+                    BoundaryKind::Api,
+                    repo.clone(),
+                    "untrusted".into(),
+                    Capability::Propose,
+                    "wire_submit",
+                    AuditOutcome::Refused {
+                        code: RefusalCode::AuthChainBroken,
+                        reason: "invalid".into(),
+                    },
+                )
+                .unwrap();
+        }
+        let head = auth.audit_log.verify_chain().unwrap();
+        assert_eq!(
+            auth.authorize(
+                BoundaryKind::Api,
+                "submit",
+                &repo,
+                Capability::Propose,
+                &req,
+                2_000,
+            )
+            .unwrap_err()
+            .code,
+            RefusalCode::BackpressureOverCapacity
+        );
+        assert!(auth.consumed_nonces.is_empty());
+        assert!(auth.rate_windows.is_empty());
+        assert_eq!(auth.audit_log.verify_chain().unwrap(), head);
+    }
 
     #[test]
     fn test_capability_matrix_adversarial_refusals_and_audit_chain() {

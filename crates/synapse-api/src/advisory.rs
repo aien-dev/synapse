@@ -542,7 +542,9 @@ impl SynapseService {
         let mut stack = vec![start];
         while let Some(id) = stack.pop() {
             if out.insert(id) {
-                let cs = self.store.get_changeset(id, None, snap)?;
+                let cs = self
+                    .store
+                    .get_changeset_in_repo(&self.repo_id, id, None, snap)?;
                 stack.extend(cs.envelope.parent_changesets.iter().copied());
             }
         }
