@@ -24,6 +24,16 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 | [`synapse-radicle`](crates/synapse-radicle) | Gate 3 | Radicle `refs/rad/id` and `refs/rad/sigrefs` Ed25519 delegate threshold verifier and split-brain refusal engine |
 | [`synapse-bench`](crates/synapse-bench) | Gate 4 | Comparative qualification harness (Synapse ingest and checkout-free queries versus Git worktree and Git plumbing workflows) plus WAL, Git materialization, and Radicle canonicality conformance suites |
 
+## Connected repos
+
+Each tool below is its own repository whose root `.crumb` names `aien-dev/synapse@099a980` as parent (`extensions.map.parent`). They coordinate the agents that work across aien-dev; change them there, not here.
+
+* [`synapse-claims`](https://github.com/aien-dev/synapse-claims): append-only, hash-chained, Ed25519-signed lease ledger for repos, branches, path globs, PRs and outside targets. Conflicting leases are refused with exit 2 and the holder named.
+* [`synapse-map`](https://github.com/aien-dev/synapse-map): the org repository graph; `where` routes a task to its repository, `new` scaffolds a connected repository, `check` reports orphans and duplicate purposes.
+* [`synapse-pulse`](https://github.com/aien-dev/synapse-pulse): reconciles the ledger against GitHub (through the gh guard, conditional requests) and live agent sessions, and raises one `COORD-DRIFT:` watchdog alarm.
+* [`synapse-mcp`](https://github.com/aien-dev/synapse-mcp): MCP stdio server that executes the CLIs above for agents.
+* [`synapse-board`](https://github.com/aien-dev/synapse-board): renders the human board (Markdown and a tailnet-only page) from the ledger.
+
 ## Documentation and Evidence
 
 * [Domain Glossary (`CONTEXT.md`)](CONTEXT.md)
