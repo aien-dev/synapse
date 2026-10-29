@@ -1,0 +1,58 @@
+stack samples (all threads stopped): 507
+thread-samples with synapse_submit on stack: 3727 (run 917)
+
+# state
+   2343  wait:syscall <- std::sys::pal::unix::futex::futex_wait@futex.rs:73
+    917  run
+    448  wait:__GI_fdatasync <- std::fs::File::sync_data@fs.rs:812
+     10  wait:syscall
+      7  wait:__libc_pwrite64 <- __libc_pwrite64@pwrite64.c:23
+      2  wait:__GI_fsync <- std::fs::File::sync_all@fs.rs:780
+
+# phase (callee under anchor) | run or wait
+   2412  submit@shared.rs | wait
+    389  {closure#0}@write_phase.rs | wait
+    347  wire_roundtrip<synapse_auth::AuthenticatedRequest<synapse_api::SubmitChangesetPayload>>@synapse_arm.rs | run
+    259  admit_submit@lib.rs | run
+    208  build_submit_request@synapse_arm.rs | run
+     99  submit@shared.rs | run
+      9  drop<std::sync::poison::mutex::MutexGuard<synapse_api::SynapseService>>@mod.rs | wait
+      3  index_submitted@lib.rs | run
+      1  {closure#0}@write_phase.rs | run
+
+# leaf (self) of run samples
+    186  serde_json
+    179  libc:mem*
+    145  curve25519-dalek
+     96  sha2
+     92  rust:alloc
+     58  serde_core
+     50  itoa
+     37  signature
+     21  ed25519-dalek
+     15  synapse-auth:lib.rs
+     12  synapse-core:lib.rs
+     11  libc:malloc/free
+      8  subtle
+      5  synapse-store:lib.rs
+      1  synapse-bench:write_phase.rs
+      1  digest
+
+# inclusive crate presence in run samples
+    777  synapse-auth
+    708  synapse-api
+    556  synapse-bench
+    551  serde_json
+    549  serde_core
+    281  rust
+    190  libc
+    147  curve25519-dalek
+    134  synapse-core
+     99  synapse-store
+     97  digest
+     96  sha2
+     96  block-buffer
+     50  itoa
+     47  signature
+     21  ed25519-dalek
+      8  subtle

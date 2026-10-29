@@ -1,0 +1,1784 @@
+{
+  "schema": "synapse-bench/pmu-diag-report/v1",
+  "status": "DIAGNOSTIC_ONLY",
+  "protocol_sha256": "f4076275591aa21043f4c67be9449304e241f4030d58153e9938a49cff30496c",
+  "raw_sha256": "111a779c6eea7e100dcf0657fba74a3742190bdd36a52ab18a5a4cf7816d99fb",
+  "legs": [
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "unpinned",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 111735465,
+          "p50": 111747000,
+          "max": 111881290
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 5586,
+          "p50": 5587,
+          "max": 5594
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 111735,
+          "p50": 111747,
+          "max": 111784
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 111729577,
+          "p50": 111741032,
+          "max": 111765753
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 5586,
+          "p50": 5587,
+          "max": 5588
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 111730,
+          "p50": 111740,
+          "max": 111760
+        }
+      },
+      "overhead_ppm_p50": -53,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "a725",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 118774562,
+          "p50": 119044931,
+          "max": 119240005
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 5938,
+          "p50": 5952,
+          "max": 5962
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 118775,
+          "p50": 119038,
+          "max": 119240
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 118774849,
+          "p50": 118826530,
+          "max": 119242533
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 5938,
+          "p50": 5941,
+          "max": 5962
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 118775,
+          "p50": 118821,
+          "max": 119229
+        }
+      },
+      "overhead_ppm_p50": -1834,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/sha256_content_12k",
+      "affinity": "x925",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 111740777,
+          "p50": 111759145,
+          "max": 111804025
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 5587,
+          "p50": 5587,
+          "max": 5590
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 111741,
+          "p50": 111759,
+          "max": 111806
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 111743913,
+          "p50": 111758473,
+          "max": 111769033
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 5587,
+          "p50": 5587,
+          "max": 5588
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 111744,
+          "p50": 111757,
+          "max": 111762
+        }
+      },
+      "overhead_ppm_p50": -6,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "unpinned",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 47592484,
+          "p50": 47598949,
+          "max": 47618020
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 23796,
+          "p50": 23799,
+          "max": 23809
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 47593,
+          "p50": 47599,
+          "max": 47618
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 47585124,
+          "p50": 47590996,
+          "max": 47609989
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 23792,
+          "p50": 23795,
+          "max": 23804
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 47585,
+          "p50": 47591,
+          "max": 47610
+        }
+      },
+      "overhead_ppm_p50": -167,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "a725",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 98144282,
+          "p50": 98196410,
+          "max": 98764686
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 49072,
+          "p50": 49098,
+          "max": 49382
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 98137,
+          "p50": 98194,
+          "max": 98758
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 98164506,
+          "p50": 98347275,
+          "max": 98559756
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 49082,
+          "p50": 49173,
+          "max": 49279
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 98165,
+          "p50": 98343,
+          "max": 98562
+        }
+      },
+      "overhead_ppm_p50": 1536,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/ed25519_verify",
+      "affinity": "x925",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 47602645,
+          "p50": 47606101,
+          "max": 47662484
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 23801,
+          "p50": 23803,
+          "max": 23831
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 47602,
+          "p50": 47606,
+          "max": 47659
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 47603045,
+          "p50": 47613156,
+          "max": 47631541
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 23801,
+          "p50": 23806,
+          "max": 23815
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 47602,
+          "p50": 47613,
+          "max": 47631
+        }
+      },
+      "overhead_ppm_p50": 148,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "unpinned",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 55605523,
+          "p50": 55612163,
+          "max": 55640163
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 27802,
+          "p50": 27806,
+          "max": 27820
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 55606,
+          "p50": 55612,
+          "max": 55637
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 55594051,
+          "p50": 55624979,
+          "max": 55648419
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 27797,
+          "p50": 27812,
+          "max": 27824
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 55595,
+          "p50": 55625,
+          "max": 55648
+        }
+      },
+      "overhead_ppm_p50": 230,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "a725",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 110843092,
+          "p50": 110873204,
+          "max": 111078470
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 55421,
+          "p50": 55436,
+          "max": 55539
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 110839,
+          "p50": 110857,
+          "max": 111073
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 110810339,
+          "p50": 110832515,
+          "max": 112114155
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 55405,
+          "p50": 55416,
+          "max": 56057
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 110805,
+          "p50": 110833,
+          "max": 112116
+        }
+      },
+      "overhead_ppm_p50": -366,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/envelope_validate",
+      "affinity": "x925",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 55581155,
+          "p50": 55594979,
+          "max": 55666596
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 27790,
+          "p50": 27797,
+          "max": 27833
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 55582,
+          "p50": 55595,
+          "max": 55667
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 55578051,
+          "p50": 55584211,
+          "max": 55672803
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 27789,
+          "p50": 27792,
+          "max": 27836
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 55578,
+          "p50": 55584,
+          "max": 55673
+        }
+      },
+      "overhead_ppm_p50": -193,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "unpinned",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 153226171,
+          "p50": 153278059,
+          "max": 153484124
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 76613,
+          "p50": 76639,
+          "max": 76742
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 153226,
+          "p50": 153278,
+          "max": 153484
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 153193403,
+          "p50": 153309323,
+          "max": 153638428
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 76596,
+          "p50": 76654,
+          "max": 76819
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 153193,
+          "p50": 153309,
+          "max": 153638
+        }
+      },
+      "overhead_ppm_p50": 203,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "a725",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 344220721,
+          "p50": 344560259,
+          "max": 344929797
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 172110,
+          "p50": 172280,
+          "max": 172464
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 344219,
+          "p50": 344560,
+          "max": 344916
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 344245777,
+          "p50": 344774325,
+          "max": 345232631
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 172122,
+          "p50": 172387,
+          "max": 172616
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 344245,
+          "p50": 344775,
+          "max": 345233
+        }
+      },
+      "overhead_ppm_p50": 621,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "floor/json_decode_submit_request",
+      "affinity": "x925",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 153119146,
+          "p50": 153240267,
+          "max": 153415260
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 76559,
+          "p50": 76620,
+          "max": 76707
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 153119,
+          "p50": 153239,
+          "max": 153415
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 153088875,
+          "p50": 153380268,
+          "max": 153455388
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 76544,
+          "p50": 76690,
+          "max": 76727
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 153089,
+          "p50": 153380,
+          "max": 153453
+        }
+      },
+      "overhead_ppm_p50": 913,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "unpinned",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 503740338,
+          "p50": 529855898,
+          "max": 566689313
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 31483771,
+          "p50": 33115993,
+          "max": 35418082
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 14634,
+          "p50": 20435,
+          "max": 28092
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 434047838,
+          "p50": 523209733,
+          "max": 623766877
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 27127989,
+          "p50": 32700608,
+          "max": 38985429
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 16194,
+          "p50": 20292,
+          "max": 26379
+        }
+      },
+      "overhead_ppm_p50": -12543,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "a725",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 413920939,
+          "p50": 513113915,
+          "max": 548417882
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 25870058,
+          "p50": 32069619,
+          "max": 34276117
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 18337,
+          "p50": 23811,
+          "max": 27941
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 423546355,
+          "p50": 520149860,
+          "max": 544118929
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 26471647,
+          "p50": 32509366,
+          "max": 34007433
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 20603,
+          "p50": 22886,
+          "max": 30441
+        }
+      },
+      "overhead_ppm_p50": 13712,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/every_commit/agents=1",
+      "affinity": "x925",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 479433002,
+          "p50": 589137547,
+          "max": 689499776
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 29964562,
+          "p50": 36821096,
+          "max": 43093736
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 13889,
+          "p50": 15709,
+          "max": 18950
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 477242221,
+          "p50": 534207768,
+          "max": 634233906
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 29827638,
+          "p50": 33387985,
+          "max": 39639619
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 12492,
+          "p50": 16001,
+          "max": 20697
+        }
+      },
+      "overhead_ppm_p50": -93237,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "unpinned",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 67542985,
+          "p50": 109764000,
+          "max": 118024385
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 2110718,
+          "p50": 3430125,
+          "max": 3688262
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 17611,
+          "p50": 20855,
+          "max": 28459
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 99897958,
+          "p50": 105990090,
+          "max": 138059413
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 3121811,
+          "p50": 3312190,
+          "max": 4314356
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 15760,
+          "p50": 21656,
+          "max": 27998
+        }
+      },
+      "overhead_ppm_p50": -34382,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "a725",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 104313536,
+          "p50": 111920749,
+          "max": 117863616
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 3259798,
+          "p50": 3497523,
+          "max": 3683238
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 25563,
+          "p50": 27596,
+          "max": 31016
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 100753660,
+          "p50": 113304693,
+          "max": 117775423
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 3148551,
+          "p50": 3540771,
+          "max": 3680481
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 24583,
+          "p50": 28065,
+          "max": 30955
+        }
+      },
+      "overhead_ppm_p50": 12365,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=1",
+      "affinity": "x925",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 87277278,
+          "p50": 92879054,
+          "max": 99927847
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 2727414,
+          "p50": 2902470,
+          "max": 3122745
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 16643,
+          "p50": 17534,
+          "max": 20810
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 85806629,
+          "p50": 90916803,
+          "max": 98093356
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 2681457,
+          "p50": 2841150,
+          "max": 3065417
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 16706,
+          "p50": 17606,
+          "max": 18598
+        }
+      },
+      "overhead_ppm_p50": -21126,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "unpinned",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 152429642,
+          "p50": 167095344,
+          "max": 170066449
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 595428,
+          "p50": 652716,
+          "max": 664322
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 158046,
+          "p50": 181499,
+          "max": 200483
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 155231162,
+          "p50": 169292541,
+          "max": 255208179
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 606371,
+          "p50": 661298,
+          "max": 996906
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 164678,
+          "p50": 181610,
+          "max": 196246
+        }
+      },
+      "overhead_ppm_p50": 13149,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "a725",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 165476199,
+          "p50": 180667391,
+          "max": 191910706
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 646391,
+          "p50": 705731,
+          "max": 749651
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 207535,
+          "p50": 221304,
+          "max": 246491
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 176096821,
+          "p50": 188340524,
+          "max": 196818334
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 687878,
+          "p50": 735705,
+          "max": 768821
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 206222,
+          "p50": 221466,
+          "max": 251244
+        }
+      },
+      "overhead_ppm_p50": 42471,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=8",
+      "affinity": "x925",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 156680165,
+          "p50": 176804890,
+          "max": 223365242
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 612031,
+          "p50": 690644,
+          "max": 872520
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 130177,
+          "p50": 138547,
+          "max": 158097
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 163614813,
+          "p50": 172093582,
+          "max": 176298407
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 639120,
+          "p50": 672240,
+          "max": 688665
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 128919,
+          "p50": 142278,
+          "max": 155200
+        }
+      },
+      "overhead_ppm_p50": -26646,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "unpinned",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 249278338,
+          "p50": 310916283,
+          "max": 316527548
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 243435,
+          "p50": 303629,
+          "max": 309108
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 734829,
+          "p50": 774294,
+          "max": 808109
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 250428426,
+          "p50": 277714857,
+          "max": 311623552
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 244559,
+          "p50": 271205,
+          "max": 304319
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 723624,
+          "p50": 753441,
+          "max": 794083
+        }
+      },
+      "overhead_ppm_p50": -106785,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "a725",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 328748949,
+          "p50": 369991798,
+          "max": 462967816
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 321043,
+          "p50": 361320,
+          "max": 452117
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 912810,
+          "p50": 934662,
+          "max": 964515
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 318870395,
+          "p50": 366382673,
+          "max": 392713900
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 311396,
+          "p50": 357795,
+          "max": 383509
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 901979,
+          "p50": 934381,
+          "max": 969293
+        }
+      },
+      "overhead_ppm_p50": -9754,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "write/group_commit/agents=32",
+      "affinity": "x925",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 228349306,
+          "p50": 272629341,
+          "max": 291577117
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 222997,
+          "p50": 266239,
+          "max": 284743
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 541327,
+          "p50": 571664,
+          "max": 615516
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 230241173,
+          "p50": 257094770,
+          "max": 267289022
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 224844,
+          "p50": 251069,
+          "max": 261024
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 555102,
+          "p50": 569533,
+          "max": 596621
+        }
+      },
+      "overhead_ppm_p50": -56980,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "unpinned",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 35338591,
+          "p50": 35376015,
+          "max": 35409135
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 235590,
+          "p50": 235840,
+          "max": 236060
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 35334,
+          "p50": 35377,
+          "max": 35409
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 35338495,
+          "p50": 35389680,
+          "max": 35463472
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 235589,
+          "p50": 235931,
+          "max": 236423
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 35340,
+          "p50": 35390,
+          "max": 35464
+        }
+      },
+      "overhead_ppm_p50": 386,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "a725",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 70526957,
+          "p50": 70615006,
+          "max": 70648718
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 470179,
+          "p50": 470766,
+          "max": 470991
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 70498,
+          "p50": 70604,
+          "max": 70626
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 70331612,
+          "p50": 70550974,
+          "max": 70679806
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 468877,
+          "p50": 470339,
+          "max": 471198
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 70334,
+          "p50": 70554,
+          "max": 70682
+        }
+      },
+      "overhead_ppm_p50": -906,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "query/read_tree_diff",
+      "affinity": "x925",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 35391312,
+          "p50": 35444960,
+          "max": 35461488
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 235942,
+          "p50": 236299,
+          "max": 236409
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 35385,
+          "p50": 35445,
+          "max": 35462
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 35381871,
+          "p50": 35434015,
+          "max": 35560177
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 235879,
+          "p50": 236226,
+          "max": 237067
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 35377,
+          "p50": 35435,
+          "max": 35561
+        }
+      },
+      "overhead_ppm_p50": -308,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "unpinned",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 13832401,
+          "p50": 13890626,
+          "max": 13984274
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 138324,
+          "p50": 138906,
+          "max": 139842
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 13833,
+          "p50": 13891,
+          "max": 13985
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 13824193,
+          "p50": 13867905,
+          "max": 13930529
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 138241,
+          "p50": 138679,
+          "max": 139305
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 13825,
+          "p50": 13869,
+          "max": 13930
+        }
+      },
+      "overhead_ppm_p50": -1635,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "a725",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 26405227,
+          "p50": 26525707,
+          "max": 26634188
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 264052,
+          "p50": 265257,
+          "max": 266341
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 26407,
+          "p50": 26530,
+          "max": 26623
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 26408298,
+          "p50": 26543804,
+          "max": 26698140
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 264082,
+          "p50": 265438,
+          "max": 266981
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 26410,
+          "p50": 26545,
+          "max": 26685
+        }
+      },
+      "overhead_ppm_p50": 682,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    },
+    {
+      "leg": "crumb/context_advisory",
+      "affinity": "x925",
+      "control": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 13813121,
+          "p50": 13910465,
+          "max": 14051634
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 138131,
+          "p50": 139104,
+          "max": 140516
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 13814,
+          "p50": 13911,
+          "max": 14053
+        }
+      },
+      "instrumented": {
+        "windows": 7,
+        "errors": 0,
+        "wall_ns": {
+          "n": 7,
+          "min": 13837457,
+          "p50": 13903297,
+          "max": 14041954
+        },
+        "wall_ns_per_op": {
+          "n": 7,
+          "min": 138374,
+          "p50": 139032,
+          "max": 140419
+        },
+        "cpu_us": {
+          "n": 7,
+          "min": 13838,
+          "p50": 13903,
+          "max": 14043
+        }
+      },
+      "overhead_ppm_p50": -515,
+      "pmu": {
+        "windows": 7,
+        "counted_windows": 0,
+        "unavailable": {
+          "PERMISSION_DENIED": 7
+        },
+        "states": {},
+        "events": [],
+        "ratios": []
+      }
+    }
+  ],
+  "not_run": [],
+  "notes": [
+    "Hardware counts are supporting diagnostics, not performance claims and not qualification. Seconds per operation are the measured unit.",
+    "Counts are user-space only (exclude_kernel, exclude_hv) and never scaled by time_enabled/time_running; a task blocked in fdatasync is off CPU and counts nothing.",
+    "INSTRUMENT_UNAVAILABLE windows carry no counts. Energy is not measured by pmu-diag."
+  ]
+}

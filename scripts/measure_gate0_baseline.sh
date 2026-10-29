@@ -10,7 +10,7 @@ set -euo pipefail
 OUT_DIR="${1:-$(pwd)/evidence/gate0-baseline}"
 mkdir -p "$OUT_DIR"
 
-WORKSPACE_ROOT="/home/drakestapleton/workspace"
+WORKSPACE_ROOT="${WORKSPACE_ROOT:-$HOME/workspace}"
 SC_REPO="${WORKSPACE_ROOT}/aien-sovereign-core"
 OMEGA_REPO="${WORKSPACE_ROOT}/omega"
 HIVE_WT_DIR="${WORKSPACE_ROOT}/hive-worktrees"

@@ -13,6 +13,8 @@
 //! --expect-store-id ID refuses (exit 1) unless the store carries that STORE_ID marker.
 //!
 //! synapse-coord canon <file>   parse a record and print it re-serialized (format parity check)
+//!
+//! synapse-coord board ...         the mission message board (see `synapse_coord::board::cli`)
 
 use std::process::ExitCode;
 use synapse_coord::{
@@ -39,6 +41,9 @@ fn ttl(s: Option<&String>) -> Result<Option<i64>, String> {
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "board") {
+        return ExitCode::from(synapse_coord::board::cli::run(&args[1..]) as u8);
+    }
     if args.len() == 2 && args[0] == "canon" {
         return match synapse_coord::read_record_file(std::path::Path::new(&args[1]))
             .ok()

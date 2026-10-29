@@ -952,6 +952,7 @@ impl PolicyEnforcer {
         request_seq: WalSeq,
         now_ms: u64,
     ) -> SynapseResult<()> {
+        self.audit_log.ensure_capacity()?;
         let result = self.check_chained_request(
             expected_repo_id,
             expected_capability,
@@ -974,7 +975,7 @@ impl PolicyEnforcer {
             expected_capability,
             operation,
             outcome,
-        );
+        )?;
         result
     }
 

@@ -1,0 +1,49 @@
+{
+  "agents": 1,
+  "arms": [
+    "ring",
+    "wire",
+    "direct_auth"
+  ],
+  "bound": {
+    "e_floor_formula": "22.731 W x t_floor + 0.2766 mJ",
+    "e_floor_j": 0.018608651620894968,
+    "fraction": "floor / measured (1.0 = at the floor)",
+    "source": "docs/PHASE5_GROUP_COMMIT.md section 5 (ADR 0003 section 6 durable latency for one change)",
+    "t_floor_formula": "0.805 ms + 11500 B x 0.138 s/GiB",
+    "t_floor_s": 0.0008064780089259148
+  },
+  "chain_depth": 2,
+  "changes_per_arm": 2000,
+  "declared_before_run": true,
+  "echo_round_trips_per_transport_per_rep": 20000,
+  "energy_sensor": "aien_spbm hwmon: SoC package only, uncalibrated; NVMe UNMEASURED",
+  "fsync_policy": "GROUP_COMMIT_DEFAULT",
+  "git_rev": "864aeca02da1b49c2783c1e3b5073dbd87c4cd90",
+  "idle_window_s": 30,
+  "order": "rotated per repetition",
+  "per_change": {
+    "new_blob_bytes": 3967,
+    "paths": 2,
+    "shared_blob_bytes": 3967
+  },
+  "reps": 5,
+  "ring_config": {
+    "capacity_bytes_per_direction": 1048576,
+    "max_record_bytes": 262144,
+    "sleep": "futex on the doorbell word, 10 ms timeout",
+    "spin_s": 0.00005
+  },
+  "rule": {
+    "commit": "864aeca02da1b49c2783c1e3b5073dbd87c4cd90",
+    "path": "evidence/g3-shm-ring/x5/RULE.md",
+    "sha256": "e26e2a0eb2a666f4553e0d346530aacfd2ce493c10c00a52046ec835f0d730be"
+  },
+  "step": "G3",
+  "store_root": "target/wire-transport-stores",
+  "tool": "wire-transport",
+  "transport": {
+    "ring": "synapse_wire::RingStream over one sealed memfd region (MAP_SHARED), client and server threads in one process",
+    "wire": "std::os::unix::net::UnixStream pair, client and server threads in one process"
+  }
+}
