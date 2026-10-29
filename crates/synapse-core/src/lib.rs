@@ -67,6 +67,10 @@ pub enum RefusalCode {
     /// not a subset of the have, an unsolicited or repeated chunk, or a submit before every
     /// wanted chunk arrived (step G1).
     WireProtocolViolation,
+    /// The peer broke the shared-memory ring protocol: an index out of range, moved back or
+    /// misaligned, a record length over the cap or past the published bytes, or a wrong
+    /// record sequence number (step G3).
+    WireRingViolation,
     CheckpointCorrupt,
     IoFailure,
 
@@ -872,7 +876,7 @@ mod tests {
 
     #[test]
     fn test_radicle_did_key_roundtrip_and_real_spark_did() {
-        // Real Radicle DID from `rad self` on spark-b87b:
+        // Real Radicle DID from `rad self` on the DGX Spark:
         let real_did = "did:key:z6MkfZDue1TbaNFi3ZzcD9uiTeduPLC52ucdFVuLKZwexxhK";
         let pubkey = decode_did_key_ed25519(real_did).expect("decode real Radicle DID");
         let reencoded = encode_did_key_ed25519(&pubkey);

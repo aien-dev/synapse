@@ -1,0 +1,77 @@
+# Red (2026-10-16, rev 864aeca code with ring.rs stubbed): every g3_ring test run alone
+# Stub 1 (red1): try_recv trusts the peer: no index, length, torn or sequence checks (diff: red1-stub.diff).
+# The transport refusal test hangs under stub 1 (the reader waits forever on a frame that never validates; killed, exit 143), so it is skipped in this listing.
+test attach_refuses_an_unsealed_wrong_size_or_mismatched_region ... ok
+test attached_peer_cannot_shrink_or_grow_the_sealed_region ... ok
+test cross_process_ring_delivers_every_record_once_in_order ... ok
+test honest_indices_wrap_past_u64_max_and_the_ring_end_without_loss ... ok
+test hostile_reader_tail_is_refused_by_the_sender ... ok
+test hostile_writer_bad_lengths_cannot_make_the_reader_panic_or_read_outside_the_ring ... FAILED (exit 101)
+    thread 'hostile_writer_bad_lengths_cannot_make_the_reader_panic_or_read_outside_the_ring' (1092894) panicked at crates/synapse-wire/tests/g3_ring.rs:132:27:
+    hostile length accepted: Record
+test hostile_writer_cannot_make_the_reader_accept_a_record_twice ... FAILED (exit 101)
+    thread 'hostile_writer_cannot_make_the_reader_accept_a_record_twice' (1092906) panicked at crates/synapse-wire/tests/g3_ring.rs:344:73:
+    called `Result::unwrap_err()` on an `Ok` value: Record
+test hostile_writer_index_wrap_cannot_make_the_reader_panic_or_read_outside_the_ring ... FAILED (exit 101)
+    thread 'hostile_writer_index_wrap_cannot_make_the_reader_panic_or_read_outside_the_ring' (1092920) panicked at crates/synapse-wire/tests/g3_ring.rs:167:14:
+    hostile head accepted: Record
+test hostile_writer_random_pokes_never_panic_and_never_deliver_a_record_twice ... FAILED (exit 101)
+    thread 'hostile_writer_random_pokes_never_panic_and_never_deliver_a_record_twice' (1092935) panicked at /rustc/48a229ceaefd4985c50990b14116b6d856af0985/library/alloc/src/raw_vec/mod.rs:28:5:
+    capacity overflow
+    thread 'hostile_writer_random_pokes_never_panic_and_never_deliver_a_record_twice' (1092935) panicked at crates/synapse-wire/tests/g3_ring.rs:90:19:
+    reader panicked on hostile input: seed 0 step 39
+test hostile_writer_torn_frames_are_refused_and_payloads_are_copied_out_before_validation ... FAILED (exit 101)
+    thread 'hostile_writer_torn_frames_are_refused_and_payloads_are_copied_out_before_validation' (1092948) panicked at crates/synapse-wire/tests/g3_ring.rs:217:73:
+    called `Result::unwrap_err()` on an `Ok` value: Record
+test model_test_no_frame_is_lost_or_duplicated ... ok
+test model_test_two_threads_two_mappings_no_record_lost_or_duplicated ... ok
+test negative_control_trusting_reader_panics_or_accepts_twice_on_the_same_inputs ... ok
+test ring_refusal_reaches_the_frame_transport_as_wire_ring_violation ... SKIPPED in this run (hangs under this stub: see note)
+test ring_stream_carries_the_g1_session_and_acknowledges_durable_changes ... ok
+
+# Stub 2 (red2): ring offsets not masked to the capacity (diff: red2-stub.diff).
+test attach_refuses_an_unsealed_wrong_size_or_mismatched_region ... ok
+test attached_peer_cannot_shrink_or_grow_the_sealed_region ... ok
+test cross_process_ring_delivers_every_record_once_in_order ... FAILED (exit 101)
+    thread 'cross_process_ring_delivers_every_record_once_in_order' (1010975) panicked at crates/synapse-wire/tests/g3_ring.rs:731:5:
+    assertion failed: child.wait().unwrap().success()
+test honest_indices_wrap_past_u64_max_and_the_ring_end_without_loss ... FAILED (exit 101)
+    thread 'honest_indices_wrap_past_u64_max_and_the_ring_end_without_loss' (1010991) panicked at crates/synapse-wire/src/ring.rs:423:10:
+    index out of bounds: the len is 96 but the index is 96
+test hostile_reader_tail_is_refused_by_the_sender ... FAILED (exit 101)
+    thread 'hostile_reader_tail_is_refused_by_the_sender' (1011005) panicked at crates/synapse-wire/src/ring.rs:423:10:
+    index out of bounds: the len is 128 but the index is 2305843009213693983
+test hostile_writer_bad_lengths_cannot_make_the_reader_panic_or_read_outside_the_ring ... FAILED (exit 101)
+    thread 'hostile_writer_bad_lengths_cannot_make_the_reader_panic_or_read_outside_the_ring' (1011017) panicked at crates/synapse-wire/src/ring.rs:423:10:
+    index out of bounds: the len is 128 but the index is 2305843009213693983
+    thread 'hostile_writer_bad_lengths_cannot_make_the_reader_panic_or_read_outside_the_ring' (1011017) panicked at crates/synapse-wire/tests/g3_ring.rs:90:19:
+    reader panicked on hostile input: len 121 published 256
+test hostile_writer_cannot_make_the_reader_accept_a_record_twice ... FAILED (exit 101)
+    thread 'hostile_writer_cannot_make_the_reader_accept_a_record_twice' (1011026) panicked at crates/synapse-wire/src/ring.rs:423:10:
+    index out of bounds: the len is 128 but the index is 2305843009213693983
+test hostile_writer_index_wrap_cannot_make_the_reader_panic_or_read_outside_the_ring ... FAILED (exit 101)
+    thread 'hostile_writer_index_wrap_cannot_make_the_reader_panic_or_read_outside_the_ring' (1011034) panicked at crates/synapse-wire/src/ring.rs:423:10:
+    index out of bounds: the len is 128 but the index is 2305843009213693983
+test hostile_writer_random_pokes_never_panic_and_never_deliver_a_record_twice ... FAILED (exit 101)
+    thread 'hostile_writer_random_pokes_never_panic_and_never_deliver_a_record_twice' (1011042) panicked at crates/synapse-wire/src/ring.rs:423:10:
+    index out of bounds: the len is 128 but the index is 2305843009213693983
+test hostile_writer_torn_frames_are_refused_and_payloads_are_copied_out_before_validation ... FAILED (exit 101)
+    thread 'hostile_writer_torn_frames_are_refused_and_payloads_are_copied_out_before_validation' (1011050) panicked at crates/synapse-wire/src/ring.rs:423:10:
+    index out of bounds: the len is 128 but the index is 2305843009213693983
+    thread 'hostile_writer_torn_frames_are_refused_and_payloads_are_copied_out_before_validation' (1011050) panicked at crates/synapse-wire/tests/g3_ring.rs:90:19:
+    reader panicked on hostile input: torn record
+test model_test_no_frame_is_lost_or_duplicated ... FAILED (exit 101)
+    thread 'model_test_no_frame_is_lost_or_duplicated' (1011058) panicked at crates/synapse-wire/src/ring.rs:423:10:
+    index out of bounds: the len is 80 but the index is 80
+test model_test_two_threads_two_mappings_no_record_lost_or_duplicated ... FAILED (exit 101)
+    thread '<unnamed>' (1011067) panicked at crates/synapse-wire/src/ring.rs:423:10:
+    index out of bounds: the len is 1088 but the index is 2305843009213693856
+    thread 'model_test_two_threads_two_mappings_no_record_lost_or_duplicated' (1011066) panicked at crates/synapse-wire/tests/g3_ring.rs:649:19:
+    called `Result::unwrap()` on an `Err` value: Any { .. }
+test negative_control_trusting_reader_panics_or_accepts_twice_on_the_same_inputs ... FAILED (exit 101)
+    thread 'negative_control_trusting_reader_panics_or_accepts_twice_on_the_same_inputs' (1011075) panicked at crates/synapse-wire/tests/g3_ring.rs:508:24:
+    index out of bounds: the len is 128 but the index is 128
+    thread 'negative_control_trusting_reader_panics_or_accepts_twice_on_the_same_inputs' (1011075) panicked at crates/synapse-wire/src/ring.rs:423:10:
+    index out of bounds: the len is 128 but the index is 2305843009213693983
+test ring_refusal_reaches_the_frame_transport_as_wire_ring_violation ... ok
+test ring_stream_carries_the_g1_session_and_acknowledges_durable_changes ... ok

@@ -39,4 +39,4 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 
 ## License
 
-Licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
+Licensed under the Apache License, Version 2.0 (Apache-2.0).

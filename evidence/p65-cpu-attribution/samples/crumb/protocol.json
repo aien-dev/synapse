@@ -1,0 +1,1 @@
+{"schema":"synapse-bench/pmu-diag-protocol/v1","purpose":"Issue #65 Stage A stack-sampling run (not timed evidence): crumb context and changeset advisory.","seed":65,"fixture_rev":"e863c87b581ddd0d33183667d6d4842d2de1f4fe","reps":1,"order":"control-then-instrumented","affinity":["unpinned"],"legs":[{"kind":"crumb","samples":20000}],"held_out":"Sampling only."}

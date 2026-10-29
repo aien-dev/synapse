@@ -19,7 +19,7 @@ Evidence: [`evidence/gate4-qualification/`](../evidence/gate4-qualification/) (`
 
 | Field | Value |
 | :--- | :--- |
-| Repository | `aien-sovereign-core`, local checkout on `spark-b87b` |
+| Repository | `aien-sovereign-core`, local checkout on the DGX Spark (`spark`) |
 | Pinned commit | `1b6e340d48417dfbcfe2df56d48a0696a3a9b250` (the Gate 0 baseline commit) |
 | Tree OID | `39684d806998aa579244a55aab41b954be963525` |
 | Files | 4,376 (145,731,971 bytes; largest file 65,855,376 bytes) |
@@ -58,7 +58,7 @@ S1 and G3F are the like-for-like durable pair. S2 and G3 both acknowledge from t
 
 | Field | Value |
 | :--- | :--- |
-| Host | `spark-b87b`, aarch64, Cortex-X925 and Cortex-A725 cores (`lscpu`), 20 logical CPUs, 127,598,752 KiB RAM |
+| Host | the DGX Spark (`spark`), aarch64, Cortex-X925 and Cortex-A725 cores (`lscpu`), 20 logical CPUs, 127,598,752 KiB RAM |
 | Kernel | 7.0.0-1019-nvidia |
 | Work directory filesystem | ext4 on `/dev/nvme0n1p2`, 1,040,488,902,656 bytes free at start |
 | Toolchain | git 2.43.0, rustc 1.98.1, cargo 1.98.1, release build |
