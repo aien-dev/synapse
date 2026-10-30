@@ -40,3 +40,15 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 ## License
 
 Licensed under the Apache License, Version 2.0 (Apache-2.0).
+
+## Human-Directed Agentic Engineering
+
+Development follows Human-Directed Agentic Engineering (HDAE): humans define goals, architecture,
+constraints, acceptance criteria, and stopping points; agents implement, execute checks, diagnose
+failures, and revise within those boundaries. Human review retains responsibility for claims,
+acceptance, and release decisions. This development method is distinct from Synapse's agent-native
+runtime interfaces and does not change its canonical promotion rules.
+
+For the documented method and a systems-software case study, see Gregory M. Kurtzer,
+[*Ginux: Building an Independent Kernel That Runs Linux Userspace through Human-Directed Agentic
+Engineering* (2026)](https://doi.org/10.5281/zenodo.23682548).
