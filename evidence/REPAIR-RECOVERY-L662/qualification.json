@@ -1,0 +1,42 @@
+{
+  "functional_source": "e7ec679cfed7fd0fa27b727964ca337ce77ce45f",
+  "base": "5b732e5d353bbcc3f6d0cd1eac60f2e543601521",
+  "inputs": {
+    "README.md": "be9a2d6a1ba00950b676260eedd32c4a25434e3b5246425123cabf975ae1f01d",
+    "crates/synapse-bench/src/main.rs": "cec43723fe87a0ee5149cdeb584a7b9ceaf8c657afd4d3359de3e64b32cdf3fd",
+    "crates/synapse-bench/tests/store_repair_cli.rs": "b793fa5ab70e30f889789a15c0cc2412704ffd09cfd9488989a36aa57d191ce6",
+    "crates/synapse-store/src/blockdev.rs": "5210b7fc7c075a0488faa7b2e9e90004eb9021f1a9e9169a2b24c023f6b493b5",
+    "crates/synapse-store/src/blockdev/repair.rs": "1a439f7d9d37902249be9f04d4a03a61209ce4b430c44131c4da8a17b9172beb",
+    "crates/synapse-store/src/blockdev_tests.rs": "1ff0b4d6cdd670b73d7f8e0510bf7ca0297ae08a79ff6e0898ba70cee09abf35",
+    "docs/R1_RAW_BLOCK_STORE.md": "f3c348df088b9cd55fd7780d14302bc491c490dbc9b30255019d869190f17faf"
+  },
+  "evidence": {
+    "README.md": "b1428156db884b7ae905398eff3f3a4c8fc26ca220b2a398daed5e81047ea1e4",
+    "behavioral-red/backup-overflow.log": "5d653e941dbb1b950a815b7b3c908241fcd3d004b1f0cb8a70620b348f19b288",
+    "behavioral-red/inherited-lock.log": "c51630f2a6228e30223509242341959bd8c037d7cfa5148249305365e01c5a82",
+    "behavioral-red/state.json": "c936354332b5e154aa5f19099b8c0993f18fa600b98f7062063b7cc66a23eaa2",
+    "fixture-gates/c1-fixture.log": "7eb635304e473b46515f934b684a83147babb7557bf757687332e826be5051ce",
+    "fixture-gates/h1-real-repository.log": "c3df93b712257606d0566c7435eed5d643b73798046ecf76fab32ca095d114f5",
+    "fixture-gates/state.json": "e75ce176ea33c092617f6de82c81dc52811dfee273be585c29f4e985fcf9940e",
+    "initial/clippy.log": "05dd3f2dc2c432c8880f53f4900ba89cd092faaba593e7ec280ae0c34df27abe",
+    "initial/fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "initial/full-suite.log": "5c36d03ce3b3c6ca65d3a99585d0d9842307838807aaccd8b3a2f736c6d488e9",
+    "initial/repair-cli.log": "1d68d340f07e4248a24af708cf45dd92c77e004cb2ec228d8d3d41c147c97b65",
+    "initial/repair.log": "c9d87df2dde8c3826f91eda0d15a3e9230c0a6476ff8fe53ff740d87b7d22fdf",
+    "initial/state.json": "a5a42c7e3a7a2818dad7033376a8b67a1a5ae11907d9d2eb56535912b224239d",
+    "initial/tools.log": "e7efe31a42d984025a34b5c67ea3a3a28348ae3c14ca62b7eb0bcbc0f4cde6f3",
+    "postfix/clippy.log": "a89c37cd9c44d30ce1329e7611fdac35c9fc0f7201d021b98a312812f6673736",
+    "postfix/fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "postfix/focused-green.log": "a5146369141accc64b680f4d37d68229c6689b9b23ba5ecd951333b9926db247",
+    "postfix/full-suite.log": "c33ef4cc980606e7d510a6395d0d50db373a2a9c1dbd72a5a8950d652aa9fde8",
+    "postfix/repair-cli.log": "80df5c2633f444a4c694119a5c2733b7e15de632daab2ca437f8792aac8e210b",
+    "postfix/state.json": "385804c81503036e9f8ebfa980e2834e275e833bb00e915e4f6a052bc50f8e06",
+    "run-behavioral-red.py": "8af934ca0447c462355e6cbb5c8bfe6245714b1fc044346419b62a120165806e",
+    "run-fixture-gates.py": "e8ae7ec311b7284616007b07973a98ae3948188d1113af5af122579885618e00",
+    "run-initial.py": "4eb77361bdf4ac72c4736c259d4a79547f17fb1b0b1c74a4d860eeb59edeb582",
+    "run-postfix.py": "6bfb2278f6cb09c605f9b879ba8dde71eaffd9bcea3cd7be096c1026ff27b63c",
+    "suite-counts.json": "c1eead1f38c6ad94636e7cf86a720209b77e61420a2422037d8dcf16fe520f4c"
+  },
+  "complete": false,
+  "blocker": "Explicit H1 full-history fixture gate fails101 on missing originHEAD ref; fixL664 running; signed/full acceptance and independentreview pending"
+}

@@ -518,6 +518,69 @@ fn segments(args: &[String]) -> Result<(), String> {
     synapse_bench::write_json(&out, &raw)
 }
 
+/// R1 store repair (issue #105). Without an action flag it only reports (read-only open)
+/// and never writes. A write needs exactly one of `--roll-forward` or
+/// `--adopt-older-checkpoint`, plus `--operator-key <file>` (64 hex characters: the
+/// Ed25519 seed that signs the repair entry) and `--backup <new file>` (every byte range
+/// the repair overwrites is saved there first). Prints the signed receipt.
+fn store_repair(args: &[String]) -> Result<(), String> {
+    use synapse_store::blockdev::repair::{diagnose_path, repair_path, RepairAction};
+    let flags = [
+        ("--roll-forward", RepairAction::RollForward),
+        (
+            "--adopt-older-checkpoint",
+            RepairAction::AdoptOlderCheckpoint,
+        ),
+    ];
+    let actions: Vec<RepairAction> = flags
+        .iter()
+        .filter(|(f, _)| args.iter().any(|a| a == f))
+        .map(|(_, a)| *a)
+        .collect();
+    let rest: Vec<String> = args
+        .iter()
+        .filter(|a| !flags.iter().any(|(f, _)| f == a))
+        .cloned()
+        .collect();
+    let opts = parse_pairs(&rest, &["--device", "--backup", "--operator-key"])?;
+    let get = |k: &str| {
+        opts.iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| PathBuf::from(v))
+    };
+    let device = get("--device").ok_or("missing --device (absolute path)")?;
+    let action = match actions[..] {
+        [] => {
+            print!("{}", diagnose_path(&device).map_err(|e| e.to_string())?);
+            return Ok(());
+        }
+        [a] => a,
+        _ => return Err("give one action: --roll-forward or --adopt-older-checkpoint".into()),
+    };
+    let backup = get("--backup").ok_or("a repair needs --backup <new file>")?;
+    let key_path = get("--operator-key").ok_or("a repair needs --operator-key <file>")?;
+    let key_hex = std::fs::read_to_string(&key_path)
+        .map_err(|e| format!("operator key {}: {e}", key_path.display()))?;
+    let seed: [u8; 32] = hex::decode(key_hex.trim())
+        .ok()
+        .and_then(|b| b.try_into().ok())
+        .ok_or("the operator key file must hold 64 hex characters (an Ed25519 seed)")?;
+    let operator = ed25519_dalek::SigningKey::from_bytes(&seed);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let receipt =
+        repair_path(&device, action, &operator, &backup, now).map_err(|e| e.to_string())?;
+    print!("{}", receipt.report);
+    println!("{receipt}");
+    if receipt.wrote {
+        println!("backup at {}", backup.display());
+    }
+    Ok(())
+}
+
 /// `segments-report`: recompute the A2 report from `--raw` and a `--floor` report.
 fn segments_report(args: &[String]) -> Result<(), String> {
     use std::io::Write;
@@ -615,6 +678,7 @@ fn main() -> ExitCode {
         Some("segments-report") => segments_report(&args[1..]),
         Some("x6") => x6(&args[1..]),
         Some("x6-report") => x6_report(&args[1..]),
+        Some("store-repair") => store_repair(&args[1..]),
         _ => Err("usage: synapse-bench run ... | synapse-bench child ... (see crate docs)".into()),
     };
     match outcome {

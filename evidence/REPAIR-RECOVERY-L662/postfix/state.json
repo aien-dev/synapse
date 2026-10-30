@@ -1,0 +1,104 @@
+{
+  "base_carry": "5c6aad4701a44f3187487123f70753bd13ef0714",
+  "source_inputs": {
+    "crates/synapse-store/src/blockdev.rs": "5210b7fc7c075a0488faa7b2e9e90004eb9021f1a9e9169a2b24c023f6b493b5",
+    "crates/synapse-store/src/blockdev/repair.rs": "1a439f7d9d37902249be9f04d4a03a61209ce4b430c44131c4da8a17b9172beb",
+    "crates/synapse-store/src/blockdev_tests.rs": "1ff0b4d6cdd670b73d7f8e0510bf7ca0297ae08a79ff6e0898ba70cee09abf35"
+  },
+  "pid": 2019065,
+  "started": 1792739038.2361193,
+  "status": "passed",
+  "steps": [
+    {
+      "step": "focused-green",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "-p",
+        "synapse-store",
+        "r1_repair",
+        "--",
+        "--test-threads=1"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "full-suite",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "--workspace",
+        "--no-fail-fast"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "repair-cli",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "-p",
+        "synapse-bench",
+        "--test",
+        "store_repair_cli"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "fmt",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "clippy",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "clippy",
+        "--locked",
+        "-j",
+        "6",
+        "--workspace",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0
+    }
+  ],
+  "finished": 1792739143.6085992
+}

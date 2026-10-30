@@ -1,5 +1,8 @@
 # Synapse (agent-native changeset and integration service)
 
+Development follows [Human-Directed Agentic Engineering (HDAE)](README.md#human-directed-agentic-engineering).
+The README defines the human and agent responsibilities and cites Gregory M. Kurtzer's report.
+
 > Synapse is source control for AI agents. Agents submit signed changesets, inspect virtual trees and diffs without a working-tree checkout, attach evidence and queue integration. Accepted changesets materialize deterministically into standard Git objects, GitHub pull requests are only a human projection, and canonical promotion needs a verified Radicle delegate quorum. The repository is one Rust Cargo workspace under `crates/`.
 
 Shared rules: read https://www.aienos.com/agents/RULES.md first. This file adds what is specific to this repository; where the two differ, this file wins here.

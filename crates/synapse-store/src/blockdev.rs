@@ -53,6 +53,9 @@
 //! * Batch: one aligned positioned write plus one `fdatasync` (unchanged from A2).
 
 use super::*;
+
+pub mod repair;
+
 use std::os::unix::fs::{FileExt, FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::sync::{Arc, Mutex};
 
@@ -153,17 +156,23 @@ impl DirectFile {
     /// was checked (same device and inode). The opened file is held under an exclusive
     /// advisory lock (`flock`): a second opener is refused while this one lives.
     pub fn open(path: &Path) -> SynapseResult<Self> {
-        Self::open_with(path, true)
+        Self::open_with(path, true, true)
+    }
+
+    /// Like [`Self::open`] but the file is opened read-only (still exclusive-locked):
+    /// every write through it fails. The diagnosis mode of the repair tool uses it.
+    pub fn open_read_only(path: &Path) -> SynapseResult<Self> {
+        Self::open_with(path, true, false)
     }
 
     /// Test inspection only: open without taking the lock (the A2 suite shim reads the
     /// device while the store under test holds it).
     #[cfg(test)]
     pub(crate) fn open_unlocked(path: &Path) -> SynapseResult<Self> {
-        Self::open_with(path, false)
+        Self::open_with(path, false, true)
     }
 
-    fn open_with(path: &Path, lock: bool) -> SynapseResult<Self> {
+    fn open_with(path: &Path, lock: bool, write: bool) -> SynapseResult<Self> {
         if !path.is_absolute() {
             return Err(refuse(format!(
                 "block device path must be absolute: {}",
@@ -188,7 +197,7 @@ impl DirectFile {
         }
         let file = OpenOptions::new()
             .read(true)
-            .write(true)
+            .write(write)
             .custom_flags(flags)
             .open(path)
             .map_err(|e| refuse(format!("open {} with O_DIRECT: {e}", path.display())))?;
@@ -229,6 +238,16 @@ impl DirectFile {
             )));
         }
         Ok(Self { file, len })
+    }
+}
+
+impl Drop for DirectFile {
+    fn drop(&mut self) {
+        // flock belongs to an open file description, which a helper briefly inherits
+        // between fork and exec. Release our advisory lock explicitly before close so
+        // that helper cannot retain it after this actual owner has gone away.
+        // Arc owners still keep this wrapper alive until its final drop.
+        let _ = self.file.unlock();
     }
 }
 
@@ -881,6 +900,11 @@ impl BlockDevice {
             let Some(names) = decode_meta(&meta) else {
                 continue;
             };
+            // A repair log that does not verify is never skipped: falling back to the
+            // older copy would hide a repair (or a forged one).
+            if let Some(log) = names.get(repair::REPAIR_LOG_NAME) {
+                repair::verify_repair_log(log, &sb.geo.uuid)?;
+            }
             let dev = Self {
                 io,
                 geo: sb.geo,
