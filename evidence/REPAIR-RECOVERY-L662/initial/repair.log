@@ -1,0 +1,40 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_store-67e309c4eb45f3e9)
+
+running 9 tests
+test blockdev_tests::repair_tests::r1_repair_adopt_older_backs_up_drops_only_the_range_and_records_it ... ok
+test blockdev_tests::repair_tests::r1_repair_holds_the_exclusive_lock ... ok
+test blockdev_tests::repair_tests::r1_repair_intact_image_has_nothing_to_do_and_never_writes ... ok
+test blockdev_tests::repair_tests::r1_repair_interrupted_adopt_finishes_without_a_second_record ... ok
+test blockdev_tests::repair_tests::r1_repair_log_that_does_not_verify_refuses_the_mount ... ok
+test blockdev_tests::repair_tests::r1_repair_refuses_a_foreign_device ... ok
+test blockdev_tests::repair_tests::r1_repair_refuses_to_roll_forward_a_slot_without_batches ... ok
+test blockdev_tests::repair_tests::r1_repair_report_lists_the_records_past_the_older_checkpoint ... ok
+test blockdev_tests::repair_tests::r1_repair_roll_forward_recovers_every_record_byte_identical ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 128 filtered out; finished in 0.42s
+
+     Running tests/a1_malformed_corpus.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/a1_malformed_corpus-48a6a6299254d049)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/b1_change_identity.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/b1_change_identity-f2cb1bc63ebc3dc1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/b4_revision_states.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/b4_revision_states-f614eb5b7c56fa8e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/b5_derived_record.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/b5_derived_record-74e1778e1d141b7c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+

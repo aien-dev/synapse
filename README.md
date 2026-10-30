@@ -17,7 +17,7 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 | Crate | Gate | Responsibility |
 | :--- | :--- | :--- |
 | [`synapse-core`](crates/synapse-core) | Gate 0 | Distinct identity types (`ChangesetId`, `BlobDigest`, `GitOid`, `RadicleCanonicalHead`, `GitHubPullRequestProjection`, `IdempotencyKey`, `WalSeq`), `ChangesetEnvelope` v1, `did:key` Ed25519 verification, and `RefusalCode` taxonomy |
-| [`synapse-store`](crates/synapse-store) | Gate 1 | Single-writer append-only WAL (`SWAL` v1) with CRC32C and SHA-256 hash chain, configurable `fsync` policy, content-addressed blob store, checkpoint compaction, GC, and crash fault injection |
+| [`synapse-store`](crates/synapse-store) | Gate 1 | Single-writer append-only WAL (`SWAL` v1) with CRC32C and SHA-256 hash chain, configurable `fsync` policy, content-addressed blob store, checkpoint compaction, GC, crash fault injection, and the R1 raw block store with its signed repair tool (`synapse-bench store-repair`, [spec](docs/R1_RAW_BLOCK_STORE.md#41-repair-after-a-checkpointcorrupt-refusal-issue-105)) |
 | [`synapse-auth`](crates/synapse-auth) | Gate 2 | Ed25519 capability grants (`Read`, `Propose`, `Evaluate`, `Review`, `Publish`), expiry/replay guards, rate/size quotas, and hash-chained security audit log |
 | [`synapse-api`](crates/synapse-api) | Gate 2 | Bounded paginated API (`submit`, `get`, `diff`, `tree`, `history`, `provenance`, `conflicts`, `status`, `watch`), checkout-free virtual tree overlay, and exact path-index invalidation |
 | [`synapse-git`](crates/synapse-git) | Gate 3 | Deterministic Git loose object writer/reader, bidirectional `ChangesetId <-> GitOid` map, ref namespace separation, and GitHub PR projection builder |

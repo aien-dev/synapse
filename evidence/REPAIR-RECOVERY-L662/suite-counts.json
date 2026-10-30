@@ -1,0 +1,26 @@
+{
+  "initial": {
+    "totals": [
+      502,
+      0,
+      2
+    ],
+    "groups": 53,
+    "ignored_names": [
+      "test c1_tree_and_diff_parity_with_git_on_gate4_fixture ... ignored, needs the Gate 4 fixture repository (run with --ignored where it is present)",
+      "test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ignored"
+    ]
+  },
+  "postfix": {
+    "totals": [
+      504,
+      0,
+      2
+    ],
+    "groups": 53,
+    "ignored_names": [
+      "test c1_tree_and_diff_parity_with_git_on_gate4_fixture ... ignored, needs the Gate 4 fixture repository (run with --ignored where it is present)",
+      "test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ignored"
+    ]
+  }
+}
