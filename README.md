@@ -36,7 +36,8 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 * [Gate 4 Comparative Qualification Report](docs/GATE4_QUALIFICATION.md)
 * [Gate 4 Qualification Evidence (`evidence/gate4-qualification/`)](evidence/gate4-qualification/report.json), reproduced with `scripts/run_gate4_qualification.sh`
 * [D1 merge tier T1 (`docs/D1_MERGE_TIER_T1.md`)](docs/D1_MERGE_TIER_T1.md): line-level three-way merge of one file, checked against `git merge-tree` and `git merge-file` ([evidence](evidence/d1-merge-tier-t1/))
+* [Spark verification gates (`docs/PIPELINE.md`)](docs/PIPELINE.md): the interop and Gate 4 scripts honour `CARGO_TARGET_DIR`, so `SYNAPSE-CONFORMANCE` runs the same on the Spark as in a plain checkout
 
 ## License
 
-Licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
+Licensed under the Apache License, Version 2.0 (Apache-2.0).

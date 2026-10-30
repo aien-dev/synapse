@@ -76,6 +76,7 @@ fn b5_derived_revision_records_round_trip_and_malformed_bytes_are_refused_typed(
         derived,
         chain: ChainPath::new(vec![label("chain")]).unwrap(),
         admitted_at_ms: 7,
+        seal: None,
     });
     for record in records {
         assert_eq!(record.kind_byte(), 11);

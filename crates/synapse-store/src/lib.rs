@@ -29,21 +29,32 @@ use synapse_core::{
 
 #[cfg(test)]
 mod a1_tests;
+pub mod blockdev;
+#[cfg(test)]
+mod blockdev_a2_suite;
+#[cfg(test)]
+mod blockdev_tests;
 pub mod codec;
 #[cfg(test)]
 mod group_tests;
+#[cfg(test)]
+mod j1_corpus;
 mod revision;
+pub mod seal;
 pub mod segment;
 #[cfg(test)]
 mod segment_tests;
 mod shared;
 pub mod wal2;
 
+use blockdev::Medium;
+pub use blockdev::{BlockDeviceConfig, FormatPolicy};
 pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
 pub use revision::{
     verify_revision_log, AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome,
-    StateMoveReplayReport, StoredRevision, DOMAIN_STATE_ROOT_REVISIONS_V1,
+    SealReplayReport, StateMoveReplayReport, StoredRevision, DOMAIN_STATE_ROOT_REVISIONS_V1,
 };
+pub use seal::{RevisionSeal, RevisionSealKey};
 pub use shared::{GroupCommitStats, SharedStore};
 
 /// Magic bytes for a Synapse WAL frame (`b"SWAL"`).
@@ -316,6 +327,8 @@ pub enum WalRecord {
         chain: ChainPath,
         admitted_at_ms: u64,
         new_blobs: Vec<BlobDigest>,
+        /// The server's keyed seal (issue #101); `None` in a store opened without a seal key.
+        seal: Option<RevisionSeal>,
     },
     /// An obsolescence marker recorded under `chain` at server time `recorded_at_ms`
     /// (ADR 0003 B1). Binary codec only.
@@ -324,6 +337,7 @@ pub enum WalRecord {
         marker: ObsolescenceMarker,
         chain: ChainPath,
         recorded_at_ms: u64,
+        seal: Option<RevisionSeal>,
     },
     /// A move of a revision to another state, signed by its mover (the audience of the
     /// chain's leaf link) and recorded at server time `moved_at_ms` (ADR 0003 B4, issue
@@ -332,6 +346,7 @@ pub enum WalRecord {
     RevisionStateMoved {
         state_move: SignedStateMove,
         moved_at_ms: u64,
+        seal: Option<RevisionSeal>,
     },
     /// Admission of a server-derived revision under `chain` at server time `admitted_at_ms`
     /// (ADR 0003 B5). It references only blobs already visible, so it carries none. Binary
@@ -341,6 +356,7 @@ pub enum WalRecord {
         derived: DerivedRevision,
         chain: ChainPath,
         admitted_at_ms: u64,
+        seal: Option<RevisionSeal>,
     },
 }
 
@@ -357,6 +373,38 @@ impl WalRecord {
             Self::ObsolescenceRecorded { .. } => 8,
             Self::RevisionStateMoved { .. } => 9,
             Self::DerivedRevisionAdmitted { .. } => 11,
+        }
+    }
+
+    /// True for the revision records a seal covers (kinds 7, 8, 9, and 11).
+    pub fn is_revision_record(&self) -> bool {
+        matches!(
+            self,
+            Self::RevisionAdmitted { .. }
+                | Self::ObsolescenceRecorded { .. }
+                | Self::RevisionStateMoved { .. }
+                | Self::DerivedRevisionAdmitted { .. }
+        )
+    }
+
+    /// The keyed seal of a revision record (issue #101), if it carries one.
+    pub fn seal(&self) -> Option<&RevisionSeal> {
+        match self {
+            Self::RevisionAdmitted { seal, .. }
+            | Self::ObsolescenceRecorded { seal, .. }
+            | Self::RevisionStateMoved { seal, .. }
+            | Self::DerivedRevisionAdmitted { seal, .. } => seal.as_ref(),
+            _ => None,
+        }
+    }
+
+    fn set_seal(&mut self, value: RevisionSeal) {
+        if let Self::RevisionAdmitted { seal, .. }
+        | Self::ObsolescenceRecorded { seal, .. }
+        | Self::RevisionStateMoved { seal, .. }
+        | Self::DerivedRevisionAdmitted { seal, .. } = self
+        {
+            *seal = Some(value);
         }
     }
 
@@ -450,7 +498,6 @@ pub struct SynapseStore {
     root_dir: PathBuf,
     blobs_dir: PathBuf,
     wal_path: PathBuf,
-    checkpoint_path: PathBuf,
     fsync_policy: FsyncPolicy,
     limits: StoreLimits,
     committed_seq: WalSeq,
@@ -471,7 +518,10 @@ pub struct SynapseStore {
     /// Segment writer (taken out by the group-commit leader while it writes a batch).
     wal_v2: Option<segment::SegmentLog>,
     /// Read handles on the segment files, by segment id, for inline blob reads.
-    segment_readers: BTreeMap<u64, File>,
+    segment_readers: BTreeMap<u64, segment::SegReader>,
+    /// Where the segments and the small metadata objects live: the store directory (A2)
+    /// or a raw block device (R1).
+    medium: Medium,
     /// End of the valid log found by recovery: (segment, byte offset).
     wal_v2_recovered_end: (u64, u64),
     /// The blob index: digest to its location inside a segment.
@@ -489,6 +539,8 @@ pub struct SynapseStore {
     /// `checkpoint.v1` is not yet the tombstone although `checkpoint.v2` exists.
     /// Envelope v2 revisions, changes, witnesses, and markers (ADR 0003 B1).
     revisions: revision::RevisionLedger,
+    /// The server key revision records are sealed with and checked against (issue #101).
+    revision_seal: Option<RevisionSealKey>,
     tombstone_pending: bool,
 }
 
@@ -588,24 +640,142 @@ pub(crate) struct V2Ticket {
 
 impl SynapseStore {
     /// Open or initialize a `SynapseStore` at `root_dir`, verifying checkpoint + WAL chain.
+    /// Revision records are neither sealed nor checked for a seal: whoever can rewrite the
+    /// whole log can rewrite them too (issue #101). Use [`Self::open_sealed`] to close that.
     pub fn open(
         root_dir: impl AsRef<Path>,
         fsync_policy: FsyncPolicy,
         recovery_policy: RecoveryPolicy,
         limits: StoreLimits,
     ) -> SynapseResult<Self> {
+        Self::open_with(root_dir, fsync_policy, recovery_policy, limits, None)
+    }
+
+    /// [`Self::open`] with the server's machine key as the revision seal key (issue #101).
+    /// Every revision record written (kinds 7, 8, 9, and 11) is sealed by `seal`, chained to
+    /// the previous one; on replay a revision record whose seal does not verify against that
+    /// chain changes nothing. `StrictFailClosed` refuses such a store with
+    /// `RevisionRecordUnsealed` (including one with revision records written before it was
+    /// sealed); `TruncateTornTail` opens it, reports them in [`Self::seal_replay_report`],
+    /// and `checkpoint_and_compact` then leaves them out.
+    pub fn open_sealed(
+        root_dir: impl AsRef<Path>,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        seal: RevisionSealKey,
+    ) -> SynapseResult<Self> {
+        Self::open_with(root_dir, fsync_policy, recovery_policy, limits, Some(seal))
+    }
+
+    fn open_with(
+        root_dir: impl AsRef<Path>,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        revision_seal: Option<RevisionSealKey>,
+    ) -> SynapseResult<Self> {
         let root_dir = root_dir.as_ref().to_path_buf();
+        #[cfg(test)]
+        if let Some(cfg) = blockdev_tests::redirect(&root_dir) {
+            // Test hook: a directory holding `raw.device` is a raw block store (the A2
+            // crash suite runs unchanged against R1; crash children reopen through here).
+            return Self::open_block_device_with(
+                &cfg,
+                fsync_policy,
+                recovery_policy,
+                limits,
+                revision_seal,
+            );
+        }
+        fs::create_dir_all(root_dir.join("blobs")).map_err(io_err)?;
+        let medium = Medium::Dir(root_dir.clone());
+        Self::open_on(
+            root_dir,
+            medium,
+            fsync_policy,
+            recovery_policy,
+            limits,
+            revision_seal,
+        )
+    }
+
+    /// Open or initialize a store on a raw block device with no filesystem (ADR 0003
+    /// R1, `docs/R1_RAW_BLOCK_STORE.md`). Opens exactly `cfg.path` with `O_DIRECT`;
+    /// refuses a device carrying a filesystem or partition signature unless
+    /// `cfg.allow_foreign_signature` is set. Requires `FsyncPolicy::GroupCommit` (the
+    /// segment layout is the only layout on a device).
+    pub fn open_block_device(
+        cfg: &BlockDeviceConfig,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+    ) -> SynapseResult<Self> {
+        Self::open_block_device_with(cfg, fsync_policy, recovery_policy, limits, None)
+    }
+
+    /// `open_block_device` with an optional revision seal (#101): the test redirect in
+    /// `open_with` keeps a sealed store sealed when it runs on a raw block device.
+    fn open_block_device_with(
+        cfg: &BlockDeviceConfig,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        revision_seal: Option<RevisionSealKey>,
+    ) -> SynapseResult<Self> {
+        if !fsync_policy.is_group_commit() {
+            return Err(SynapseError::new(
+                RefusalCode::IoFailure,
+                "a raw block store needs FsyncPolicy::GroupCommit",
+            ));
+        }
+        let dev = blockdev::BlockDevice::open_path(cfg, limits.segment_bytes)?;
+        // `root_dir` is the device path: any filesystem path derived from it (blob files
+        // of the v1 layout) fails with ENOTDIR instead of landing somewhere else.
+        Self::open_on(
+            cfg.path.clone(),
+            Medium::Block(dev),
+            fsync_policy,
+            recovery_policy,
+            limits,
+            revision_seal,
+        )
+    }
+
+    /// Open a store on an already opened device (tests: in-memory power-cut images).
+    #[cfg(test)]
+    pub(crate) fn open_on_device(
+        dev: std::sync::Arc<blockdev::BlockDevice>,
+        label: PathBuf,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+    ) -> SynapseResult<Self> {
+        Self::open_on(
+            label,
+            Medium::Block(dev),
+            FsyncPolicy::GROUP_COMMIT_DEFAULT,
+            recovery_policy,
+            limits,
+            None,
+        )
+    }
+
+    fn open_on(
+        root_dir: PathBuf,
+        medium: Medium,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        revision_seal: Option<RevisionSealKey>,
+    ) -> SynapseResult<Self> {
         let blobs_dir = root_dir.join("blobs");
         let wal_path = root_dir.join("wal.log");
-        let checkpoint_path = root_dir.join("checkpoint.v1");
-
-        fs::create_dir_all(&blobs_dir).map_err(io_err)?;
 
         let mut store = Self {
+            medium,
             root_dir,
             blobs_dir,
             wal_path,
-            checkpoint_path,
             fsync_policy,
             limits,
             committed_seq: WalSeq::ZERO,
@@ -631,7 +801,10 @@ impl SynapseStore {
             v1_history: false,
             binary_seen: false,
             tombstone_pending: false,
-            revisions: revision::RevisionLedger::default(),
+            revisions: revision::RevisionLedger::new(
+                revision_seal.as_ref().map(RevisionSealKey::public_key),
+            ),
+            revision_seal,
         };
 
         store.recover(recovery_policy)?;
@@ -644,7 +817,7 @@ impl SynapseStore {
             }
             let (active, end) = store.wal_v2_recovered_end;
             let writer = segment::SegmentLog::open(
-                &store.root_dir,
+                &store.medium,
                 active,
                 end,
                 store.limits.segment_bytes,
@@ -1200,9 +1373,9 @@ impl SynapseStore {
         if !self.segment_readers.contains_key(&active) {
             // A new segment (its directory entry is already flushed). Without a read
             // handle its blobs could not be served, so a failure here poisons the store.
-            match File::open(self.root_dir.join(segment::segment_file_name(active))) {
-                Ok(f) => {
-                    self.segment_readers.insert(active, f);
+            match self.medium.open_reader(active) {
+                Ok(r) => {
+                    self.segment_readers.insert(active, r);
                 }
                 Err(e) => {
                     let msg = format!("open segment {active} for reads: {e}");
@@ -1257,7 +1430,7 @@ impl SynapseStore {
                 format!("segment {} is not open for reads", loc.segment),
             )
         })?;
-        let bytes = segment::read_at(f, loc.offset, loc.len).map_err(|e| {
+        let bytes = f.read_at(loc.offset, loc.len).map_err(|e| {
             SynapseError::new(
                 RefusalCode::BlobNotFound,
                 format!("read blob {digest} from segment {}: {e}", loc.segment),
@@ -1285,7 +1458,7 @@ impl SynapseStore {
     /// it, the complete marker is in place. An in-place append could leave a torn
     /// 88-byte tail that strict recovery refuses.
     fn upgrade_to_segments(&mut self) -> SynapseResult<()> {
-        for id in segment::list_segments(&self.root_dir)? {
+        for id in self.medium.list_segments()? {
             if id >= 2 && self.segment_has_data(id)? {
                 return Err(SynapseError::new(
                     RefusalCode::WalVersionUnsupported,
@@ -1294,12 +1467,32 @@ impl SynapseStore {
             }
         }
         let index = segment::SegmentIndex {
-            binding: segment::checkpoint_binding(&self.root_dir)?,
+            binding: segment::checkpoint_binding_on(&self.medium)?,
             replay_segment: 1,
             replay_offset: 0,
             entries: BTreeMap::new(),
         };
-        let keep = index.write(&self.root_dir)?;
+        let keep = index.write(&self.medium)?;
+        if let Medium::Block(_) = &self.medium {
+            // A raw block store is created with the segment layout: `wal.log` is absent
+            // (new store, or a crash before this commit) and gets only the marker.
+            if self.medium.exists("wal.log") || self.log_layout != LogLayout::V1 {
+                return Err(SynapseError::new(
+                    RefusalCode::WalVersionUnsupported,
+                    "raw block store holds a wal.log without the segment marker",
+                ));
+            }
+            let header = marker_header(
+                segment::WAL_SEGMENT_MARKER_VERSION,
+                self.committed_seq,
+                self.last_frame_sha256,
+            );
+            self.medium.write_atomic("wal.log", &header)?;
+            segment::remove_other_indexes(&self.medium, &keep)?;
+            self.v2_mode = true;
+            self.log_layout = LogLayout::Segments;
+            return Ok(());
+        }
         let (keep_len, seq, prev) = match self.log_layout {
             LogLayout::SingleFileV2 => {
                 // Replace the WAL v2 marker (the last 88 bytes) with the segment marker
@@ -1331,7 +1524,7 @@ impl SynapseStore {
         }
         fs::rename(&tmp, &self.wal_path).map_err(io_err)?;
         sync_dir(&self.root_dir)?;
-        segment::remove_other_indexes(&self.root_dir, &keep)?;
+        segment::remove_other_indexes(&self.medium, &keep)?;
         self.v2_mode = true;
         self.log_layout = LogLayout::Segments;
         Ok(())
@@ -1339,12 +1532,7 @@ impl SynapseStore {
 
     /// True when segment `id` exists and holds a non-zero byte.
     fn segment_has_data(&self, id: u64) -> SynapseResult<bool> {
-        let path = self.root_dir.join(segment::segment_file_name(id));
-        match fs::read(&path) {
-            Ok(b) => Ok(b.iter().any(|x| *x != 0)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(io_err(e)),
-        }
+        self.medium.segment_has_data(id)
     }
 
     /// Open a read handle on every segment file up to the active one.
@@ -1354,10 +1542,9 @@ impl SynapseStore {
             if self.segment_readers.contains_key(&id) {
                 continue;
             }
-            let path = self.root_dir.join(segment::segment_file_name(id));
-            match File::open(&path) {
-                Ok(f) => {
-                    self.segment_readers.insert(id, f);
+            match self.medium.open_reader(id) {
+                Ok(r) => {
+                    self.segment_readers.insert(id, r);
                 }
                 // Segments before the replay start may hold no retained blob; a missing
                 // one only fails the reads that need it (BlobNotFound).
@@ -1375,14 +1562,7 @@ impl SynapseStore {
             self.committed_seq,
             self.last_frame_sha256,
         );
-        let tmp = self.root_dir.join("wal.log.tmp");
-        {
-            let mut f = File::create(&tmp).map_err(io_err)?;
-            f.write_all(&header).map_err(io_err)?;
-            f.sync_all().map_err(io_err)?;
-        }
-        fs::rename(&tmp, &self.wal_path).map_err(io_err)?;
-        sync_dir(&self.root_dir)
+        self.medium.write_atomic("wal.log", &header)
     }
 
     /// Attach a machine evaluation receipt to an existing changeset.
@@ -1504,6 +1684,38 @@ impl SynapseStore {
                 format!("changeset {changeset_id} not found"),
             )
         })?;
+        if stored.committed_seq > effective_snapshot {
+            return Err(SynapseError::new(
+                RefusalCode::ChangesetNotFound,
+                format!(
+                    "changeset {changeset_id} committed at {} is not visible at snapshot {}",
+                    stored.committed_seq, effective_snapshot
+                ),
+            ));
+        }
+        Ok(stored.clone())
+    }
+
+    /// Read a changeset for a repository-scoped caller. A foreign ID is indistinguishable
+    /// from an unknown ID, even when the shared store contains it.
+    pub fn get_changeset_in_repo(
+        &self,
+        repo_id: &RepoId,
+        changeset_id: ChangesetId,
+        min_visible_seq: Option<WalSeq>,
+        snapshot_seq: Option<WalSeq>,
+    ) -> SynapseResult<StoredChangeset> {
+        let effective_snapshot = self.resolve_snapshot_seq(min_visible_seq, snapshot_seq)?;
+        let stored = self
+            .changesets
+            .get(&changeset_id)
+            .filter(|cs| &cs.envelope.repo_id == repo_id)
+            .ok_or_else(|| {
+                SynapseError::new(
+                    RefusalCode::ChangesetNotFound,
+                    format!("changeset {changeset_id} not found"),
+                )
+            })?;
         if stored.committed_seq > effective_snapshot {
             return Err(SynapseError::new(
                 RefusalCode::ChangesetNotFound,
@@ -1693,9 +1905,15 @@ impl SynapseStore {
         //    Unverified kind 9 records (kept as no-ops only under `TruncateTornTail`) are left
         //    out (review of PR #100): they change no state, and carrying them would make
         //    strict recovery refuse the store forever. The ledger is rebuilt without them
-        //    only once the checkpoint is durable; the replay report counts them.
+        //    only once the checkpoint is durable; the replay report counts them. In a sealed
+        //    store (issue #101) the same holds for revision records whose seal does not
+        //    verify; sealed records always stay, so the seal chain stays whole.
         self.sync_wal()?;
-        let (revision_log, dropped_moves) = self.revisions.log_without_unverified_moves();
+        let revision::CompactedRevisionLog {
+            log: revision_log,
+            dropped_moves,
+            dropped_unsealed,
+        } = self.revisions.compacted_log();
         let (v1_state_root, prev_checkpoint_root) = match self.checkpoint_chain {
             Some(c) => (c.v1_state_root, c.checkpoint_root),
             None if self.v1_history => (v1_state_root_at_entry, v1_state_root_at_entry),
@@ -1748,7 +1966,7 @@ impl SynapseStore {
                     .map(|(d, l)| (*d, *l))
                     .collect(),
             };
-            let name = index.write(&self.root_dir)?;
+            let name = index.write(&self.medium)?;
             if self.fault_injection == FaultInjection::CrashAfterSegmentIndexBeforeCheckpoint {
                 std::process::exit(FAULT_CRASH_EXIT_CODE);
             }
@@ -1756,16 +1974,16 @@ impl SynapseStore {
         } else {
             None
         };
-        write_file_atomic(
-            &self.root_dir,
-            &self.root_dir.join("checkpoint.v2.tmp"),
-            &self.root_dir.join(codec::CHECKPOINT_V2_FILE),
-            &bytes,
-        )?;
+        self.medium
+            .write_atomic(codec::CHECKPOINT_V2_FILE, &bytes)?;
         self.checkpoint_chain = Some(chain);
-        if dropped_moves > 0 {
+        if dropped_moves + dropped_unsealed > 0 {
             self.revisions
-                .rebuild_after_compaction(revision_log, dropped_moves);
+                .rebuild_after_compaction(revision::CompactedRevisionLog {
+                    log: revision_log,
+                    dropped_moves,
+                    dropped_unsealed,
+                });
         }
         self.codec = RecordCodec::BinaryV2;
         self.binary_seen = true;
@@ -1778,7 +1996,7 @@ impl SynapseStore {
             // still refuse the store); the segments are kept whole, replay starts at the
             // index's position, and older index files are removed.
             self.replace_wal_log_with_segment_marker()?;
-            segment::remove_other_indexes(&self.root_dir, &name)?;
+            segment::remove_other_indexes(&self.medium, &name)?;
             self.blob_locations = index.entries;
         } else {
             let f = OpenOptions::new()
@@ -1789,7 +2007,7 @@ impl SynapseStore {
                 .map_err(io_err)?;
             f.sync_all().map_err(io_err)?;
         }
-        sync_dir(&self.root_dir)?;
+        self.medium.sync_namespace()?;
         self.unflushed_frames = 0;
 
         // 5. Sweep unreferenced blobs on disk (including orphan blobs from pre-WAL crashes)
@@ -2155,6 +2373,11 @@ impl SynapseStore {
                     cs.lease_expires_at_ms = lease_expires_at_ms;
                 }
             }
+            record @ WalRecord::RevisionAdmitted { .. }
+                if !self.revisions.accepts(seq, &record) =>
+            {
+                self.revisions.apply(seq, record);
+            }
             record @ WalRecord::RevisionAdmitted { .. } => {
                 if let WalRecord::RevisionAdmitted { new_blobs, .. } = &record {
                     for digest in new_blobs {
@@ -2168,6 +2391,11 @@ impl SynapseStore {
             }
             record @ (WalRecord::ObsolescenceRecorded { .. }
             | WalRecord::RevisionStateMoved { .. }) => self.revisions.apply(seq, record),
+            record @ WalRecord::DerivedRevisionAdmitted { .. }
+                if !self.revisions.accepts(seq, &record) =>
+            {
+                self.revisions.apply(seq, record);
+            }
             record @ WalRecord::DerivedRevisionAdmitted { .. } => {
                 for digest in record.upsert_blobs() {
                     self.blob_first_visible_seq.entry(digest).or_insert(seq);
@@ -2181,12 +2409,14 @@ impl SynapseStore {
         // 1. Load the checkpoint: checkpoint.v2 (binary, chained) when present, else
         //    checkpoint.v1 (JSON). Once checkpoint.v2 exists, checkpoint.v1 is the
         //    tombstone that makes binaries knowing only v1 refuse the store.
-        let v2_path = self.root_dir.join(codec::CHECKPOINT_V2_FILE);
-        if v2_path.exists() {
-            let raw = fs::read(&v2_path).map_err(io_err)?;
+        if self.medium.exists(codec::CHECKPOINT_V2_FILE) {
+            let raw = self
+                .medium
+                .read(codec::CHECKPOINT_V2_FILE)
+                .map_err(io_err)?;
             let (state, chain) = codec::decode_checkpoint_v2(&raw)?;
-            if self.checkpoint_path.exists() {
-                let v1 = fs::read(&self.checkpoint_path).map_err(io_err)?;
+            if self.medium.exists("checkpoint.v1") {
+                let v1 = self.medium.read("checkpoint.v1").map_err(io_err)?;
                 if v1 != codec::v1_tombstone_bytes() {
                     // A crash between writing checkpoint.v2 and the tombstone leaves the
                     // older v1 checkpoint; it must not be ahead of checkpoint.v2.
@@ -2210,8 +2440,8 @@ impl SynapseStore {
             self.load_checkpoint_state(state);
             self.checkpoint_chain = Some(chain);
             self.binary_seen = true;
-        } else if self.checkpoint_path.exists() {
-            let raw = fs::read(&self.checkpoint_path).map_err(io_err)?;
+        } else if self.medium.exists("checkpoint.v1") {
+            let raw = self.medium.read("checkpoint.v1").map_err(io_err)?;
             if raw == codec::v1_tombstone_bytes() {
                 return Err(SynapseError::new(
                     RefusalCode::CheckpointCorrupt,
@@ -2233,7 +2463,7 @@ impl SynapseStore {
         //    before the logs were emptied) are verified and skipped. In the segment layout
         //    (ADR 0003 A2) replay of the segments starts at the segment index position.
         let mut overlap = CheckpointOverlap::default();
-        if self.wal_path.exists() {
+        if self.medium.exists("wal.log") {
             self.recover_v1(recovery_policy, &mut overlap)?;
         }
         self.recover_v2(recovery_policy, &mut overlap)?;
@@ -2244,6 +2474,19 @@ impl SynapseStore {
         //    refuses the store instead of hiding it as a no-op (issue #89). It checks the
         //    records themselves, so a forgery inside a resealed checkpoint is refused too.
         if recovery_policy == RecoveryPolicy::StrictFailClosed {
+            // Issue #101: in a sealed store, a revision record whose seal does not verify
+            // against the chain so far was written, changed, moved, or followed by a removal
+            // without the server key.
+            let seals = self.revisions.seal_report();
+            if let Some(seq) = seals.first_unsealed {
+                return Err(SynapseError::new(
+                    RefusalCode::RevisionRecordUnsealed,
+                    format!(
+                        "{} revision record(s) are not sealed by the store's seal key (first at {seq}); strict recovery refuses the store (open it with TruncateTornTail and run checkpoint_and_compact to drop them)",
+                        seals.unsealed
+                    ),
+                ));
+            }
             let report = self.revisions.state_move_report();
             if let Some((seq, fault)) = report.first_unverified {
                 return Err(SynapseError::new(
@@ -2274,7 +2517,10 @@ impl SynapseStore {
         self.blob_first_visible_seq = s.blob_first_visible_seq;
         self.github_projections = s.github_projections;
         self.canonical_heads = s.canonical_heads;
-        self.revisions = revision::RevisionLedger::from_log(s.revision_log);
+        self.revisions = revision::RevisionLedger::from_log(
+            s.revision_log,
+            self.revision_seal.as_ref().map(RevisionSealKey::public_key),
+        );
     }
 
     /// Admit a replayed (not checkpoint-covered) frame written with `codec`: the codec
@@ -2306,12 +2552,8 @@ impl SynapseStore {
 
     /// Replace `checkpoint.v1` with the tombstone (atomic: temp file, sync, rename, sync).
     fn write_v1_tombstone(&mut self) -> SynapseResult<()> {
-        write_file_atomic(
-            &self.root_dir,
-            &self.root_dir.join("checkpoint.v1.tmp"),
-            &self.checkpoint_path,
-            &codec::v1_tombstone_bytes(),
-        )?;
+        self.medium
+            .write_atomic("checkpoint.v1", &codec::v1_tombstone_bytes())?;
         self.tombstone_pending = false;
         Ok(())
     }
@@ -2321,12 +2563,22 @@ impl SynapseStore {
         recovery_policy: RecoveryPolicy,
         overlap: &mut CheckpointOverlap,
     ) -> SynapseResult<()> {
-        let mut f = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&self.wal_path)
-            .map_err(io_err)?;
-        let file_len = f.metadata().map_err(io_err)?.len();
+        let (mut f, file_len) = match &self.medium {
+            Medium::Dir(_) => {
+                let f = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&self.wal_path)
+                    .map_err(io_err)?;
+                let len = f.metadata().map_err(io_err)?.len();
+                (WalLogSource::File(f), len)
+            }
+            Medium::Block(_) => {
+                let bytes = self.medium.read("wal.log").map_err(io_err)?;
+                let len = bytes.len() as u64;
+                (WalLogSource::Object(std::io::Cursor::new(bytes)), len)
+            }
+        };
         let mut offset = 0u64;
 
         while offset < file_len {
@@ -2551,7 +2803,7 @@ impl SynapseStore {
         recovery_policy: RecoveryPolicy,
         overlap: &mut CheckpointOverlap,
     ) -> SynapseResult<()> {
-        let ids = segment::list_segments(&self.root_dir)?;
+        let ids = self.medium.list_segments()?;
         if !self.v2_mode {
             for &id in &ids {
                 if self.segment_has_data(id)? {
@@ -2567,8 +2819,8 @@ impl SynapseStore {
             return Ok(());
         }
         let (start_seg, start_off) = if self.log_layout == LogLayout::Segments {
-            let binding = segment::checkpoint_binding(&self.root_dir)?;
-            let index = segment::SegmentIndex::load(&self.root_dir, &binding)?;
+            let binding = segment::checkpoint_binding_on(&self.medium)?;
+            let index = segment::SegmentIndex::load_from(&self.medium, &binding)?;
             self.blob_locations = index.entries.clone();
             if (index.replay_segment, index.replay_offset) != (1, 0) {
                 // The index vouches for every segment byte before its replay position:
@@ -2614,20 +2866,12 @@ impl SynapseStore {
         };
         self.wal_v2_recovered_end = (start_seg, start_off);
         for id in start_seg..=max {
-            let path = self.root_dir.join(segment::segment_file_name(id));
-            if !path.exists() {
-                break;
-            }
             let base = if id == start_seg { start_off } else { 0 };
-            let buf = {
-                let mut f = File::open(&path).map_err(io_err)?;
-                f.seek(SeekFrom::Start(base)).map_err(io_err)?;
-                let mut b = Vec::new();
-                f.read_to_end(&mut b).map_err(io_err)?;
-                b
+            let Some(buf) = self.medium.read_segment_from(id, base)? else {
+                break;
             };
             let (end, holds_data, truncated) =
-                self.replay_segment(id, &path, base, &buf, max, recovery_policy, overlap)?;
+                self.replay_segment(id, base, &buf, max, recovery_policy, overlap)?;
             if holds_data || id == start_seg {
                 self.wal_v2_recovered_end = (id, end);
             }
@@ -2655,7 +2899,6 @@ impl SynapseStore {
     fn replay_segment(
         &mut self,
         id: u64,
-        path: &Path,
         base: u64,
         buf: &[u8],
         max: u64,
@@ -2787,13 +3030,13 @@ impl SynapseStore {
                             ))
                         }
                         RecoveryPolicy::TruncateTornTail => {
-                            use std::os::unix::fs::FileExt;
                             let last_nonzero = buf.iter().rposition(|b| *b != 0).unwrap_or(off);
                             let end = wal2::align_up(last_nonzero as u64 + 1) as usize;
-                            let f = OpenOptions::new().write(true).open(path).map_err(io_err)?;
-                            f.write_all_at(&vec![0u8; end - off], base + off as u64)
-                                .map_err(io_err)?;
-                            f.sync_data().map_err(io_err)?;
+                            self.medium.zero_segment_range(
+                                id,
+                                base + off as u64,
+                                base + end as u64,
+                            )?;
                             self.torn_frames_truncated_on_open += 1;
                             return Ok((base + off as u64, true, true));
                         }
@@ -2806,7 +3049,7 @@ impl SynapseStore {
 
     fn handle_torn_tail(
         &mut self,
-        f: &mut File,
+        f: &mut WalLogSource,
         valid_offset: u64,
         recovery_policy: RecoveryPolicy,
         reason: &str,
@@ -2817,11 +3060,43 @@ impl SynapseStore {
                 format!("{reason} at byte offset {valid_offset}"),
             )),
             RecoveryPolicy::TruncateTornTail => {
-                f.set_len(valid_offset).map_err(io_err)?;
-                f.sync_all().map_err(io_err)?;
+                match f {
+                    WalLogSource::File(f) => {
+                        f.set_len(valid_offset).map_err(io_err)?;
+                        f.sync_all().map_err(io_err)?;
+                    }
+                    WalLogSource::Object(c) => {
+                        let keep = c.get_ref()[..valid_offset as usize].to_vec();
+                        self.medium.write_atomic("wal.log", &keep)?;
+                    }
+                }
                 self.torn_frames_truncated_on_open += 1;
                 Ok(())
             }
+        }
+    }
+}
+
+/// `wal.log` as recovery reads it: the file (A2) or the bytes of the metadata object (R1).
+enum WalLogSource {
+    File(File),
+    Object(std::io::Cursor<Vec<u8>>),
+}
+
+impl Read for WalLogSource {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            WalLogSource::File(f) => f.read(buf),
+            WalLogSource::Object(c) => c.read(buf),
+        }
+    }
+}
+
+impl Seek for WalLogSource {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        match self {
+            WalLogSource::File(f) => f.seek(pos),
+            WalLogSource::Object(c) => c.seek(pos),
         }
     }
 }

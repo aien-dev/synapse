@@ -2,7 +2,7 @@
 //! [`ChangesetEnvelopeV2`]), `did:key` Ed25519 codec, and deterministic refusal taxonomy for
 //! Synapse (ADR 0001).
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
@@ -10,6 +10,7 @@ use std::fmt;
 
 mod derivation;
 pub mod merge;
+mod key_cache;
 mod revision;
 mod revision_state;
 mod tree;
@@ -19,6 +20,7 @@ pub use derivation::{
     DOMAIN_DERIVATION_ATTESTATION_V1, DOMAIN_DERIVATION_SIGN_V1, DOMAIN_DERIVED_MERGE_CHANGE_V1,
     MAX_DERIVATION_INPUTS,
 };
+pub use key_cache::{cached_verifying_key, key_cache_stats, KEY_CACHE_CAPACITY};
 pub use revision::{
     AdmissionWitness, AuthorshipAttestation, ChainPath, ChangesetEnvelopeV2, ObsolescenceKind,
     ObsolescenceMarker, RevisionContent, WitnessSigner, DOMAIN_ADMISSION_WITNESS_V1,
@@ -66,6 +68,10 @@ pub enum RefusalCode {
     /// not a subset of the have, an unsolicited or repeated chunk, or a submit before every
     /// wanted chunk arrived (step G1).
     WireProtocolViolation,
+    /// The peer broke the shared-memory ring protocol: an index out of range, moved back or
+    /// misaligned, a record length over the cap or past the published bytes, or a wrong
+    /// record sequence number (step G3).
+    WireRingViolation,
     CheckpointCorrupt,
     IoFailure,
 
@@ -152,6 +158,11 @@ pub enum RefusalCode {
     /// or whose mover key is not the audience of its chain's leaf link: the log was written
     /// without the mover's private key (ADR 0003 sections 5.3 and 5.4, step B4, issue #89).
     RevisionStateMoveUnverified,
+    /// Strict recovery of a store opened with a revision seal key found a revision record
+    /// (kind 7, 8, 9, or 11) whose server seal is missing or does not verify against the seal
+    /// chain so far: it was written, changed, reordered, or followed by a removed record
+    /// without the server's key (issue #101).
+    RevisionRecordUnsealed,
     /// A `DerivationAttestation` does not name the revision it is presented with, or its
     /// signature does not verify under the server key it names (ADR 0003 section 5.1, step B5).
     DerivationSignatureInvalid,
@@ -593,7 +604,7 @@ impl ChangesetEnvelope {
 
         // Verify author_did and Ed25519 signature
         let pubkey_bytes = decode_did_key_ed25519(&self.author_did)?;
-        let verifying_key = VerifyingKey::from_bytes(&pubkey_bytes).map_err(|_| {
+        let verifying_key = cached_verifying_key(&pubkey_bytes).map_err(|_| {
             SynapseError::new(RefusalCode::DidKeyInvalid, "invalid Ed25519 public key")
         })?;
         let sig_arr: [u8; 64] = self.signature.as_slice().try_into().map_err(|_| {
@@ -866,7 +877,7 @@ mod tests {
 
     #[test]
     fn test_radicle_did_key_roundtrip_and_real_spark_did() {
-        // Real Radicle DID from `rad self` on spark-b87b:
+        // Real Radicle DID from `rad self` on the DGX Spark:
         let real_did = "did:key:z6MkfZDue1TbaNFi3ZzcD9uiTeduPLC52ucdFVuLKZwexxhK";
         let pubkey = decode_did_key_ed25519(real_did).expect("decode real Radicle DID");
         let reencoded = encode_did_key_ed25519(&pubkey);

@@ -1,7 +1,7 @@
 //! Capability-scoped Ed25519 authentication, replay protection, quota enforcement,
 //! and tamper-evident hash-chained security audit logging (`synapse-auth`, Gate 2a).
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,8 +11,12 @@ use synapse_core::{
 };
 
 mod chain;
+mod digest;
+mod key_cache;
 mod state_move;
 pub use chain::*;
+pub use digest::payload_digest;
+pub use key_cache::KEY_CACHE_CAPACITY;
 pub use state_move::*;
 
 /// Current capability grant schema version.
@@ -155,7 +159,7 @@ impl AgentCapabilityGrant {
             ));
         }
         let pubkey_bytes = decode_did_key_ed25519(&self.issuer_did)?;
-        let verifying_key = VerifyingKey::from_bytes(&pubkey_bytes).map_err(|_| {
+        let verifying_key = key_cache::verifying_key(&pubkey_bytes).map_err(|_| {
             SynapseError::new(
                 RefusalCode::DidKeyInvalid,
                 "invalid authority Ed25519 public key",
@@ -169,7 +173,7 @@ impl AgentCapabilityGrant {
         })?;
         let sig = Signature::from_bytes(&sig_arr);
         verifying_key
-            .verify(&self.canonical_signable_bytes(), &sig)
+            .verify_strict(&self.canonical_signable_bytes(), &sig)
             .map_err(|_| {
                 SynapseError::new(
                     RefusalCode::AuthGrantSignatureInvalid,
@@ -207,11 +211,8 @@ impl<T: Serialize> AuthenticatedRequest<T> {
         declared_payload_bytes_len: u64,
         payload: T,
     ) -> SynapseResult<Self> {
-        let serialized = serde_json::to_vec(&payload).map_err(|e| {
-            SynapseError::new(RefusalCode::IoFailure, format!("serialize payload: {e}"))
-        })?;
-        let payload_sha256: [u8; 32] = Sha256::digest(&serialized).into();
-        let effective_len = declared_payload_bytes_len.max(serialized.len() as u64);
+        let (payload_sha256, serialized_len) = payload_digest(&payload)?;
+        let effective_len = declared_payload_bytes_len.max(serialized_len);
 
         let mut req = Self {
             grant,
@@ -294,8 +295,27 @@ impl AuditEntry {
     }
 }
 
+/// Maximum retained audit decisions. Exhaustion stops authorization rather than dropping
+/// evidence; the caller must persist the complete log and restart with a fresh enforcer.
+pub const MAX_AUDIT_ENTRIES: usize = 4_096;
+/// Maximum retained bytes per attacker-controlled audit string. Oversized values retain a
+/// SHA-256 commitment and original length rather than occupying an unbounded log entry.
+const MAX_AUDIT_FIELD_BYTES: usize = 1_024;
+
+fn bounded_audit_field(value: String) -> String {
+    if value.len() <= MAX_AUDIT_FIELD_BYTES {
+        value
+    } else {
+        format!(
+            "[oversize {} bytes sha256={}]",
+            value.len(),
+            hex::encode(Sha256::digest(value.as_bytes()))
+        )
+    }
+}
+
 /// Tamper-evident hash-chained security audit log.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct AuditLog {
     entries: Vec<AuditEntry>,
     last_sha256: [u8; 32],
@@ -310,8 +330,19 @@ impl AuditLog {
         &self.entries
     }
 
+    #[cfg(test)]
     pub fn entries_mut_for_testing(&mut self) -> &mut Vec<AuditEntry> {
         &mut self.entries
+    }
+    /// Reserve space before any authorization state (nonce or quota) is changed.
+    pub fn ensure_capacity(&self) -> SynapseResult<()> {
+        if self.entries.len() >= MAX_AUDIT_ENTRIES {
+            return Err(SynapseError::new(
+                RefusalCode::BackpressureOverCapacity,
+                "audit log full; no authorization decision was made",
+            ));
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -324,16 +355,24 @@ impl AuditLog {
         capability: Capability,
         operation: impl Into<String>,
         outcome: AuditOutcome,
-    ) -> &AuditEntry {
-        let audit_seq = (self.entries.len() as u64).saturating_add(1);
+    ) -> SynapseResult<&AuditEntry> {
+        self.ensure_capacity()?;
+        let audit_seq = (self.entries.len() as u64) + 1;
+        let outcome = match outcome {
+            AuditOutcome::Refused { code, reason } => AuditOutcome::Refused {
+                code,
+                reason: bounded_audit_field(reason),
+            },
+            admitted => admitted,
+        };
         let mut entry = AuditEntry {
             audit_seq,
             timestamp_ms,
             boundary,
             repo_id,
-            actor_did,
+            actor_did: bounded_audit_field(actor_did),
             capability,
-            operation: operation.into(),
+            operation: bounded_audit_field(operation.into()),
             outcome,
             prev_entry_sha256: self.last_sha256,
             entry_sha256: [0u8; 32],
@@ -341,7 +380,7 @@ impl AuditLog {
         entry.entry_sha256 = entry.compute_sha256();
         self.last_sha256 = entry.entry_sha256;
         self.entries.push(entry);
-        self.entries.last().expect("just pushed")
+        Ok(self.entries.last().expect("just pushed"))
     }
 
     /// Verify the entire hash chain and sequence continuity of the audit log.
@@ -436,6 +475,7 @@ impl PolicyEnforcer {
         req: &AuthenticatedRequest<T>,
         now_ms: u64,
     ) -> SynapseResult<()> {
+        self.audit_log.ensure_capacity()?;
         let result = self.check_request_inner(expected_repo_id, expected_capability, req, now_ms);
         match &result {
             Ok(()) => {
@@ -447,7 +487,7 @@ impl PolicyEnforcer {
                     expected_capability,
                     operation,
                     AuditOutcome::Admitted,
-                );
+                )?;
             }
             Err(err) => {
                 self.audit_log.record(
@@ -461,7 +501,7 @@ impl PolicyEnforcer {
                         code: err.code,
                         reason: err.message.clone(),
                     },
-                );
+                )?;
             }
         }
         result
@@ -528,10 +568,7 @@ impl PolicyEnforcer {
         }
 
         // 6. Verify payload digest and agent's Ed25519 signature over the request
-        let serialized_payload = serde_json::to_vec(&req.payload).map_err(|e| {
-            SynapseError::new(RefusalCode::IoFailure, format!("serialize payload: {e}"))
-        })?;
-        let actual_payload_sha256: [u8; 32] = Sha256::digest(&serialized_payload).into();
+        let (actual_payload_sha256, serialized_payload_len) = payload_digest(&req.payload)?;
         if actual_payload_sha256 != req.payload_sha256 {
             return Err(SynapseError::new(
                 RefusalCode::AuthSignatureInvalid,
@@ -540,7 +577,7 @@ impl PolicyEnforcer {
         }
 
         let agent_pubkey_bytes = decode_did_key_ed25519(&req.grant.agent_did)?;
-        let agent_verifying_key = VerifyingKey::from_bytes(&agent_pubkey_bytes).map_err(|_| {
+        let agent_verifying_key = key_cache::verifying_key(&agent_pubkey_bytes).map_err(|_| {
             SynapseError::new(RefusalCode::DidKeyInvalid, "invalid agent Ed25519 key")
         })?;
         let sig_arr: [u8; 64] = req.agent_signature.as_slice().try_into().map_err(|_| {
@@ -551,7 +588,7 @@ impl PolicyEnforcer {
         })?;
         let sig = Signature::from_bytes(&sig_arr);
         agent_verifying_key
-            .verify(&req.canonical_signable_bytes(), &sig)
+            .verify_strict(&req.canonical_signable_bytes(), &sig)
             .map_err(|_| {
                 SynapseError::new(
                     RefusalCode::AuthSignatureInvalid,
@@ -560,7 +597,7 @@ impl PolicyEnforcer {
             })?;
 
         // 7. Enforce payload byte quota
-        let effective_bytes = req.payload_bytes_len.max(serialized_payload.len() as u64);
+        let effective_bytes = req.payload_bytes_len.max(serialized_payload_len);
         if effective_bytes > req.grant.max_bytes_per_op {
             return Err(SynapseError::new(
                 RefusalCode::QuotaPayloadTooLarge,
@@ -614,6 +651,139 @@ fn put_str(buf: &mut Vec<u8>, s: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unauthenticated_refusals_cannot_grow_audit_without_bound() {
+        let mut log = AuditLog::new();
+        let repo = RepoId::new("example/repo").unwrap();
+        for _ in 0..MAX_AUDIT_ENTRIES {
+            log.record(
+                1,
+                BoundaryKind::Api,
+                repo.clone(),
+                "untrusted".into(),
+                Capability::Propose,
+                "wire_submit",
+                AuditOutcome::Refused {
+                    code: RefusalCode::AuthChainBroken,
+                    reason: "untrusted chain".into(),
+                },
+            )
+            .unwrap();
+        }
+        let head = log.verify_chain().unwrap();
+        assert_eq!(
+            log.record(
+                1,
+                BoundaryKind::Api,
+                repo,
+                "untrusted".into(),
+                Capability::Propose,
+                "wire_submit",
+                AuditOutcome::Admitted
+            )
+            .unwrap_err()
+            .code,
+            RefusalCode::BackpressureOverCapacity
+        );
+        assert_eq!(log.entries().len(), MAX_AUDIT_ENTRIES);
+        assert_eq!(log.verify_chain().unwrap(), head);
+    }
+
+    #[test]
+    fn oversized_untrusted_audit_fields_keep_explicit_digest_not_payload() {
+        let mut log = AuditLog::new();
+        let value = "x".repeat(MAX_AUDIT_FIELD_BYTES + 1);
+        let entry = log
+            .record(
+                1,
+                BoundaryKind::Api,
+                RepoId::new("example/repo").unwrap(),
+                value.clone(),
+                Capability::Propose,
+                "wire_submit",
+                AuditOutcome::Refused {
+                    code: RefusalCode::AuthChainBroken,
+                    reason: value.clone(),
+                },
+            )
+            .unwrap();
+        let digest = hex::encode(Sha256::digest(value.as_bytes()));
+        assert!(entry.actor_did.contains(&digest));
+        assert!(
+            matches!(&entry.outcome, AuditOutcome::Refused { reason, .. }
+            if reason.contains(&digest) && reason.len() < MAX_AUDIT_FIELD_BYTES)
+        );
+        assert!(log.verify_chain().is_ok());
+    }
+
+    #[test]
+    fn full_audit_refuses_before_consuming_nonce_or_rate_quota() {
+        let authority = SigningKey::from_bytes(&[31; 32]);
+        let agent = SigningKey::from_bytes(&[32; 32]);
+        let repo = RepoId::new("example/repo").unwrap();
+        let grant = AgentCapabilityGrant::issue(
+            &authority,
+            [7; 32],
+            repo.clone(),
+            encode_did_key_ed25519(&agent.verifying_key().to_bytes()),
+            vec![Capability::Propose],
+            1024,
+            1,
+            60_000,
+            0,
+            100_000,
+        );
+        let req = AuthenticatedRequest::sign_new(
+            &agent,
+            grant,
+            repo.clone(),
+            Capability::Propose,
+            [8; 32],
+            2_000,
+            0,
+            "proposal",
+        )
+        .unwrap();
+        let mut auth = PolicyEnforcer::new();
+        auth.register_repo_authority(
+            repo.clone(),
+            encode_did_key_ed25519(&authority.verifying_key().to_bytes()),
+        );
+        for _ in 0..MAX_AUDIT_ENTRIES {
+            auth.audit_log
+                .record(
+                    1,
+                    BoundaryKind::Api,
+                    repo.clone(),
+                    "untrusted".into(),
+                    Capability::Propose,
+                    "wire_submit",
+                    AuditOutcome::Refused {
+                        code: RefusalCode::AuthChainBroken,
+                        reason: "invalid".into(),
+                    },
+                )
+                .unwrap();
+        }
+        let head = auth.audit_log.verify_chain().unwrap();
+        assert_eq!(
+            auth.authorize(
+                BoundaryKind::Api,
+                "submit",
+                &repo,
+                Capability::Propose,
+                &req,
+                2_000,
+            )
+            .unwrap_err()
+            .code,
+            RefusalCode::BackpressureOverCapacity
+        );
+        assert!(auth.consumed_nonces.is_empty());
+        assert!(auth.rate_windows.is_empty());
+        assert_eq!(auth.audit_log.verify_chain().unwrap(), head);
+    }
 
     #[test]
     fn test_capability_matrix_adversarial_refusals_and_audit_chain() {
@@ -822,5 +992,123 @@ mod tests {
             "tampered_operation".to_string();
         let audit_err = enforcer.audit_log().verify_chain().unwrap_err();
         assert_eq!(audit_err.code, RefusalCode::AuditChainCorrupt);
+    }
+
+    /// Ed25519 group order L, little-endian.
+    const ED25519_L: [u8; 32] = [
+        0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde,
+        0x14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10,
+    ];
+
+    /// Identity point encoding: a small-order public key. Under non-strict verify,
+    /// signature (R = identity, S = 0) is accepted for every message.
+    fn small_order_key_bytes() -> [u8; 32] {
+        let mut b = [0u8; 32];
+        b[0] = 1;
+        b
+    }
+
+    fn weak_signature() -> Vec<u8> {
+        let mut sig = vec![0u8; 64];
+        sig[0] = 1;
+        sig
+    }
+
+    fn repo() -> RepoId {
+        RepoId::new("aien-spark/synapse").unwrap()
+    }
+
+    #[test]
+    fn small_order_issuer_key_grant_is_refused() {
+        let key = SigningKey::from_bytes(&[1u8; 32]);
+        let mut grant = AgentCapabilityGrant::issue(
+            &key,
+            [0x10; 32],
+            repo(),
+            encode_did_key_ed25519(&[2u8; 32]),
+            vec![Capability::Read],
+            1024,
+            2,
+            10_000,
+            1_000,
+            5_000,
+        );
+        grant.issuer_did = encode_did_key_ed25519(&small_order_key_bytes());
+        grant.signature = weak_signature();
+        let err = grant.verify_authority_signature().unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthGrantSignatureInvalid);
+    }
+
+    #[test]
+    fn small_order_agent_key_request_is_refused() {
+        let authority_key = SigningKey::from_bytes(&[1u8; 32]);
+        let authority_did = encode_did_key_ed25519(&authority_key.verifying_key().to_bytes());
+        let weak_did = encode_did_key_ed25519(&small_order_key_bytes());
+        let mut enforcer = PolicyEnforcer::new();
+        enforcer.register_repo_authority(repo(), authority_did);
+        let grant = AgentCapabilityGrant::issue(
+            &authority_key,
+            [0x11; 32],
+            repo(),
+            weak_did,
+            vec![Capability::Propose],
+            1024,
+            2,
+            10_000,
+            1_000,
+            5_000,
+        );
+        let mut req = AuthenticatedRequest::sign_new(
+            &SigningKey::from_bytes(&[2u8; 32]),
+            grant,
+            repo(),
+            Capability::Propose,
+            [4u8; 32],
+            2_000,
+            128,
+            "weak-key",
+        )
+        .unwrap();
+        req.agent_signature = weak_signature();
+        let err = enforcer
+            .authorize(
+                BoundaryKind::Api,
+                "submit",
+                &repo(),
+                Capability::Propose,
+                &req,
+                2_000,
+            )
+            .unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthSignatureInvalid);
+    }
+
+    #[test]
+    fn non_canonical_malleable_signatures_are_refused() {
+        let key = SigningKey::from_bytes(&[1u8; 32]);
+        let mut grant = AgentCapabilityGrant::issue(
+            &key,
+            [0x12; 32],
+            repo(),
+            encode_did_key_ed25519(&[2u8; 32]),
+            vec![Capability::Read],
+            1024,
+            2,
+            10_000,
+            1_000,
+            5_000,
+        );
+        grant
+            .verify_authority_signature()
+            .expect("valid grant passes");
+        // Malleate: S' = S + L encodes the same scalar non-canonically.
+        let mut carry = 0u16;
+        for (i, l) in ED25519_L.iter().enumerate() {
+            let v = grant.signature[32 + i] as u16 + *l as u16 + carry;
+            grant.signature[32 + i] = v as u8;
+            carry = v >> 8;
+        }
+        let err = grant.verify_authority_signature().unwrap_err();
+        assert_eq!(err.code, RefusalCode::AuthGrantSignatureInvalid);
     }
 }

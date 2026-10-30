@@ -1,0 +1,21 @@
+mutation M2: mount ignores the metadata region digest
+note: on the first run this mutation survived (the test damaged a length byte, so the region failed to decode before the digest mattered); the test now damages a content byte and the mutation is caught (this file is the rerun).
+test: blockdev_tests::r1_superblock_falls_back_to_the_older_copy_when_the_newest_is_damaged
+diff --git a/crates/synapse-store/src/blockdev.rs b/crates/synapse-store/src/blockdev.rs
+index 05850d9..cb0f18b 100644
+--- a/crates/synapse-store/src/blockdev.rs
++++ b/crates/synapse-store/src/blockdev.rs
+@@ -684,7 +684,7 @@ impl BlockDevice {
+             let mut meta = vec![0u8; sb.meta_len as usize];
+             io.read_at(&mut meta, sb.geo.meta_offset[sb.meta_slot as usize])
+                 .map_err(io_err)?;
+-            if meta_digest(&meta) != sb.meta_sha256 {
++            if false && meta_digest(&meta) != sb.meta_sha256 {
+                 continue;
+             }
+             let Some(names) = decode_meta(&meta) else {
+---
+test blockdev_tests::r1_superblock_falls_back_to_the_older_copy_when_the_newest_is_damaged ... FAILED
+thread 'blockdev_tests::r1_superblock_falls_back_to_the_older_copy_when_the_newest_is_damaged' (1718698) panicked at crates/synapse-store/src/blockdev_tests.rs:399:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.02s
+error: test failed, to rerun pass `-p synapse-store --lib`

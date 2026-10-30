@@ -38,22 +38,11 @@
     },
     {
       "name": "synapse-wire",
-      "role": "Binary wire frames with a fuzzed decoder, have-want chunk negotiation, and stream transports (ADR 0003 step G1)"
+      "role": "Binary wire frames with a fuzzed decoder, have-want chunk negotiation, stream transports (ADR 0003 step G1), and a hostile-peer-safe shared-memory ring for local agents (step G3, optional transport unless X5 adopts it)"
     }
   ],
   "extensions": {
-    "generated": {
-      "children": [],
-      "children_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "compiled_at": "2026-10-18T18:03:30Z",
-      "compiler": "crumb-compile/1",
-      "digest": "sha256:c4eec6cf1c31a45740f3c8dc31c3b343a342bd541038bbdb5dba2073330b797a",
-      "evidence_files": 266,
-      "evidence_root": "sha256:376a5ab5ec89e6083a50aa9f998a26360f73903e761a5a3498d100cbf30db2cb",
-      "files": 464,
-      "generated_at_commit": "b6a43d47e150e8172fd9866a075a535358c194b0",
-      "source_tree": "sha256:cf0aa8008444721fbb80873989d16ac03eacfc9e289b815a07cf4bc3d33caf00"
-    },
+    "generated_policy": "on-demand",
     "synapse": {
       "component_paths": {
         "synapse-api": "crates/synapse-api",

@@ -1,0 +1,15 @@
+mutation M5: ext4 entry deleted from SIGNATURES (review N2: each entry is pinned)
+test: blockdev_tests::r1_sig_ext
+@@ -340,7 +340,6 @@
+     sig("GPT partition table (4 KiB sectors)", SigAt::Start(4096), b"EFI PART"),
+     sig("GPT backup header", SigAt::End(512), b"EFI PART"),
+     sig("GPT backup header (4 KiB sectors)", SigAt::End(4096), b"EFI PART"),
+-    sig("ext2/ext3/ext4", SigAt::Start(1080), &[0x53, 0xEF]),
+     sig("XFS", SigAt::Start(0), b"XFSB"),
+     sig("btrfs", SigAt::Start(0x1_0040), b"_BHRfS_M"),
+     sig("btrfs (mirror at 64 MiB)", SigAt::Start(0x400_0040), b"_BHRfS_M"),
+---
+test blockdev_tests::r1_sig_ext ... FAILED
+thread 'blockdev_tests::r1_sig_ext' (2401540) panicked at crates/synapse-store/src/blockdev_tests.rs:410:18:
+ext2/ext3/ext4: classified Unknown
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 114 filtered out; finished in 0.00s

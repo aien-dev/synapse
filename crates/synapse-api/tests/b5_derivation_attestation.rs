@@ -206,6 +206,7 @@ fn derived_record(derived: DerivedRevision) -> WalRecord {
         derived,
         chain: authority("a").chain,
         admitted_at_ms: NOW,
+        seal: None,
     }
 }
 
@@ -710,6 +711,7 @@ fn b5_derived_revision_presented_with_an_agent_signature_it_does_not_have_is_ref
             chain: authority("a").chain,
             admitted_at_ms: NOW,
             new_blobs: vec![],
+            seal: None,
         };
         let records = fx.records_with(at, record);
         assert_eq!(fx.verify(&records), Err(RefusalCode::AuthSignatureInvalid));
@@ -855,6 +857,7 @@ fn b5_another_owners_private_revision_is_not_a_derivation_input() {
             derived: rebase.clone(),
             chain: authority("b").chain,
             admitted_at_ms: NOW,
+            seal: None,
         },
     ));
     assert_eq!(
@@ -888,6 +891,7 @@ fn b5_replica_refuses_a_state_move_that_does_not_verify() {
     let WalRecord::RevisionStateMoved {
         mut state_move,
         moved_at_ms,
+        ..
     } = record
     else {
         unreachable!()
@@ -898,6 +902,7 @@ fn b5_replica_refuses_a_state_move_that_does_not_verify() {
         WalRecord::RevisionStateMoved {
             state_move,
             moved_at_ms,
+            seal: None,
         },
     );
     assert_eq!(

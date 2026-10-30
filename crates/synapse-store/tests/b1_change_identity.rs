@@ -559,11 +559,13 @@ fn b1_revision_records_round_trip_and_malformed_bytes_are_refused_typed() {
             chain: c.w1.clone(),
             admitted_at_ms: 5,
             new_blobs: vec![BlobDigest::compute(b"x")],
+            seal: None,
         },
         WalRecord::ObsolescenceRecorded {
             marker: marker(&key(2), env.changeset_id(), vec![ChangesetId([3; 32])]),
             chain: c.o.clone(),
             recorded_at_ms: 6,
+            seal: None,
         },
     ];
     for record in records {

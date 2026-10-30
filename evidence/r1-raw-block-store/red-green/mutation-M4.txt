@@ -1,0 +1,20 @@
+mutation M4: metadata commit overwrites the active region in place
+test: blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack
+diff --git a/crates/synapse-store/src/blockdev.rs b/crates/synapse-store/src/blockdev.rs
+index 05850d9..ae7150e 100644
+--- a/crates/synapse-store/src/blockdev.rs
++++ b/crates/synapse-store/src/blockdev.rs
+@@ -746,7 +746,7 @@ impl BlockDevice {
+     ) -> std::io::Result<()> {
+         let generation = st.generation + 1;
+         let (meta_slot, meta) = match &names {
+-            Some(n) => (1 - st.meta_slot, encode_meta(n)),
++            Some(n) => (st.meta_slot, encode_meta(n)),
+             None => (st.meta_slot, encode_meta(&st.names)),
+         };
+         if meta.len() as u64 > self.geo.meta_region_bytes {
+---
+test blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack ... FAILED
+thread 'blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack' (1698326) panicked at crates/synapse-store/src/blockdev_tests.rs:575:19:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 72 filtered out; finished in 9.87s
+error: test failed, to rerun pass `-p synapse-store --lib`
