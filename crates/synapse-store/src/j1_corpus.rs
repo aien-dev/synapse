@@ -253,6 +253,7 @@ impl Lf {
                 chain,
                 admitted_at_ms,
                 new_blobs,
+                seal: _,
             } => {
                 let c = &envelope.content;
                 self.fix(&c.change_id.0);
@@ -275,6 +276,7 @@ impl Lf {
                 marker,
                 chain,
                 recorded_at_ms,
+                seal: _,
             } => {
                 self.repo(&marker.repo_id);
                 self.fix(&marker.change_id.0);
@@ -406,11 +408,13 @@ fn revision_records() -> Vec<WalRecord> {
             chain: chain(3),
             admitted_at_ms: 5_000,
             new_blobs: vec![blob("run"), blob("lib")],
+            seal: None,
         },
         WalRecord::ObsolescenceRecorded {
             marker: ObsolescenceMarker::sign_new(&author, repo(), change_id, id, successors, 6_000),
             chain: chain(1),
             recorded_at_ms: 7_000,
+            seal: None,
         },
         WalRecord::ObsolescenceRecorded {
             marker: ObsolescenceMarker::sign_new(
@@ -423,6 +427,7 @@ fn revision_records() -> Vec<WalRecord> {
             ),
             chain: chain(16),
             recorded_at_ms: u64::MAX,
+            seal: None,
         },
     ]
 }
