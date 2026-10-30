@@ -1,4 +1,4 @@
-# Final host qualification and review disposition — L662
+# Final host qualification and review disposition - L662
 
 Functional source after the one review fix: `df542c9127d216822d655e75accfa2c79859dd63`.
 Base: `5b732e5d353bbcc3f6d0cd1eac60f2e543601521`.
