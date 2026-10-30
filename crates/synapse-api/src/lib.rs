@@ -2,6 +2,7 @@
 //! store with a bounded cache (`tree`, ADR 0003 step C1), exact `PathIndex` invalidation, and
 //! durable subscription cursors (`synapse-api`, Gate 2b).
 
+use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
@@ -9,21 +10,24 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use synapse_auth::{
-    AuditEntry, AuthenticatedRequest, BoundaryKind, Capability, ChainedRequest, PolicyEnforcer,
+    AuditEntry, AuthenticatedRequest, BoundaryKind, Capability, CapabilityChain, ChainedRequest,
+    PolicyEnforcer, SignedStateMove,
 };
 use synapse_core::{
     validate_repo_relative_path, BlobDigest, ChangesetEnvelope, ChangesetId, EvidenceAttachment,
     FileMode, GitHubPullRequestProjection, GitOid, IdempotencyKey, MutationOp,
     RadicleCanonicalHead, RefusalCode, RepoId, SynapseError, SynapseResult, TreeDigest, WalSeq,
 };
-use synapse_core::{ChainPath, ChangeId, ChangesetEnvelopeV2, ObsolescenceMarker};
+use synapse_core::{ChainPath, ChangeId, ChangesetEnvelopeV2, ObsolescenceMarker, RevisionState};
 use synapse_store::{
     AdmissionAuthority, CompactionReport, FsyncPolicy, IngestOutcome, RecoveryPolicy, ReviewRecord,
-    RevisionOutcome, StoreLimits, StoredChangeset, SynapseStore,
+    RevisionOutcome, RevisionSealKey, StoreLimits, StoredChangeset, StoredRevision, SynapseStore,
 };
 
 mod advisory;
 mod crumb;
+mod derivation;
+pub use derivation::ServiceDerivationTrees;
 mod evidence;
 pub mod tree;
 pub use advisory::{
@@ -239,6 +243,81 @@ pub struct WatchQueryPayload {
     pub page: PageRequest,
 }
 
+/// Request payload for `advance_revision_state` (ADR 0003 B4, issue #89), in its one binary
+/// encoding: `changeset_id [32] | state u8 | signed_at_ms u64 | signature [64]` (105 bytes).
+/// `signature` is the request agent's Ed25519 signature over
+/// [`SignedStateMove::statement_bytes`] for the service's repository, this revision and
+/// state, the request's chain, and `signed_at_ms`; the store records it with the move.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RevisionStateMovePayload {
+    pub changeset_id: ChangesetId,
+    pub to: RevisionState,
+    pub signed_at_ms: u64,
+    pub signature: [u8; 64],
+}
+
+impl RevisionStateMovePayload {
+    /// Encoded size.
+    pub const LEN: usize = 32 + 1 + 8 + 64;
+
+    /// Sign a move of `changeset_id` of `repo_id` to `to` as `agent`, the leaf audience of
+    /// `chain`, at the agent's time `signed_at_ms`.
+    pub fn sign_new(
+        agent: &SigningKey,
+        repo_id: &RepoId,
+        chain: &CapabilityChain,
+        changeset_id: ChangesetId,
+        to: RevisionState,
+        signed_at_ms: u64,
+    ) -> SynapseResult<Self> {
+        let path = ChainPath::new(chain.link_digests().iter().map(|d| d.0).collect())?;
+        Ok(Self {
+            changeset_id,
+            to,
+            signed_at_ms,
+            signature: SignedStateMove::sign_statement(
+                agent,
+                repo_id,
+                changeset_id,
+                to,
+                &path,
+                signed_at_ms,
+            ),
+        })
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::LEN);
+        buf.extend_from_slice(&self.changeset_id.0);
+        buf.push(self.to.tag_byte());
+        buf.extend_from_slice(&self.signed_at_ms.to_le_bytes());
+        buf.extend_from_slice(&self.signature);
+        buf
+    }
+
+    /// Exactly 105 bytes with a known state tag; anything else is `EnvelopeMalformed`.
+    pub fn decode(bytes: &[u8]) -> SynapseResult<Self> {
+        let malformed = || {
+            SynapseError::new(
+                RefusalCode::EnvelopeMalformed,
+                "state move payload must be changeset_id [32] | state u8 (1..=5) | signed_at_ms u64 | signature [64]",
+            )
+        };
+        if bytes.len() != Self::LEN {
+            return Err(malformed());
+        }
+        let (id, rest) = bytes.split_at(32);
+        let (tag, rest) = rest.split_at(1);
+        let (at, sig) = rest.split_at(8);
+        Ok(Self {
+            changeset_id: ChangesetId(id.try_into().map_err(|_| malformed())?),
+            to: RevisionState::from_tag_byte(tag[0]).ok_or_else(malformed)?,
+            signed_at_ms: u64::from_le_bytes(at.try_into().map_err(|_| malformed())?),
+            signature: sig.try_into().map_err(|_| malformed())?,
+        })
+    }
+}
+
 /// Exact path index mapping repository paths to touching `ChangesetId`s. Trees live in the
 /// service's shared [`TreeStore`].
 #[derive(Debug, Default)]
@@ -299,10 +378,14 @@ pub struct SynapseService {
     trees: TreeStore,
     base_blobs: BTreeMap<BlobDigest, Vec<u8>>,
     max_page_size: usize,
+    /// Materialized snapshots for advisory and Crumb reads, bounded by a share of the tree
+    /// cache bound (issue #94). Freed with the service.
+    snapshot_views: advisory::SnapshotViewCache,
 }
 
 impl SynapseService {
-    /// Open or create a `SynapseService` at `root_dir` for `repo_id`.
+    /// Open or create a `SynapseService` at `root_dir` for `repo_id`. Revision records are
+    /// not sealed (see [`SynapseStore::open`]); [`Self::open_sealed`] seals them.
     pub fn open(
         root_dir: impl AsRef<Path>,
         repo_id: RepoId,
@@ -310,12 +393,56 @@ impl SynapseService {
         recovery_policy: RecoveryPolicy,
         limits: StoreLimits,
     ) -> SynapseResult<Self> {
+        Self::open_with(
+            root_dir,
+            repo_id,
+            fsync_policy,
+            recovery_policy,
+            limits,
+            None,
+        )
+    }
+
+    /// [`Self::open`] with the server's machine key sealing every revision record, so a
+    /// rewrite of the log without that key changes nothing on replay (issue #101; see
+    /// [`SynapseStore::open_sealed`]).
+    pub fn open_sealed(
+        root_dir: impl AsRef<Path>,
+        repo_id: RepoId,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        seal: RevisionSealKey,
+    ) -> SynapseResult<Self> {
+        Self::open_with(
+            root_dir,
+            repo_id,
+            fsync_policy,
+            recovery_policy,
+            limits,
+            Some(seal),
+        )
+    }
+
+    fn open_with(
+        root_dir: impl AsRef<Path>,
+        repo_id: RepoId,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+        seal: Option<RevisionSealKey>,
+    ) -> SynapseResult<Self> {
         let root_dir = root_dir.as_ref().to_path_buf();
         let cursors_dir = root_dir.join("cursors");
         fs::create_dir_all(&cursors_dir)
             .map_err(|e| SynapseError::new(RefusalCode::IoFailure, e.to_string()))?;
 
-        let store = SynapseStore::open(&root_dir, fsync_policy, recovery_policy, limits)?;
+        let store = match seal {
+            Some(seal) => {
+                SynapseStore::open_sealed(&root_dir, fsync_policy, recovery_policy, limits, seal)?
+            }
+            None => SynapseStore::open(&root_dir, fsync_policy, recovery_policy, limits)?,
+        };
         let mut path_index = PathIndex::new();
         for cs in store.list_changesets(Some(&repo_id), None, None)? {
             path_index.index_changeset(cs.changeset_id, &cs.envelope);
@@ -332,6 +459,7 @@ impl SynapseService {
             trees: TreeStore::new(TreeCacheConfig::default())?,
             base_blobs: BTreeMap::new(),
             max_page_size: DEFAULT_MAX_PAGE_SIZE,
+            snapshot_views: advisory::SnapshotViewCache::default(),
         })
     }
 
@@ -630,6 +758,91 @@ impl SynapseService {
         self.store.record_obsolescence(marker, chain, now_ms)
     }
 
+    /// Move a revision's state (ADR 0003 B4) under an F1 delegation chain granting
+    /// `Propose`. `req.payload` is a [`RevisionStateMovePayload`]: the request agent (the
+    /// chain's leaf audience) must sign the move itself (issue #89), and the store records
+    /// that signature with the chain's leaf link, so replay can check the mover. A signature
+    /// that does not verify is `AuthSignatureInvalid`. The store applies the owner-chain and
+    /// state-machine rules: any move to `Canonical` is refused
+    /// (`CanonicalOutsidePromotionQueue`; canonical moves only through the promotion queue,
+    /// step E2), another owner's `Private` revision is `ChangesetNotFound`, a chain that does
+    /// not own the revision is `AuthChainNotDominant`, and a move to `Verified` or any move
+    /// that is backwards, in place, or skips a state is `RevisionStateMoveInvalid`.
+    pub fn advance_revision_state(
+        &mut self,
+        req: &ChainedRequest,
+        now_ms: u64,
+    ) -> SynapseResult<WalSeq> {
+        let mv = RevisionStateMovePayload::decode(&req.payload)?;
+        self.auth.authorize_chain(
+            BoundaryKind::Api,
+            "advance_revision_state",
+            &self.repo_id,
+            Capability::Propose,
+            req,
+            self.store.committed_seq().next(),
+            now_ms,
+        )?;
+        let leaf_link = req.chain.leaf().cloned().ok_or_else(|| {
+            SynapseError::new(RefusalCode::AuthChainBroken, "state move: empty chain")
+        })?;
+        let state_move = SignedStateMove {
+            repo_id: self.repo_id.clone(),
+            changeset_id: mv.changeset_id,
+            to: mv.to,
+            chain: admission_authority(req)?.chain,
+            signed_at_ms: mv.signed_at_ms,
+            leaf_link,
+            mover_key: req.agent_key,
+            signature: mv.signature,
+        };
+        self.store.advance_revision_state(state_move, now_ms)
+    }
+
+    /// Read an envelope v2 revision (ADR 0003 B4) under an F1 delegation chain granting
+    /// `Read`. `req.payload` is the 32-byte `ChangesetId`. A revision the chain may not see
+    /// is `ChangesetNotFound`, exactly like an unknown one: another owner's `Private`
+    /// revision, or a revision with a mutation path outside the chain's path scope.
+    pub fn read_revision(
+        &mut self,
+        req: &ChainedRequest,
+        now_ms: u64,
+    ) -> SynapseResult<StoredRevision> {
+        let id: [u8; 32] = req.payload.as_slice().try_into().map_err(|_| {
+            SynapseError::new(
+                RefusalCode::EnvelopeMalformed,
+                "read_revision payload must be exactly one 32-byte ChangesetId",
+            )
+        })?;
+        let id = ChangesetId(id);
+        self.auth.authorize_chain(
+            BoundaryKind::Api,
+            "read_revision",
+            &self.repo_id,
+            Capability::Read,
+            req,
+            self.store.committed_seq().next(),
+            now_ms,
+        )?;
+        let viewer = admission_authority(req)?.chain;
+        let rev = self
+            .store
+            .get_revision_visible_to(&self.repo_id, id, &viewer)?;
+        let in_scope = req.chain.leaf().is_some_and(|leaf| {
+            rev.content
+                .mutations
+                .iter()
+                .all(|m| leaf.caveats.paths.covers_path(&m.path))
+        });
+        if !in_scope {
+            return Err(SynapseError::new(
+                RefusalCode::ChangesetNotFound,
+                format!("revision {id} not found"),
+            ));
+        }
+        Ok(rev)
+    }
+
     /// Index a committed (or duplicate) submission in the path index.
     pub fn index_submitted(&mut self, outcome: &IngestOutcome, envelope: &ChangesetEnvelope) {
         let cs_id = match outcome {
@@ -654,7 +867,8 @@ impl SynapseService {
             now_ms,
         )?;
         let (cs_id, min_seq, snap_seq) = req.payload;
-        self.store.get_changeset(cs_id, min_seq, snap_seq)
+        self.store
+            .get_changeset_in_repo(&self.repo_id, cs_id, min_seq, snap_seq)
     }
 
     /// Read a file's raw bytes at `TreeTarget` without cloning or checking out a working tree (`Capability::Read`).
@@ -757,7 +971,12 @@ impl SynapseService {
                 let mut stack = vec![head_id];
                 while let Some(curr) = stack.pop() {
                     if set.insert(curr) {
-                        let stored = self.store.get_changeset(curr, None, Some(snap_seq))?;
+                        let stored = self.store.get_changeset_in_repo(
+                            &self.repo_id,
+                            curr,
+                            None,
+                            Some(snap_seq),
+                        )?;
                         for p in &stored.envelope.parent_changesets {
                             stack.push(*p);
                         }
@@ -824,7 +1043,9 @@ impl SynapseService {
             now_ms,
         )?;
         let (cs_id, snap_seq) = req.payload;
-        let stored = self.store.get_changeset(cs_id, None, snap_seq)?;
+        let stored = self
+            .store
+            .get_changeset_in_repo(&self.repo_id, cs_id, None, snap_seq)?;
         let github_projection = self
             .store
             .github_projections()
@@ -876,15 +1097,23 @@ impl SynapseService {
             now_ms,
         )?;
         let snap_seq = self.validate_page_request(&req.payload.page)?;
-        let cand_stored = self
-            .store
-            .get_changeset(req.payload.candidate, None, Some(snap_seq))?;
+        let cand_stored = self.store.get_changeset_in_repo(
+            &self.repo_id,
+            req.payload.candidate,
+            None,
+            Some(snap_seq),
+        )?;
 
         let peers: Vec<StoredChangeset> = if let Some(ref explicit) = req.payload.against {
             let mut list = Vec::with_capacity(explicit.len());
             for &id in explicit {
                 if id != req.payload.candidate {
-                    list.push(self.store.get_changeset(id, None, Some(snap_seq))?);
+                    list.push(self.store.get_changeset_in_repo(
+                        &self.repo_id,
+                        id,
+                        None,
+                        Some(snap_seq),
+                    )?);
                 }
             }
             list
@@ -1204,7 +1433,7 @@ impl SynapseService {
     }
 
     /// Replace the tree store with one bounded by `config`, carrying the pinned base trees over.
-    /// Memoized changeset roots are dropped and rebuilt on demand.
+    /// Memoized changeset roots and snapshot views are dropped and rebuilt on demand.
     pub fn set_tree_cache_config(&mut self, config: TreeCacheConfig) -> SynapseResult<()> {
         let mut next = TreeStore::new(config)?;
         for &root in self.base_roots.values() {
@@ -1212,6 +1441,7 @@ impl SynapseService {
             next.pin(root)?;
         }
         self.trees = next;
+        self.snapshot_views.clear();
         Ok(())
     }
 
@@ -1258,7 +1488,9 @@ impl SynapseService {
             TreeTarget::Changeset(cs_id) => cs_id,
         };
         // Visibility at `snapshot_seq` is checked on every lookup, memoized or not.
-        let stored = self.store.get_changeset(cs_id, None, snapshot_seq)?;
+        let stored = self
+            .store
+            .get_changeset_in_repo(&self.repo_id, cs_id, None, snapshot_seq)?;
         if !force {
             if let Some(root) = self.trees.memo_root(cs_id) {
                 return Ok(root);
@@ -1605,6 +1837,224 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+    #[test]
+    fn repository_grant_cannot_read_foreign_changesets_in_mixed_store() {
+        let dir = temp_dir("mixed-repositories");
+        let a = RepoId::new("example/repo-a").unwrap();
+        let b = RepoId::new("example/repo-b").unwrap();
+        let mut svc = SynapseService::open(
+            &dir,
+            a.clone(),
+            FsyncPolicy::EveryCommit,
+            RecoveryPolicy::StrictFailClosed,
+            StoreLimits::default(),
+        )
+        .unwrap();
+        let authority = SigningKey::from_bytes(&[11; 32]);
+        let agent = SigningKey::from_bytes(&[12; 32]);
+        svc.register_authority(encode_did_key_ed25519(
+            &authority.verifying_key().to_bytes(),
+        ));
+        let grant = AgentCapabilityGrant::issue(
+            &authority,
+            [1; 32],
+            a.clone(),
+            encode_did_key_ed25519(&agent.verifying_key().to_bytes()),
+            vec![Capability::Read],
+            1_000_000,
+            100,
+            60_000,
+            0,
+            100_000,
+        );
+        let base = GitOid([7; 20]);
+        svc.register_base_tree(base, vec![]).unwrap();
+        let make = |repo_id: RepoId, tag: u8, parents: Vec<ChangesetId>| {
+            let mut env = ChangesetEnvelope {
+                version: SYNAPSE_ENVELOPE_VERSION,
+                repo_id,
+                base_git_oid: base,
+                parent_changesets: parents,
+                author_did: String::new(),
+                idempotency_key: IdempotencyKey([tag; 32]),
+                created_at_ms: 1_000,
+                intent_summary: "security test".into(),
+                mutations: vec![PathMutation {
+                    path: "private.txt".into(),
+                    op: MutationOp::Delete,
+                }],
+                evidence_receipts: vec![],
+                signature: vec![],
+            };
+            env.sign(&agent);
+            env
+        };
+        let own = match svc
+            .store_mut()
+            .ingest_changeset(make(a.clone(), 1, vec![]), &[])
+            .unwrap()
+        {
+            IngestOutcome::Committed { changeset_id, .. } => changeset_id,
+            _ => unreachable!(),
+        };
+        let foreign = match svc
+            .store_mut()
+            .ingest_changeset(make(b, 2, vec![]), &[])
+            .unwrap()
+        {
+            IngestOutcome::Committed { changeset_id, .. } => changeset_id,
+            _ => unreachable!(),
+        };
+        let foreign_child = match svc
+            .store_mut()
+            .ingest_changeset(
+                make(RepoId::new("example/repo-b").unwrap(), 3, vec![foreign]),
+                &[],
+            )
+            .unwrap()
+        {
+            IngestOutcome::Committed { changeset_id, .. } => changeset_id,
+            _ => unreachable!(),
+        };
+        let mut nonce = 0u8;
+        macro_rules! request {
+            ($payload:expr) => {{
+                nonce += 1;
+                AuthenticatedRequest::sign_new(
+                    &agent,
+                    grant.clone(),
+                    a.clone(),
+                    Capability::Read,
+                    [nonce; 32],
+                    2_000,
+                    0,
+                    $payload,
+                )
+                .unwrap()
+            }};
+        }
+        assert_eq!(
+            svc.get(&request!((own, None, None)), 2_000)
+                .unwrap()
+                .changeset_id,
+            own
+        );
+        assert_eq!(
+            svc.get(&request!((foreign, None, None)), 2_000)
+                .unwrap_err()
+                .code,
+            RefusalCode::ChangesetNotFound
+        );
+        assert_eq!(
+            svc.get(&request!((ChangesetId([0xFF; 32]), None, None)), 2_000)
+                .unwrap_err()
+                .code,
+            RefusalCode::ChangesetNotFound
+        );
+        assert_eq!(
+            svc.provenance(&request!((foreign, None)), 2_000)
+                .unwrap_err()
+                .code,
+            RefusalCode::ChangesetNotFound
+        );
+        assert_eq!(
+            svc.tree(
+                &request!(TreeQueryPayload {
+                    target: TreeTarget::Changeset(foreign),
+                    path_prefix: None,
+                    page: PageRequest::default(),
+                }),
+                2_000
+            )
+            .unwrap_err()
+            .code,
+            RefusalCode::ChangesetNotFound
+        );
+        assert_eq!(
+            svc.tree(
+                &request!(TreeQueryPayload {
+                    target: TreeTarget::Changeset(foreign_child),
+                    path_prefix: None,
+                    page: PageRequest::default(),
+                }),
+                2_000
+            )
+            .unwrap_err()
+            .code,
+            RefusalCode::ChangesetNotFound
+        );
+        assert_eq!(
+            svc.evidence_base(
+                &request!(EvidenceBaseQueryPayload {
+                    changeset_id: foreign,
+                    snapshot_seq: None,
+                }),
+                2_000
+            )
+            .unwrap_err()
+            .code,
+            RefusalCode::ChangesetNotFound
+        );
+        assert_eq!(
+            svc.changeset_advisory(
+                &request!(ChangesetAdvisoryPayload {
+                    base: TreeTarget::BaseGitCommit(base),
+                    latest: Some(TreeTarget::Changeset(foreign)),
+                    paths: vec!["private.txt".into()],
+                    agent: "reader".into(),
+                    snapshot_seq: None,
+                }),
+                None,
+                2_000
+            )
+            .unwrap_err()
+            .code,
+            RefusalCode::ChangesetNotFound
+        );
+        assert_eq!(
+            svc.history(
+                &request!(HistoryQueryPayload {
+                    ancestor_of: Some(foreign),
+                    path_filter: None,
+                    page: PageRequest::default(),
+                }),
+                2_000
+            )
+            .unwrap_err()
+            .code,
+            RefusalCode::ChangesetNotFound
+        );
+        assert_eq!(
+            svc.history(
+                &request!(HistoryQueryPayload {
+                    ancestor_of: Some(foreign_child),
+                    path_filter: None,
+                    page: PageRequest::default(),
+                }),
+                2_000
+            )
+            .unwrap_err()
+            .code,
+            RefusalCode::ChangesetNotFound
+        );
+        for (candidate, against) in [(foreign, vec![own]), (own, vec![foreign])] {
+            assert_eq!(
+                svc.conflicts(
+                    &request!(ConflictQueryPayload {
+                        candidate,
+                        against: Some(against),
+                        page: PageRequest::default(),
+                    }),
+                    2_000
+                )
+                .unwrap_err()
+                .code,
+                RefusalCode::ChangesetNotFound
+            );
+        }
+        assert!(svc.provenance(&request!((own, None)), 2_000).is_ok());
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

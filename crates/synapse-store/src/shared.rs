@@ -150,6 +150,16 @@ impl SharedStore {
         SynapseStore::open(root_dir, fsync_policy, recovery_policy, limits).map(Self::new)
     }
 
+    /// Open a store on a raw block device ([`SynapseStore::open_block_device`]).
+    pub fn open_block_device(
+        cfg: &crate::BlockDeviceConfig,
+        fsync_policy: FsyncPolicy,
+        recovery_policy: RecoveryPolicy,
+        limits: StoreLimits,
+    ) -> SynapseResult<Self> {
+        SynapseStore::open_block_device(cfg, fsync_policy, recovery_policy, limits).map(Self::new)
+    }
+
     /// Read committed state. Not blocked by a batch write in progress.
     pub fn read(&self) -> RwLockReadGuard<'_, SynapseStore> {
         self.state.read().unwrap_or_else(|e| e.into_inner())

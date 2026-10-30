@@ -10,7 +10,9 @@ description = "Durable single-writer WAL, content-addressed blob store, checkpoi
 [dependencies]
 ed25519-dalek.workspace = true
 hex.workspace = true
+libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+synapse-auth.workspace = true
 synapse-core.workspace = true

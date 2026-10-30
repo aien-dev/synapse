@@ -2,20 +2,31 @@
 //! [`ChangesetEnvelopeV2`]), `did:key` Ed25519 codec, and deterministic refusal taxonomy for
 //! Synapse (ADR 0001).
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use std::fmt;
 
+mod derivation;
+mod key_cache;
 mod revision;
+mod revision_state;
 mod tree;
+pub use derivation::{
+    derive_revision_output, DerivationAttestation, DerivationInput, DerivationRule,
+    DerivationTrees, DerivedRevision, MergeTier, ServerKeyLookup, ServerKeyRegistry,
+    DOMAIN_DERIVATION_ATTESTATION_V1, DOMAIN_DERIVATION_SIGN_V1, DOMAIN_DERIVED_MERGE_CHANGE_V1,
+    MAX_DERIVATION_INPUTS,
+};
+pub use key_cache::{cached_verifying_key, key_cache_stats, KEY_CACHE_CAPACITY};
 pub use revision::{
     AdmissionWitness, AuthorshipAttestation, ChainPath, ChangesetEnvelopeV2, ObsolescenceKind,
     ObsolescenceMarker, RevisionContent, WitnessSigner, DOMAIN_ADMISSION_WITNESS_V1,
     DOMAIN_AUTHORSHIP_SIGN_V2, DOMAIN_CHANGESET_ID_V2, DOMAIN_OBSOLESCENCE_SIGN_V1,
     ENVELOPE_V2_VERSION, MAX_CHAIN_PATH_DEPTH, MAX_OBSOLESCENCE_SUCCESSORS,
 };
+pub use revision_state::RevisionState;
 pub use tree::{
     tree_entry_order, validate_tree_entry_name, TreeDigest, TreeNodeEncoder, DOMAIN_TREE_V1,
     MAX_TREE_ENTRY_NAME_BYTES, TREE_TAG_DIRECTORY,
@@ -56,6 +67,10 @@ pub enum RefusalCode {
     /// not a subset of the have, an unsolicited or repeated chunk, or a submit before every
     /// wanted chunk arrived (step G1).
     WireProtocolViolation,
+    /// The peer broke the shared-memory ring protocol: an index out of range, moved back or
+    /// misaligned, a record length over the cap or past the published bytes, or a wrong
+    /// record sequence number (step G3).
+    WireRingViolation,
     CheckpointCorrupt,
     IoFailure,
 
@@ -71,8 +86,9 @@ pub enum RefusalCode {
 
     // Schema, path, and consistency refusals
     EnvelopeVersionUnsupported,
-    /// A changeset envelope v2, authorship attestation, admission witness, or obsolescence
-    /// marker is not in its one canonical binary encoding (ADR 0003 section 5.1, step B1).
+    /// A changeset envelope v2, authorship attestation, admission witness, obsolescence
+    /// marker, derivation attestation, or derived revision is not in its one canonical binary
+    /// encoding (ADR 0003 section 5.1, steps B1 and B5).
     EnvelopeMalformed,
     RepoIdInvalid,
     PathInvalid,
@@ -130,6 +146,43 @@ pub enum RefusalCode {
     /// An obsolescence marker names an unknown revision, a revision of another change, itself
     /// as its own successor, or would close a cycle of markers (step B1).
     ObsolescenceMarkerInvalid,
+    /// A revision state move that is not an edge of the state machine: backwards, in place,
+    /// skipping a state, or to `Verified` without its claims and required actions discharged
+    /// (ADR 0003 section 5.3, step B4).
+    RevisionStateMoveInvalid,
+    /// A move of a revision to `Canonical` that does not come from the promotion queue
+    /// (ADR 0003 sections 5.3 and 5.5, step B4).
+    CanonicalOutsidePromotionQueue,
+    /// Strict recovery found a WAL kind 9 state move whose mover signature does not verify
+    /// or whose mover key is not the audience of its chain's leaf link: the log was written
+    /// without the mover's private key (ADR 0003 sections 5.3 and 5.4, step B4, issue #89).
+    RevisionStateMoveUnverified,
+    /// Strict recovery of a store opened with a revision seal key found a revision record
+    /// (kind 7, 8, 9, or 11) whose server seal is missing or does not verify against the seal
+    /// chain so far: it was written, changed, reordered, or followed by a removed record
+    /// without the server's key (issue #101).
+    RevisionRecordUnsealed,
+    /// A `DerivationAttestation` does not name the revision it is presented with, or its
+    /// signature does not verify under the server key it names (ADR 0003 section 5.1, step B5).
+    DerivationSignatureInvalid,
+    /// The server key a `DerivationAttestation` names is not the server key of the repository
+    /// identity document in effect at the admission `WalSeq`, or no document is in effect
+    /// (step B5).
+    DerivationServerKeyUnregistered,
+    /// The identity documents a derivation is checked against belong to another repository
+    /// than the one its `DerivationAttestation` names, so their `server_key` says nothing
+    /// about this derivation (step B5).
+    DerivationIdentityRepoMismatch,
+    /// A `DerivationAttestation` names inputs that do not fit its rule (kind, count, order,
+    /// duplicates) or that the replica does not hold: a revision not admitted in this
+    /// repository before the derivation, or a tree not in the tree store (step B5).
+    DerivationInputMismatch,
+    /// Recomputing the rule a `DerivationAttestation` names from the inputs it names fails, or
+    /// gives a `ChangesetId` or `TreeDigest` other than the ones it attests (step B5).
+    DerivationRecomputeMismatch,
+    /// A `DerivationAttestation` already admitted (the same attestation digest) is presented
+    /// again (step B5).
+    DerivationAttestationReplayed,
 
     // Git and Radicle canonicality refusals
     GitObjectCorrupt,
@@ -550,7 +603,7 @@ impl ChangesetEnvelope {
 
         // Verify author_did and Ed25519 signature
         let pubkey_bytes = decode_did_key_ed25519(&self.author_did)?;
-        let verifying_key = VerifyingKey::from_bytes(&pubkey_bytes).map_err(|_| {
+        let verifying_key = cached_verifying_key(&pubkey_bytes).map_err(|_| {
             SynapseError::new(RefusalCode::DidKeyInvalid, "invalid Ed25519 public key")
         })?;
         let sig_arr: [u8; 64] = self.signature.as_slice().try_into().map_err(|_| {
@@ -823,7 +876,7 @@ mod tests {
 
     #[test]
     fn test_radicle_did_key_roundtrip_and_real_spark_did() {
-        // Real Radicle DID from `rad self` on spark-b87b:
+        // Real Radicle DID from `rad self` on the DGX Spark:
         let real_did = "did:key:z6MkfZDue1TbaNFi3ZzcD9uiTeduPLC52ucdFVuLKZwexxhK";
         let pubkey = decode_did_key_ed25519(real_did).expect("decode real Radicle DID");
         let reencoded = encode_did_key_ed25519(&pubkey);

@@ -37,6 +37,7 @@
 
 use super::*;
 use std::os::unix::fs::FileExt;
+use std::sync::Arc;
 
 /// Marker frame version in `wal.log` for the segment layout (version 2 is the WAL v2
 /// marker of the single-file layout). Binaries that predate A2 refuse version 3
@@ -117,17 +118,21 @@ pub(crate) fn binding_of(checkpoint: Option<(&str, &[u8])>) -> [u8; 32] {
     h.finalize().into()
 }
 
-/// Binding of the checkpoint on disk: `checkpoint.v2` when present, else a
-/// `checkpoint.v1` that is not the tombstone, else none.
+/// Binding of the checkpoint in a store directory (see [`checkpoint_binding_on`]).
+#[cfg(test)]
 pub(crate) fn checkpoint_binding(root: &Path) -> SynapseResult<[u8; 32]> {
-    let v2 = root.join(codec::CHECKPOINT_V2_FILE);
-    if v2.exists() {
-        let bytes = fs::read(&v2).map_err(io_err)?;
+    checkpoint_binding_on(&Medium::Dir(root.to_path_buf()))
+}
+
+/// Binding of the checkpoint on the medium: `checkpoint.v2` when present, else a
+/// `checkpoint.v1` that is not the tombstone, else none.
+pub(crate) fn checkpoint_binding_on(m: &Medium) -> SynapseResult<[u8; 32]> {
+    if m.exists(codec::CHECKPOINT_V2_FILE) {
+        let bytes = m.read(codec::CHECKPOINT_V2_FILE).map_err(io_err)?;
         return Ok(binding_of(Some((codec::CHECKPOINT_V2_FILE, &bytes))));
     }
-    let v1 = root.join("checkpoint.v1");
-    if v1.exists() {
-        let bytes = fs::read(&v1).map_err(io_err)?;
+    if m.exists("checkpoint.v1") {
+        let bytes = m.read("checkpoint.v1").map_err(io_err)?;
         if bytes != codec::v1_tombstone_bytes() {
             return Ok(binding_of(Some(("checkpoint.v1", &bytes))));
         }
@@ -355,22 +360,24 @@ impl SegmentIndex {
         })
     }
 
-    /// Write atomically (temp file, sync, rename, directory sync); returns the file name.
-    pub fn write(&self, root: &Path) -> SynapseResult<String> {
+    /// Write atomically (A2: temp file, sync, rename, directory sync; R1: one metadata
+    /// commit); returns the file name.
+    pub fn write(&self, m: &Medium) -> SynapseResult<String> {
         let name = Self::file_name(&self.binding);
-        write_file_atomic(
-            root,
-            &root.join(format!("{name}.tmp")),
-            &root.join(&name),
-            &self.encode(),
-        )?;
+        m.write_atomic(&name, &self.encode())?;
         Ok(name)
     }
 
-    /// Load the index bound to `binding` (`CheckpointCorrupt` when missing or invalid).
+    /// Load the index bound to `binding` from a store directory.
+    #[cfg(test)]
     pub fn load(root: &Path, binding: &[u8; 32]) -> SynapseResult<Self> {
+        Self::load_from(&Medium::Dir(root.to_path_buf()), binding)
+    }
+
+    /// Load the index bound to `binding` (`CheckpointCorrupt` when missing or invalid).
+    pub fn load_from(m: &Medium, binding: &[u8; 32]) -> SynapseResult<Self> {
         let name = Self::file_name(binding);
-        let bytes = fs::read(root.join(&name)).map_err(|e| {
+        let bytes = m.read(&name).map_err(|e| {
             index_corrupt(&format!(
                 "{name} for the checkpoint on disk cannot be read: {e}"
             ))
@@ -387,7 +394,15 @@ impl SegmentIndex {
 
 /// Remove every segment index file (and leftover temp file) except `keep`. Index files
 /// are metadata: this never touches segment data.
-pub(crate) fn remove_other_indexes(root: &Path, keep: &str) -> SynapseResult<()> {
+pub(crate) fn remove_other_indexes(m: &Medium, keep: &str) -> SynapseResult<()> {
+    let root = match m {
+        Medium::Dir(root) => root,
+        Medium::Block(dev) => {
+            dev.remove_named_where(|n| n.starts_with(SEGMENT_INDEX_PREFIX) && n != keep)
+                .map_err(io_err)?;
+            return Ok(());
+        }
+    };
     let mut removed = false;
     for entry in fs::read_dir(root).map_err(io_err)? {
         let entry = entry.map_err(io_err)?;
@@ -433,10 +448,11 @@ pub(crate) enum SegEvent {
     BatchDurable(u64),
 }
 
-/// Writer of the active segment, rotating to new segment files.
+/// Writer of the active segment, rotating to new segments (files in A2, device slots in
+/// R1).
 #[derive(Debug)]
 pub(crate) struct SegmentLog {
-    root: PathBuf,
+    medium: Medium,
     active: u64,
     writer: wal2::WalV2Writer,
     segment_bytes: u64,
@@ -447,14 +463,19 @@ pub(crate) struct SegmentLog {
 
 impl SegmentLog {
     /// Open the active segment `active` with the log ending at `write_offset`. The file
-    /// is synced and the directory flushed before anything is written into it.
+    /// is synced and the directory flushed before anything is written into it (R1: the
+    /// device is flushed, and a slot past the committed count is created first).
     pub fn open(
-        root: &Path,
+        medium: &Medium,
         active: u64,
         write_offset: u64,
         segment_bytes: u64,
         chunk: u64,
     ) -> SynapseResult<Self> {
+        let root = match medium {
+            Medium::Dir(root) => root,
+            Medium::Block(dev) => return Self::open_block(medium, dev, active, write_offset),
+        };
         let segment_bytes = segment_bytes.max(wal2::WAL_V2_ALIGN);
         let chunk = chunk.min(segment_bytes);
         let path = root.join(segment_file_name(active));
@@ -465,7 +486,7 @@ impl SegmentLog {
         writer.sync_all()?;
         sync_dir(root)?;
         Ok(Self {
-            root: root.to_path_buf(),
+            medium: medium.clone(),
             active,
             writer,
             segment_bytes,
@@ -473,6 +494,68 @@ impl SegmentLog {
             #[cfg(test)]
             trace: vec![SegEvent::FileSynced(active), SegEvent::DirSynced(active)],
         })
+    }
+
+    fn open_block(
+        medium: &Medium,
+        dev: &Arc<blockdev::BlockDevice>,
+        active: u64,
+        write_offset: u64,
+    ) -> SynapseResult<Self> {
+        let segment_bytes = dev.geometry().segment_bytes;
+        let mut log = Self {
+            medium: medium.clone(),
+            active,
+            writer: wal2::WalV2Writer::on_block(dev.clone(), active, write_offset, segment_bytes),
+            segment_bytes,
+            chunk: segment_bytes,
+            #[cfg(test)]
+            trace: Vec::new(),
+        };
+        if active > dev.segment_count() {
+            // A new store, or a slot a rotation created but never committed.
+            log.create_block_slot(dev, active, RotationFault::None)
+                .map_err(io_err)?;
+        } else {
+            dev.flush().map_err(io_err)?;
+            #[cfg(test)]
+            log.trace
+                .extend([SegEvent::FileSynced(active), SegEvent::DirSynced(active)]);
+        }
+        Ok(log)
+    }
+
+    /// R1 rotation: header, zero the slot and `fdatasync`, then commit the segment count
+    /// in the superblock (`fdatasync`).
+    fn create_block_slot(
+        &mut self,
+        dev: &blockdev::BlockDevice,
+        id: u64,
+        fault: RotationFault,
+    ) -> std::io::Result<()> {
+        // Zero and flush before the header goes in: a valid header then always sits on a
+        // zeroed slot, so data under a valid header past the committed count can only
+        // be acknowledged batches (`BlockDevice::refuse_data_past_segment_count`).
+        dev.zero_segment(id)?;
+        dev.write_segment_header(id)?;
+        #[cfg(test)]
+        self.trace.push(SegEvent::Created(id));
+        dev.flush()?;
+        #[cfg(test)]
+        self.trace.push(SegEvent::FileSynced(id));
+        match fault {
+            RotationFault::None => {}
+            RotationFault::CrashBeforeDirSync { code } => std::process::exit(code),
+            RotationFault::FailDirSync => {
+                return Err(std::io::Error::other(
+                    "injected fault: directory flush failed",
+                ))
+            }
+        }
+        dev.commit_segment(id)?;
+        #[cfg(test)]
+        self.trace.push(SegEvent::DirSynced(id));
+        Ok(())
     }
 
     pub fn active(&self) -> u64 {
@@ -504,6 +587,18 @@ impl SegmentLog {
                 format!("create segment {id}: {e}"),
             ))
         };
+        let root = match &self.medium {
+            Medium::Dir(root) => root.clone(),
+            Medium::Block(dev) => {
+                let dev = dev.clone();
+                // A slot with this id past the committed count was never data: it is
+                // given a header and zeroed again.
+                self.create_block_slot(&dev, id, fault).map_err(fail)?;
+                self.writer = wal2::WalV2Writer::on_block(dev, id, 0, self.segment_bytes);
+                self.active = id;
+                return Ok((id, 0));
+            }
+        };
         // A file with this id can only be one an earlier failed rotation of this
         // process created (or an all-zero one recovery verified): never acknowledged
         // data, so it is truncated and pre-written again.
@@ -512,7 +607,7 @@ impl SegmentLog {
             .truncate(true)
             .read(true)
             .write(true)
-            .open(self.root.join(segment_file_name(id)))
+            .open(root.join(segment_file_name(id)))
             .map_err(fail)?;
         #[cfg(test)]
         self.trace.push(SegEvent::Created(id));
@@ -529,9 +624,7 @@ impl SegmentLog {
                 )))
             }
         }
-        File::open(&self.root)
-            .and_then(|d| d.sync_all())
-            .map_err(fail)?;
+        File::open(&root).and_then(|d| d.sync_all()).map_err(fail)?;
         #[cfg(test)]
         self.trace.push(SegEvent::DirSynced(id));
         self.writer = writer;
@@ -558,14 +651,37 @@ impl SegmentLog {
     }
 }
 
-/// Read `len` bytes at `offset` of an open segment file.
-pub(crate) fn read_at(f: &File, offset: u64, len: u32) -> std::io::Result<Vec<u8>> {
-    let mut bytes = vec![0u8; len as usize];
-    f.read_exact_at(&mut bytes, offset)?;
-    Ok(bytes)
+/// A read handle on one segment, for inline blob reads.
+#[derive(Debug)]
+pub(crate) enum SegReader {
+    File(File),
+    Block(Arc<blockdev::BlockDevice>, u64),
 }
 
-/// Fill `buf` from `offset` of `f`.
-pub(crate) fn read_into(f: &File, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
-    f.read_exact_at(buf, offset)
+impl SegReader {
+    /// Read `len` bytes at `offset` of the segment.
+    pub fn read_at(&self, offset: u64, len: u32) -> std::io::Result<Vec<u8>> {
+        match self {
+            SegReader::File(f) => {
+                let mut bytes = vec![0u8; len as usize];
+                f.read_exact_at(&mut bytes, offset)?;
+                Ok(bytes)
+            }
+            SegReader::Block(dev, id) => dev.read_segment_at(*id, offset, len),
+        }
+    }
+
+    /// Fill `buf` from `offset` of the segment (ADR 0003 G2 chunk runs).
+    pub fn read_into(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        match self {
+            SegReader::File(f) => f.read_exact_at(buf, offset),
+            SegReader::Block(dev, id) => {
+                let len = u32::try_from(buf.len()).map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidInput, "chunk run too large")
+                })?;
+                buf.copy_from_slice(&dev.read_segment_at(*id, offset, len)?);
+                Ok(())
+            }
+        }
+    }
 }

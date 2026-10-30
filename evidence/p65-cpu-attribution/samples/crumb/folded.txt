@@ -1,0 +1,52 @@
+stack samples (all threads stopped): 800
+thread-samples with run_leg on stack: 794 (run 794)
+
+# state
+    794  run
+
+# phase (callee under anchor) | run or wait
+    535  measure<synapse_bench::pmu_diag::crumb_window::{closure_env#0}>@pmu_diag.rs | run
+    257  {closure#0}@pmu_diag.rs | run
+      2  open@pmu_diag.rs | run
+
+# leaf (self) of run samples
+    233  curve25519-dalek
+    191  rust:alloc
+    150  libc:malloc/free
+     46  signature
+     41  libc:mem*
+     31  synapse-auth:lib.rs
+     29  ed25519-dalek
+     17  serde_json
+     11  sha2
+      9  synapse-api:tree.rs
+      7  synapse-api:advisory.rs
+      6  subtle
+      4  synapse-crumb:json.rs
+      4  synapse-core:tree.rs
+      4  synapse-core:lib.rs
+      4  synapse-api:lib.rs
+      4  serde_core
+      2  synapse-crumb:lib.rs
+      1  synapse-api:crumb.rs
+
+# inclusive crate presence in run samples
+    794  synapse-bench
+    676  synapse-api
+    529  synapse-auth
+    382  rust
+    235  curve25519-dalek
+    191  libc
+     72  serde_json
+     72  serde_core
+     60  synapse-crumb
+     53  signature
+     29  ed25519-dalek
+     21  synapse-core
+     11  sha2
+     11  digest
+     10  block-buffer
+      6  subtle
+      1  synapse-store
+      1  synapse-coord
+      1  hex

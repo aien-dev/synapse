@@ -681,11 +681,12 @@ fn cpu_probes(n: usize, idle: &EnergyReading) -> (Vec<Probe>, usize) {
     );
     push(
         "auth_payload_digest",
-        "synapse-auth payload digest: serde_json encode of the payload plus SHA-256",
+        "synapse-auth payload digest as authorize computes it: compact JSON streamed into SHA-256 (synapse_auth::payload_digest)",
         n,
         &mut || {
-            let bytes = serde_json::to_vec(&req.payload).unwrap_or_default();
-            std::hint::black_box(Sha256::digest(&bytes));
+            std::hint::black_box(
+                synapse_auth::payload_digest(std::hint::black_box(&req.payload)).ok(),
+            );
         },
     );
     push(

@@ -380,6 +380,7 @@ dependencies = [
  "synapse-core",
  "synapse-crumb",
  "synapse-evidence",
+ "synapse-radicle",
  "synapse-store",
 ]
 
@@ -463,6 +464,7 @@ version = "0.1.0"
 dependencies = [
  "ed25519-dalek",
  "hex",
+ "libc",
  "serde",
  "serde_json",
  "sha1",
@@ -495,9 +497,11 @@ version = "0.1.0"
 dependencies = [
  "ed25519-dalek",
  "hex",
+ "libc",
  "serde",
  "serde_json",
  "sha2",
+ "synapse-auth",
  "synapse-core",
 ]
 

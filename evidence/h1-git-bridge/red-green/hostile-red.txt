@@ -1,0 +1,157 @@
+# Red (2026-10-17, review of PR #90 findings B1 and B2)
+# Run 1: tests/h1_hostile_repo.rs copied unchanged into a detached worktree of the reviewed head b4fe463.
+# Command: (ulimit -v 4000000; cargo test --locked -p synapse-git --test h1_hostile_repo -- --test-threads=1)
+# The ulimit guards the /dev/zero case; pipe cases end at the test's own 10 s deadline.
+#
+
+running 8 tests
+test h1_detached_head_commit_is_collected ... FAILED
+test h1_hostile_delta_bomb_pack_is_refused_before_it_is_resolved ... FAILED
+test h1_hostile_fifo_loose_object_is_refused_without_blocking ... FAILED
+test h1_hostile_fifo_packed_refs_and_head_are_refused_without_blocking ... FAILED
+test h1_hostile_fifo_reference_is_refused_without_blocking ... FAILED
+test h1_hostile_oversized_reference_file_is_refused ... FAILED
+test h1_hostile_reference_linked_outside_the_repository_is_refused ... FAILED
+test h1_hostile_reference_linked_to_dev_zero_is_refused ... FAILED
+
+failures:
+
+---- h1_detached_head_commit_is_collected stdout ----
+
+thread 'h1_detached_head_commit_is_collected' (1645995) panicked at crates/synapse-git/tests/h1_hostile_repo.rs:200:5:
+a commit reachable only from a detached HEAD was dropped
+
+---- h1_hostile_delta_bomb_pack_is_refused_before_it_is_resolved stdout ----
+
+thread 'h1_hostile_delta_bomb_pack_is_refused_before_it_is_resolved' (1646017) panicked at crates/synapse-git/tests/h1_hostile_repo.rs:80:18:
+delta bomb: read 5 objects instead of refusing
+
+---- h1_hostile_fifo_loose_object_is_refused_without_blocking stdout ----
+
+thread 'h1_hostile_fifo_loose_object_is_refused_without_blocking' (1658200) panicked at crates/synapse-git/tests/h1_hostile_repo.rs:101:13:
+FIFO loose object: full_history blocked on a pipe for more than 10 s
+
+---- h1_hostile_fifo_packed_refs_and_head_are_refused_without_blocking stdout ----
+
+thread 'h1_hostile_fifo_packed_refs_and_head_are_refused_without_blocking' (1660665) panicked at crates/synapse-git/tests/h1_hostile_repo.rs:101:13:
+packed-refs: full_history blocked on a pipe for more than 10 s
+
+---- h1_hostile_fifo_reference_is_refused_without_blocking stdout ----
+
+thread 'h1_hostile_fifo_reference_is_refused_without_blocking' (1662315) panicked at crates/synapse-git/tests/h1_hostile_repo.rs:101:13:
+FIFO ref: full_history blocked on a pipe for more than 10 s
+
+---- h1_hostile_oversized_reference_file_is_refused stdout ----
+
+thread 'h1_hostile_oversized_reference_file_is_refused' (1664201) panicked at crates/synapse-git/tests/h1_hostile_repo.rs:80:18:
+1 MiB ref: read 6 objects instead of refusing
+
+---- h1_hostile_reference_linked_outside_the_repository_is_refused stdout ----
+
+thread 'h1_hostile_reference_linked_outside_the_repository_is_refused' (1664210) panicked at crates/synapse-git/tests/h1_hostile_repo.rs:80:18:
+ref -> file outside: read 6 objects instead of refusing
+
+---- h1_hostile_reference_linked_to_dev_zero_is_refused stdout ----
+
+thread 'h1_hostile_reference_linked_to_dev_zero_is_refused' (1664219) panicked at crates/synapse-git/tests/h1_hostile_repo.rs:79:19:
+assertion `left == right` failed: ref -> /dev/zero: refused with the wrong code: IoFailure: /tmp/synapse-h1-hostile-dev-zero-1645989-1792203297294672641/work/.git/refs/heads/zero: out of memory
+  left: IoFailure
+ right: PathInvalid
+
+
+failures:
+    h1_detached_head_commit_is_collected
+    h1_hostile_delta_bomb_pack_is_refused_before_it_is_resolved
+    h1_hostile_fifo_loose_object_is_refused_without_blocking
+    h1_hostile_fifo_packed_refs_and_head_are_refused_without_blocking
+    h1_hostile_fifo_reference_is_refused_without_blocking
+    h1_hostile_oversized_reference_file_is_refused
+    h1_hostile_reference_linked_outside_the_repository_is_refused
+    h1_hostile_reference_linked_to_dev_zero_is_refused
+
+test result: FAILED. 0 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 75.66s
+
+error: test failed, to rerun pass `-p synapse-git --test h1_hostile_repo`
+Command exited with non-zero status 101
+Maximum resident set size (kbytes): 2100860
+
+# Run 2, stub A on the fixed code: the total object budget check removed (open_with_limits and loose reads).
+# Command: cargo test --locked --no-fail-fast -p synapse-git --test h1_read_limits
+
+running 4 tests
+test h1_lock_files_under_refs_are_skipped ... ok
+test h1_pack_file_and_ref_file_caps_are_enforced ... ok
+test h1_total_object_budget_is_enforced_for_packed_and_loose_objects ... FAILED
+test h1_per_object_cap_is_enforced_for_packed_and_loose_objects ... ok
+
+failures:
+
+---- h1_total_object_budget_is_enforced_for_packed_and_loose_objects stdout ----
+
+thread 'h1_total_object_budget_is_enforced_for_packed_and_loose_objects' (1668568) panicked at crates/synapse-git/tests/h1_read_limits.rs:87:9:
+assertion `left == right` failed: packed=true: one byte short
+  left: None
+ right: Some(QuotaPayloadTooLarge)
+
+
+failures:
+    h1_total_object_budget_is_enforced_for_packed_and_loose_objects
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+error: test failed, to rerun pass `-p synapse-git --test h1_read_limits`
+error: 1 target failed:
+    `-p synapse-git --test h1_read_limits`
+
+# Run 3, stub B on the fixed code: links followed (fs::metadata in read_regular, real_dir and the refs/ walk).
+# Command: cargo test --locked --no-fail-fast -p synapse-git --test h1_hostile_repo
+
+running 8 tests
+test h1_hostile_fifo_reference_is_refused_without_blocking ... ok
+test h1_hostile_reference_linked_to_dev_zero_is_refused ... ok
+test h1_hostile_fifo_loose_object_is_refused_without_blocking ... ok
+test h1_hostile_oversized_reference_file_is_refused ... ok
+test h1_hostile_reference_linked_outside_the_repository_is_refused ... FAILED
+test h1_detached_head_commit_is_collected ... ok
+test h1_hostile_fifo_packed_refs_and_head_are_refused_without_blocking ... ok
+test h1_hostile_delta_bomb_pack_is_refused_before_it_is_resolved ... ok
+
+failures:
+
+---- h1_hostile_reference_linked_outside_the_repository_is_refused stdout ----
+
+thread 'h1_hostile_reference_linked_outside_the_repository_is_refused' (1671877) panicked at crates/synapse-git/tests/h1_hostile_repo.rs:80:18:
+ref -> file outside: read 6 objects instead of refusing
+
+
+failures:
+    h1_hostile_reference_linked_outside_the_repository_is_refused
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.57s
+
+error: test failed, to rerun pass `-p synapse-git --test h1_hostile_repo`
+error: 1 target failed:
+    `-p synapse-git --test h1_hostile_repo`
+
+# Run 4, stub C on the fixed code: repository files opened without O_NOFOLLOW | O_NONBLOCK (custom_flags(0)).
+# Command: cargo test --locked --no-fail-fast -p synapse-git --lib -- a_file_swapped
+
+running 1 test
+test repo::tests::a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking ... FAILED
+
+failures:
+
+---- repo::tests::a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking stdout ----
+
+thread 'repo::tests::a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking' (1921050) panicked at crates/synapse-git/src/repo.rs:620:21:
+pipe: open blocked for more than 10 s
+
+
+failures:
+    repo::tests::a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 10.00s
+
+error: test failed, to rerun pass `-p synapse-git --lib`
+error: 1 target failed:
+    `-p synapse-git --lib`

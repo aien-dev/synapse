@@ -1,0 +1,7 @@
+# Red (2026-10-17): the join tests (review of #88, finding 1) on commit 439586b (tests only, implementation of ae6505b).
+# Command: cargo test --locked -p synapse-store --test b4_revision_states b4_joining_identical_content_grants_no_ownership_of_a_private_revision -- --exact
+thread 'b4_joining_identical_content_grants_no_ownership_of_a_private_revision' panicked at crates/synapse-store/tests/b4_revision_states.rs:516:22:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished
+# Command: cargo test --locked -p synapse-api --test b4_revision_states b4_api_joining_identical_content_grants_no_ownership_of_a_private_revision -- --exact
+thread 'b4_api_joining_identical_content_grants_no_ownership_of_a_private_revision' panicked at crates/synapse-api/tests/b4_revision_states.rs:382:31:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished

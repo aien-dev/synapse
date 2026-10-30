@@ -1,0 +1,41 @@
+# Green (2026-10-17, review of PR #90 findings B1 and B2, fixed code)
+# Command: cargo test --locked -p synapse-git --test h1_hostile_repo --test h1_read_limits
+
+running 8 tests
+test h1_hostile_oversized_reference_file_is_refused ... ok
+test h1_hostile_fifo_reference_is_refused_without_blocking ... ok
+test h1_hostile_fifo_loose_object_is_refused_without_blocking ... ok
+test h1_hostile_reference_linked_to_dev_zero_is_refused ... ok
+test h1_detached_head_commit_is_collected ... ok
+test h1_hostile_fifo_packed_refs_and_head_are_refused_without_blocking ... ok
+test h1_hostile_reference_linked_outside_the_repository_is_refused ... ok
+test h1_hostile_delta_bomb_pack_is_refused_before_it_is_resolved ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.66s
+
+
+running 4 tests
+test h1_lock_files_under_refs_are_skipped ... ok
+test h1_pack_file_and_ref_file_caps_are_enforced ... ok
+test h1_per_object_cap_is_enforced_for_packed_and_loose_objects ... ok
+test h1_total_object_budget_is_enforced_for_packed_and_loose_objects ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+# Command: cargo test --locked --workspace (358 passed, 0 failed, 2 ignored, 46 test binaries; includes the unit test a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking)
+
+# Real repository with default ReadLimits: git clone --mirror https://github.com/aien-dev/synapse
+# Command: SYNAPSE_H1_REAL_REPO=<mirror> /usr/bin/time -v cargo test --locked -p synapse-git --test h1_git_bridge -- --ignored --nocapture h1_real_repository
+real repository synapse.git: 1915 objects (180 commits), 75 refs, pack 72477923 bytes
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 15.35s
+Maximum resident set size (kbytes): 225996
+
+# Real repository with default ReadLimits: git clone --mirror https://github.com/aien-dev/omega
+# Command: SYNAPSE_H1_REAL_REPO=<mirror> /usr/bin/time -v cargo test --locked -p synapse-git --test h1_git_bridge -- --ignored --nocapture h1_real_repository
+test h1_real_repository_full_history_round_trips_with_identical_object_ids has been running for over 60 seconds
+real repository omega.git: 29636 objects (2413 commits), 633 refs, pack 374713444 bytes
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 76.19s
+Maximum resident set size (kbytes): 1114576
+

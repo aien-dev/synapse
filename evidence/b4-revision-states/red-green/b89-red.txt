@@ -1,0 +1,89 @@
+# Issue #89 red: PR #88 head cf3879f plus only the test below (git diff), run with
+# nice -n 19 cargo test --locked -p synapse-store -j 4 --lib b89_
+
+diff --git a/crates/synapse-store/src/revision.rs b/crates/synapse-store/src/revision.rs
+index 87dd68f..73cfb60 100644
+--- a/crates/synapse-store/src/revision.rs
++++ b/crates/synapse-store/src/revision.rs
+@@ -995,4 +995,59 @@ mod b4_tests {
+             "kept in the log, applied as no-ops"
+         );
+     }
++
++    /// Issue #89 red test on the #88 head: a forged owner move (`Private -> Draft` under the
++    /// owner's chain), written straight into the WAL through the store's own framing (valid
++    /// CRC32C and hash chain, so a resealed forgery) without the owner's key, must change
++    /// nothing on replay.
++    #[test]
++    fn b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay() {
++        use crate::{FsyncPolicy, RecoveryPolicy, StoreLimits, SynapseStore};
++        let dir = std::env::temp_dir().join(format!("synapse-b89-red-{}", std::process::id()));
++        let _ = std::fs::remove_dir_all(&dir);
++        let open = || {
++            SynapseStore::open(
++                &dir,
++                FsyncPolicy::EveryCommit,
++                RecoveryPolicy::TruncateTornTail,
++                StoreLimits::default(),
++            )
++            .unwrap()
++        };
++        let mut s = open();
++        let mut rng = SplitMix64(0xB89);
++        let (envelope, owner) = match admission(&mut rng, 1) {
++            WalRecord::RevisionAdmitted { envelope, chain, .. } => (envelope, chain),
++            _ => unreachable!(),
++        };
++        let body = 1u32.to_le_bytes();
++        let blobs = vec![(BlobDigest::compute(&body), body.to_vec())];
++        let id = envelope.changeset_id();
++        s.admit_revision(
++            envelope,
++            &blobs,
++            crate::AdmissionAuthority {
++                chain: owner.clone(),
++                change_scope: Vec::new(),
++            },
++            5_000,
++        )
++        .unwrap();
++        let forged = WalRecord::RevisionStateMoved {
++            repo_id: repo(),
++            changeset_id: id,
++            to: RevisionState::Draft,
++            chain: owner,
++            moved_at_ms: 6_000,
++        };
++        s.append_revision_record(forged, &[]).unwrap();
++        drop(s);
++        let s = open();
++        assert_eq!(
++            s.get_revision(&repo(), id).unwrap().state,
++            RevisionState::Private,
++            "a forged, resealed owner move must change nothing on replay"
++        );
++        let _ = std::fs::remove_dir_all(&dir);
++    }
+ }
+
+
+running 1 test
+test revision::b4_tests::b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay ... FAILED
+
+failures:
+
+---- revision::b4_tests::b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay stdout ----
+
+thread 'revision::b4_tests::b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay' (571453) panicked at crates/synapse-store/src/revision.rs:1046:9:
+assertion `left == right` failed: a forged, resealed owner move must change nothing on replay
+  left: Draft
+ right: Private
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    revision::b4_tests::b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 55 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p synapse-store --lib`
