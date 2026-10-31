@@ -9,8 +9,8 @@ use sha2::{Digest, Sha256};
 use std::fmt;
 
 mod derivation;
-pub mod merge;
 mod key_cache;
+pub mod merge;
 mod revision;
 mod revision_state;
 mod tree;
