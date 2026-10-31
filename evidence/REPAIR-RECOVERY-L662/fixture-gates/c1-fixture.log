@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running tests/c1_tree_parity.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/c1_tree_parity-8009bcc9a53428f8)
+
+running 1 test
+test c1_tree_and_diff_parity_with_git_on_gate4_fixture ... c1 gate4 fixture parity: base tree plus 400 changesets, tree and diff, per entry: all equal
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 29.52s
+

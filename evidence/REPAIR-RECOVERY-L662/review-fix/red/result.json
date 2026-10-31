@@ -1,0 +1,35 @@
+{
+  "source_head": "0d95893afc6309dc280befe77806975734af8148",
+  "inputs": {
+    "crates/synapse-store/src/blockdev/repair.rs": "1a439f7d9d37902249be9f04d4a03a61209ce4b430c44131c4da8a17b9172beb",
+    "crates/synapse-store/src/blockdev_tests.rs": "92dd4e99c3d693e0f7ff1573aa188f7cd80411d7df13e6c20df9abda5f041bc6"
+  },
+  "passed": false,
+  "physical_crash_tested": false,
+  "binary": "/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_store-67e309c4eb45f3e9",
+  "binary_sha256": "572fbb0465288f344a50542e309b98f068c7586f025fd0901644d60aa368e254",
+  "command": [
+    "strace",
+    "-f",
+    "-yy",
+    "-o",
+    "/home/drakestapleton/handoffs/L662-relative-backup-red/trace.log",
+    "-e",
+    "trace=openat,fsync",
+    "/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_store-67e309c4eb45f3e9",
+    "--exact",
+    "blockdev_tests::repair_tests::r1_repair_bare_relative_backup_is_created_and_verified",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "test_exit": 0,
+  "successful_fsync_calls": [
+    {
+      "line": 5,
+      "path": "/home/drakestapleton/handoffs/L662-relative-backup-red/cwd/relative-repair-backup-3366939-1792742496335886422.bin",
+      "raw": "3366940 fsync(3</home/drakestapleton/handoffs/L662-relative-backup-red/cwd/relative-repair-backup-3366939-1792742496335886422.bin>) = 0"
+    }
+  ],
+  "backup_file_synced": true,
+  "containing_directory_synced": false
+}

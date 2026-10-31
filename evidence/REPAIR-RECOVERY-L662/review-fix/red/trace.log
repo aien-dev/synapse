@@ -1,0 +1,9 @@
+3366939 openat(AT_FDCWD</home/drakestapleton/handoffs/L662-relative-backup-red/cwd>, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3</etc/ld.so.cache>
+3366939 openat(AT_FDCWD</home/drakestapleton/handoffs/L662-relative-backup-red/cwd>, "/lib/aarch64-linux-gnu/libgcc_s.so.1", O_RDONLY|O_CLOEXEC) = 3</usr/lib/aarch64-linux-gnu/libgcc_s.so.1>
+3366939 openat(AT_FDCWD</home/drakestapleton/handoffs/L662-relative-backup-red/cwd>, "/lib/aarch64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3</usr/lib/aarch64-linux-gnu/libc.so.6>
+3366939 openat(AT_FDCWD</home/drakestapleton/handoffs/L662-relative-backup-red/cwd>, "/proc/self/maps", O_RDONLY|O_CLOEXEC) = 3</proc/3366939/maps>
+3366940 openat(AT_FDCWD</home/drakestapleton/handoffs/L662-relative-backup-red/cwd>, "relative-repair-backup-3366939-1792742496335886422.bin", O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 3</home/drakestapleton/handoffs/L662-relative-backup-red/cwd/relative-repair-backup-3366939-1792742496335886422.bin>
+3366940 fsync(3</home/drakestapleton/handoffs/L662-relative-backup-red/cwd/relative-repair-backup-3366939-1792742496335886422.bin>) = 0
+3366940 openat(AT_FDCWD</home/drakestapleton/handoffs/L662-relative-backup-red/cwd>, "relative-repair-backup-3366939-1792742496335886422.bin", O_RDONLY|O_CLOEXEC) = 3</home/drakestapleton/handoffs/L662-relative-backup-red/cwd/relative-repair-backup-3366939-1792742496335886422.bin>
+3366940 +++ exited with 0 +++
+3366939 +++ exited with 0 +++

@@ -1,0 +1,137 @@
+{
+  "source_head": "0d95893afc6309dc280befe77806975734af8148",
+  "source_inputs": {
+    "crates/synapse-bench/src/main.rs": "cec43723fe87a0ee5149cdeb584a7b9ceaf8c657afd4d3359de3e64b32cdf3fd",
+    "crates/synapse-bench/tests/store_repair_cli.rs": "b793fa5ab70e30f889789a15c0cc2412704ffd09cfd9488989a36aa57d191ce6",
+    "crates/synapse-git/src/repo.rs": "58969be5112e94de5ad5641e40b50f55e02de66bb8702a0bab0e082dfe81edc4",
+    "crates/synapse-git/tests/h1_git_bridge.rs": "b0b2396b502674bd6bf979eaacef2defa26a8ff5996cd309e2875a6309cfff0d",
+    "crates/synapse-store/src/blockdev.rs": "5210b7fc7c075a0488faa7b2e9e90004eb9021f1a9e9169a2b24c023f6b493b5",
+    "crates/synapse-store/src/blockdev/repair.rs": "1168cd4713345f4e403783c32c870cdddb3e283badc49e1f45d23d428942fdc8",
+    "crates/synapse-store/src/blockdev_tests.rs": "92dd4e99c3d693e0f7ff1573aa188f7cd80411d7df13e6c20df9abda5f041bc6"
+  },
+  "status": "passed",
+  "steps": [
+    {
+      "step": "relative-trace-green",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "python3",
+        "/home/drakestapleton/handoffs/L662-relative-backup-qualify.py",
+        "--root",
+        "/home/drakestapleton/workspace/hermes-loop-synapse105-L662",
+        "--out",
+        "/home/drakestapleton/handoffs/L662-relative-backup-green"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "full-suite",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "--workspace",
+        "--no-fail-fast"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "both-required-fixtures",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "--workspace",
+        "--",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "repair-cli",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "-p",
+        "synapse-bench",
+        "--test",
+        "store_repair_cli"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "fmt",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "clippy",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "clippy",
+        "--locked",
+        "-j",
+        "6",
+        "--workspace",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "pinned-crumb",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "/home/drakestapleton/workspace/hermes-L662-crumb12ad/tools/crumb/crumb",
+        "verify",
+        "."
+      ],
+      "exit": 0
+    }
+  ],
+  "pid": 3422962,
+  "started": 1792742592.166813,
+  "finished": 1792742741.556343
+}

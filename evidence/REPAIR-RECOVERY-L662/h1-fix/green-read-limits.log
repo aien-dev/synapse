@@ -1,0 +1,12 @@
+   Compiling synapse-git v0.1.0 (/home/drakestapleton/workspace/hermes-loop-synapse-H1-L664/crates/synapse-git)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.83s
+     Running tests/h1_read_limits.rs (/home/drakestapleton/workspace/targets/L664/green/debug/deps/h1_read_limits-ea9e71eb4998de11)
+
+running 4 tests
+test h1_lock_files_under_refs_are_skipped ... ok
+test h1_pack_file_and_ref_file_caps_are_enforced ... ok
+test h1_total_object_budget_is_enforced_for_packed_and_loose_objects ... ok
+test h1_per_object_cap_is_enforced_for_packed_and_loose_objects ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+

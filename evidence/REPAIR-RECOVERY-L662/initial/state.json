@@ -1,0 +1,108 @@
+{
+  "source": "5c6aad4701a44f3187487123f70753bd13ef0714",
+  "pid": 1800943,
+  "started": 1792738512.432971,
+  "status": "passed",
+  "steps": [
+    {
+      "step": "tools",
+      "command": [
+        "bash",
+        "-c",
+        "rustc -vV; cargo -V; uname -a"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "full-suite",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "--workspace",
+        "--no-fail-fast"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "repair",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "-p",
+        "synapse-store",
+        "r1_repair",
+        "--",
+        "--test-threads=1"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "repair-cli",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "-p",
+        "synapse-bench",
+        "--test",
+        "store_repair_cli"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "fmt",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exit": 0
+    },
+    {
+      "step": "clippy",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "clippy",
+        "--locked",
+        "-j",
+        "6",
+        "--workspace",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0
+    }
+  ],
+  "finished": 1792738637.877218
+}

@@ -1,0 +1,19 @@
+   Compiling synapse-store v0.1.0 (/home/drakestapleton/workspace/hermes-loop-synapse105-L662/crates/synapse-store)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.25s
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_store-67e309c4eb45f3e9)
+
+running 1 test
+test blockdev_tests::repair_tests::r1_repair_backup_overflow_length_is_refused_without_panicking ... 
+thread 'blockdev_tests::repair_tests::r1_repair_backup_overflow_length_is_refused_without_panicking' (1939119) panicked at crates/synapse-store/src/blockdev/repair.rs:787:27:
+attempt to add with overflow
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    blockdev_tests::repair_tests::r1_repair_backup_overflow_length_is_refused_without_panicking
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 138 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p synapse-store --lib`
