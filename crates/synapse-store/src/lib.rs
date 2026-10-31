@@ -29,12 +29,12 @@ use synapse_core::{
 
 #[cfg(test)]
 mod a1_tests;
-pub mod chunk;
 pub mod blockdev;
 #[cfg(test)]
 mod blockdev_a2_suite;
 #[cfg(test)]
 mod blockdev_tests;
+pub mod chunk;
 pub mod codec;
 #[cfg(test)]
 mod g2_tests;
@@ -50,9 +50,9 @@ mod segment_tests;
 mod shared;
 pub mod wal2;
 
-pub use chunk::{ChunkDigest, ChunkManifest, ChunkParams};
 use blockdev::Medium;
 pub use blockdev::{BlockDeviceConfig, FormatPolicy};
+pub use chunk::{ChunkDigest, ChunkManifest, ChunkParams};
 pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
 pub use revision::{
     verify_revision_log, AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome,
