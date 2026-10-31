@@ -17,12 +17,22 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 | Crate | Gate | Responsibility |
 | :--- | :--- | :--- |
 | [`synapse-core`](crates/synapse-core) | Gate 0 | Distinct identity types (`ChangesetId`, `BlobDigest`, `GitOid`, `RadicleCanonicalHead`, `GitHubPullRequestProjection`, `IdempotencyKey`, `WalSeq`), `ChangesetEnvelope` v1, `did:key` Ed25519 verification, and `RefusalCode` taxonomy |
-| [`synapse-store`](crates/synapse-store) | Gate 1 | Single-writer append-only WAL (`SWAL` v1) with CRC32C and SHA-256 hash chain, configurable `fsync` policy, content-addressed blob store, checkpoint compaction, GC, and crash fault injection |
+| [`synapse-store`](crates/synapse-store) | Gate 1 | Single-writer append-only WAL (`SWAL` v1) with CRC32C and SHA-256 hash chain, configurable `fsync` policy, content-addressed blob store, checkpoint compaction, GC, crash fault injection, and the R1 raw block store with its signed repair tool (`synapse-bench store-repair`, [spec](docs/R1_RAW_BLOCK_STORE.md#41-repair-after-a-checkpointcorrupt-refusal-issue-105)) |
 | [`synapse-auth`](crates/synapse-auth) | Gate 2 | Ed25519 capability grants (`Read`, `Propose`, `Evaluate`, `Review`, `Publish`), expiry/replay guards, rate/size quotas, and hash-chained security audit log |
 | [`synapse-api`](crates/synapse-api) | Gate 2 | Bounded paginated API (`submit`, `get`, `diff`, `tree`, `history`, `provenance`, `conflicts`, `status`, `watch`), checkout-free virtual tree overlay, and exact path-index invalidation |
 | [`synapse-git`](crates/synapse-git) | Gate 3 | Deterministic Git loose object writer/reader, bidirectional `ChangesetId <-> GitOid` map, ref namespace separation, and GitHub PR projection builder |
 | [`synapse-radicle`](crates/synapse-radicle) | Gate 3 | Radicle `refs/rad/id` and `refs/rad/sigrefs` Ed25519 delegate threshold verifier and split-brain refusal engine |
 | [`synapse-bench`](crates/synapse-bench) | Gate 4 | Comparative qualification harness (Synapse ingest and checkout-free queries versus Git worktree and Git plumbing workflows) plus WAL, Git materialization, and Radicle canonicality conformance suites |
+
+## Connected repos
+
+Each tool below is its own repository whose root `.crumb` names `aien-dev/synapse@099a980` as parent (`extensions.map.parent`). They coordinate the agents that work across aien-dev; change them there, not here.
+
+* [`synapse-claims`](https://github.com/aien-dev/synapse-claims): append-only, hash-chained, Ed25519-signed lease ledger for repos, branches, path globs, PRs and outside targets. Conflicting leases are refused with exit 2 and the holder named.
+* [`synapse-map`](https://github.com/aien-dev/synapse-map): the org repository graph; `where` routes a task to its repository, `new` scaffolds a connected repository, `check` reports orphans and duplicate purposes.
+* [`synapse-pulse`](https://github.com/aien-dev/synapse-pulse): reconciles the ledger against GitHub (through the gh guard, conditional requests) and live agent sessions, and raises one `COORD-DRIFT:` watchdog alarm.
+* [`synapse-mcp`](https://github.com/aien-dev/synapse-mcp): MCP stdio server that executes the CLIs above for agents.
+* [`synapse-board`](https://github.com/aien-dev/synapse-board): renders the human board (Markdown and a tailnet-only page) from the ledger.
 
 ## Documentation and Evidence
 
@@ -40,3 +50,15 @@ Synapse accelerates the high-frequency multi-agent inner loop (changeset creatio
 ## License
 
 Licensed under the Apache License, Version 2.0 (Apache-2.0).
+
+## Human-Directed Agentic Engineering
+
+Development follows Human-Directed Agentic Engineering (HDAE): humans define goals, architecture,
+constraints, acceptance criteria, and stopping points; agents implement, execute checks, diagnose
+failures, and revise within those boundaries. Human review retains responsibility for claims,
+acceptance, and release decisions. This development method is distinct from Synapse's agent-native
+runtime interfaces and does not change its canonical promotion rules.
+
+For the documented method and a systems-software case study, see Gregory M. Kurtzer,
+[*Ginux: Building an Independent Kernel That Runs Linux Userspace through Human-Directed Agentic
+Engineering* (2026)](https://doi.org/10.5281/zenodo.23682548).
