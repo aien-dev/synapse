@@ -1308,7 +1308,7 @@ impl crate::SynapseStore {
             let placed = self.v2_finish(ticket, result)?;
             let seq = placed[0].seq;
             self.refuse_misplaced(checked_at, seq)?;
-            self.apply_v2_ingest(&placed[0], record, &encoded.inline);
+            self.apply_v2_ingest(&placed[0], record, &encoded);
             return Ok(seq);
         }
         if let Some(err) =
