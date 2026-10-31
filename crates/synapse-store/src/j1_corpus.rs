@@ -20,7 +20,7 @@ use synapse_core::{ChangeId, FileMode, PathMutation, RevisionContent, TreeDigest
 /// The sealed corpus, relative to the repository root.
 const CORPUS_PATH: &str = "evidence/j1-codec-corpus/corpus.bin";
 /// SHA-256 of the sealed corpus, so the seal is checked by a test, not by hand.
-const CORPUS_SHA256: &str = "469a25239b6d683d137497b8cab1bebb186e11b180fb5061723af2fe8f6bb8b7";
+const CORPUS_SHA256: &str = "2597e5ca9b9dfc80be67cdc7436143df462a42bc54e1504d38656730d7eb5ca6";
 const MAGIC: [u8; 8] = *b"SYNJ1COD";
 const VERSION: u16 = 1;
 /// Record cap of the A1 malformed corpus (`a1_malformed_corpus.rs`).
@@ -517,8 +517,9 @@ fn bases() -> Vec<Base> {
     }
     let fixture = checkpoint_base("fixture checkpoint", &fixture_state());
     let revision = checkpoint_base("revision checkpoint", &revision_state());
-    // Hand-made inputs no mutation reaches: record kinds 9 to 11 (reserved by open PRs, refused
-    // on `main`), a revision section that is empty, and one that holds a kind 6 record.
+    // Hand-made inputs no mutation reaches: record kinds 9 to 11 with a cut body (refused; all
+    // three kinds decode on `main` since B4, H1 and B5), a revision section that is empty, and
+    // one that holds a kind 6 record.
     for kind in 9u8..=11 {
         out.push(refused_base(
             format!("reserved record kind {kind}"),

@@ -184,7 +184,7 @@ pub(crate) struct CompactedRevisionLog {
 }
 
 /// Digest of one revision record over its canonical core encodings.
-fn record_digest(record: &WalRecord) -> [u8; 32] {
+pub(crate) fn record_digest(record: &WalRecord) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update([record.kind_byte()]);
     let mut chain = Vec::new();
@@ -289,7 +289,9 @@ impl RevisionLedger {
     /// The log without the records whose seal did not verify (issue #101): the records that
     /// took effect, in sequence order.
     pub(crate) fn applied_log(&self) -> impl Iterator<Item = &(WalSeq, WalRecord)> {
-        self.log.iter().filter(|(seq, _)| !self.unsealed.contains(seq))
+        self.log
+            .iter()
+            .filter(|(seq, _)| !self.unsealed.contains(seq))
     }
 
     /// Kind 9 records that changed nothing, by reason (issue #89).

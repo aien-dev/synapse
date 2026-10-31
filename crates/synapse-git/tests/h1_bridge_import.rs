@@ -491,20 +491,29 @@ fn h1_import_refuses_reference_names_that_would_write_outside_before_writing() {
     write(&src, "a.txt", b"a\n");
     commit_all(&src, "one");
     let tip = git_text(&src, &["rev-parse", "HEAD"]);
-    for (case, lines) in [
+    // The repository reader refuses a malformed reference name (`GitObjectCorrupt`, cut 1);
+    // the bridge refuses names that are valid alone but collide on disk (`PathInvalid`).
+    let corrupt = RefusalCode::GitObjectCorrupt;
+    for (case, lines, code) in [
         (
             "dot-dot path",
             format!("{tip} refs/heads/../../../escape\n"),
+            corrupt,
         ),
-        ("absolute-looking", format!("{tip} refs//heads/x\n")),
+        (
+            "absolute-looking",
+            format!("{tip} refs//heads/x\n"),
+            corrupt,
+        ),
         (
             "file and directory",
             format!("{tip} refs/heads/a\n{tip} refs/heads/a/b\n"),
+            RefusalCode::PathInvalid,
         ),
-        ("outside refs/", format!("{tip} HEAD2\n")),
+        ("outside refs/", format!("{tip} HEAD2\n"), corrupt),
     ] {
         fs::write(src.join(".git/packed-refs"), lines).unwrap();
-        assert_import_refused(&src.join(".git"), limits(), RefusalCode::PathInvalid, case);
+        assert_import_refused(&src.join(".git"), limits(), code, case);
     }
     assert!(!src.join("escape").exists() && !src.parent().unwrap().join("escape").exists());
     fs::remove_dir_all(&src).unwrap();

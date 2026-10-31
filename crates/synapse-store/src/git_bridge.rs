@@ -898,6 +898,31 @@ mod tests {
     }
 
     #[test]
+    fn kind_10_is_a_sealed_revision_record_and_its_digest_excludes_the_seal() {
+        for mut record in records() {
+            assert!(
+                record.is_revision_record(),
+                "kind 10 is sealed (issue #101)"
+            );
+            let unsealed = encode_record(&record).unwrap();
+            let digest = crate::revision::record_digest(&record);
+            record.set_seal(crate::RevisionSeal {
+                server_key: [7; 32],
+                signature: [9; 64],
+            });
+            let sealed = encode_record(&record).unwrap();
+            assert_eq!(sealed.len(), unsealed.len() + 1 + 32 + 64, "seal trailer");
+            assert_eq!(&sealed[..unsealed.len()], &unsealed[..]);
+            assert_eq!(decode_record(&sealed, CAP).unwrap(), record);
+            assert_eq!(
+                crate::revision::record_digest(&record),
+                digest,
+                "the seal covers the digest, so the digest leaves the seal out"
+            );
+        }
+    }
+
+    #[test]
     fn imported_revision_id_covers_tree_parents_and_headers() {
         let base = match &records()[1] {
             WalRecord::GitBridgeImported {

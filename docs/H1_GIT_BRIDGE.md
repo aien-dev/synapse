@@ -43,7 +43,7 @@ Re-review of PR #90 at `28d783c` (non-blocking findings, folded into cut 2): (a)
 
 ### WAL record kind 10
 
-`WalRecord::GitBridgeImported { repo_id, entry }`, WAL record **kind 10**, binary codec only (no v1 JSON form; a store still writing v1 refuses it as kinds 7 and 8 are refused). Open PR #88 claims kind 9, so the bridge takes 10. Body: `repo_id | entry tag (u8) | entry body` (layout in `codec.rs` beside `put_git_bridge_entry`):
+`WalRecord::GitBridgeImported { repo_id, entry, seal }`, WAL record **kind 10**, binary codec only (no v1 JSON form; a store still writing v1 refuses it as kinds 7 and 8 are refused). Kinds 7, 8, 9 and 11 are the B1, B4 and B5 revision records, so the bridge takes 10. Body: `repo_id | entry tag (u8) | entry body | optional seal trailer` (layout in `codec.rs` beside `put_git_bridge_entry`; the trailer is issue #101's `1 | server key [32] | signature [64]`, as on kinds 7, 8, 9 and 11):
 
 | Entry | Tag | Body |
 | :--- | ---: | :--- |
@@ -52,7 +52,9 @@ Re-review of PR #90 at `28d783c` (non-blocking findings, folded into cut 2): (a)
 | `Tag` | 3 | `git oid [20] \| target \| u32 len \| rest` |
 | `Refs` | 4 | `u32 n \| (name \| target)* \| option HEAD` |
 
-A target is `1 | ChangesetId`, `2 | TreeDigest`, `3 | BlobDigest` or `4 | tag git oid`. Blob bytes travel inline in the WAL frame as for every v2 record (only blobs not already committed). Replay, checkpoints and compaction treat kind 10 like the B1 records: the records stay in the revision log, a checkpoint load rebuilds the map from them (`GitBridgeLedger::from_log`), the state root covers them, and compaction keeps every blob the map names.
+A target is `1 | ChangesetId`, `2 | TreeDigest`, `3 | BlobDigest` or `4 | tag git oid`. Blob bytes travel inline in the WAL frame as for every v2 record (only blobs not already committed). Replay, checkpoints and compaction treat kind 10 like the other revision records: the records stay in the revision log, a checkpoint load rebuilds the map from the records that took effect (`GitBridgeLedger::from_log(RevisionLedger::applied_log())`), the state root covers them, and compaction keeps every blob the map names.
+
+In a store opened with a seal key (`SynapseStore::open_sealed`), kind 10 is sealed like the other revision records (issue #101): the write seals it for the exact sequence it lands at, the record digest the seal signs is taken over `repo_id | entry` without the trailer, and replay applies a kind 10 record (its blobs and its map entries) only when its seal verifies against the chain so far. An unsealed or forged record stays in the log and the state root, changes nothing, is counted in the seal report, is refused by strict recovery, and is dropped by compaction.
 
 ### The map
 
@@ -168,11 +170,11 @@ Two checks have no stub of their own because the re-hash already refuses every c
 
 ## 4. Limits and what remains
 
-* WAL kind 10 is taken because open PR #88 claims kind 9; if #88 changes its kind, nothing here depends on 9 staying free.
+* Kinds 7, 8, 9 and 11 are the other revision records on main; kind 10 was reserved for the bridge and nothing here depends on the others.
 * A detached `HEAD`'s commit is imported (with its history) but no reference names it, and the exported `HEAD` then names `refs/heads/main` (the exporter's default); `git fsck` accepts it, the objects are identical, but the detached state is not reproduced.
 * A native revision exports only when its `base_tree` is the empty tree, an imported tree, or the result of a native revision exported in the same call (its parent chain). A base registered only in the API tree store (`register_base_tree`) is `TreeNodeNotFound`. Native references are passed by the caller; the store keeps no native reference state in this cut. Native commits carry no signature.
 * An import refused by the checks writes nothing. An I/O failure part way through the writes leaves the records written so far; importing again skips them and writes the rest (each record is checked against the map), so the import resumes, but the store is between states until then.
-* WAL replay applies kind 10 records without re-running the write checks (`GitBridgeLedger::apply` is total, as kinds 7 and 8 replay). A well-formed but crafted frame placed in the WAL by hand is therefore trusted by the map. Export still re-hashes every blob, tree, commit and tag against its Git ID, refuses a `Tag(oid)` target that is not an imported tag, and checks reference names again, so such a frame cannot write outside the export directory or export an object under a wrong ID (review of #96, N1).
+* In a store opened without a seal key, WAL replay applies kind 10 records without re-running the write checks (`GitBridgeLedger::apply` is total, as kinds 7 and 8 replay), so a well-formed but crafted frame placed in the WAL by hand is trusted by the map. A sealed store refuses that frame unless it carries a valid server seal (issue #101). Export still re-hashes every blob, tree, commit and tag against its Git ID, refuses a `Tag(oid)` target that is not an imported tag, and checks reference names again, so such a frame cannot write outside the export directory or export an object under a wrong ID (review of #96, N1).
 * The fan-out and `refs/` directories are checked with `symlink_metadata` and then the file below is opened with `O_NOFOLLOW`, which guards only the last path component: a directory swapped for a link between the check and the open would be followed. Closing that needs a walk relative to opened directory handles (`openat` with `O_DIRECTORY | O_NOFOLLOW` per component); not in this change.
 * Exported packs are not compressed beyond zlib stored blocks and hold no deltas: the omega export is 374,712,257 bytes in cut 1 and 374,713,444 bytes in the cut 2 run through the store against 50,117 KiB for Git's own pack (`count-objects -v`). Correct and accepted by Git, but large; a native compressor is a later change.
 * SHA-1 object format only. A SHA-256 Git repository (`extensions.objectformat = sha256`) is not read.
