@@ -679,6 +679,8 @@ fn a2_segment_index_round_trips_and_refuses_damage() {
         ]
         .into_iter()
         .collect(),
+        chunks: BTreeMap::new(),
+        manifests: BTreeMap::new(),
     };
     let bytes = index.encode();
     assert_eq!(segment::SegmentIndex::decode(&bytes).unwrap(), index);

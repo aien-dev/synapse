@@ -1,0 +1,15 @@
+# Red 2: the G2 tests (crates/synapse-store/src/g2_tests.rs) compiled against A2 6431fcf in a
+# worktree (not committed): A2 has no chunk module, chunk parameters, or chunk index.
+# cargo test -p synapse-store --lib g2_tests (first error lines, count)
+     13 error[E0599]: no method named `chunk_storage` found for struct `SynapseStore` in the current scope
+      4 error[E0433]: cannot find type `ChunkParams` in this scope
+      4 error[E0425]: cannot find type `ChunkParams` in this scope
+      3 error[E0609]: no field `chunks` on type `SegmentIndex`
+      3 error[E0599]: no method named `blob_manifest` found for struct `SynapseStore` in the current scope
+      3 error[E0599]: no method named `blob_manifest` found for reference `&SynapseStore` in the current scope
+      3 error[E0425]: cannot find type `ChunkDigest` in this scope
+      3 error[E0425]: cannot find function, tuple struct or tuple variant `ChunkDigest` in this scope
+      2 error[E0599]: no method named `log_bytes_written` found for struct `SynapseStore` in the current scope
+      2 error[E0560]: struct `SegmentIndex` has no field named `manifests`
+      2 error[E0560]: struct `SegmentIndex` has no field named `chunks`
+      2 error[E0433]: cannot find type `ChunkDigest` in this scope

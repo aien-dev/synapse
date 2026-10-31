@@ -1,0 +1,21 @@
+## mutation M1: commit keeps every chunk (no deduplication against the chunk index)
+test g2_tests::g2_invalid_chunk_parameters_are_refused_at_open ... ok
+test g2_tests::g2_segment_index_v2_round_trips_and_refuses_damage ... ok
+test g2_tests::g2_manifest_naming_an_unindexed_chunk_is_refused_at_replay ... FAILED
+test g2_tests::g2_parameters_change_without_changing_identity ... FAILED
+test g2_tests::g2_dedup_inside_one_batch_counts_earlier_records ... FAILED
+test g2_tests::g2_chunking_off_writes_the_a2_formats ... ok
+test g2_tests::g2_dedup_between_two_revisions_follows_the_x6_rule ... FAILED
+test g2_tests::g2_damaged_chunk_is_refused ... ok
+test g2_tests::g2_crash_after_chunked_batch_sync_before_index_keeps_every_ack ... ok
+test g2_tests::g2_old_stores_stay_readable ... ok
+test g2_tests::g2_every_blob_round_trips_byte_for_byte_with_unchanged_blob_digest ... ok
+thread 'g2_tests::g2_manifest_naming_an_unindexed_chunk_is_refused_at_replay' (1255908) panicked at crates/synapse-store/src/g2_tests.rs:599:9:
+open must refuse
+thread 'g2_tests::g2_parameters_change_without_changing_identity' (1255910) panicked at crates/synapse-store/src/g2_tests.rs:448:9:
+assertion `left == right` failed: already stored whole: no chunks
+thread 'g2_tests::g2_dedup_inside_one_batch_counts_earlier_records' (1255905) panicked at crates/synapse-store/src/g2_tests.rs:413:9:
+the batch carries each chunk once: 1245184 log bytes for 313525 chunk bytes
+thread 'g2_tests::g2_dedup_between_two_revisions_follows_the_x6_rule' (1255904) panicked at crates/synapse-store/src/g2_tests.rs:284:9:
+log bytes of B (438272) carry only the new chunks (43960) plus metadata
+test result: FAILED. 7 passed; 4 failed; 0 ignored; 0 measured; 56 filtered out; finished in 1.05s

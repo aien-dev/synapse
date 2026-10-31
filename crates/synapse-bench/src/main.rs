@@ -601,6 +601,65 @@ fn segments_report(args: &[String]) -> Result<(), String> {
         .map_err(|e| format!("write stdout: {e}"))
 }
 
+/// ADR 0003 X6 (G2): `x6 --corpus <dir of bare clones> --out <raw.json> [--dir <scratch>]
+/// [--reps 3] [--idle-window-s 10] [--only K1,C0]`. Progress goes to stderr.
+fn x6(args: &[String]) -> Result<(), String> {
+    let opts = parse_pairs(
+        args,
+        &[
+            "--corpus",
+            "--out",
+            "--dir",
+            "--reps",
+            "--idle-window-s",
+            "--only",
+        ],
+    )?;
+    let get = |k: &str| {
+        opts.iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.clone())
+    };
+    let corpus = PathBuf::from(get("--corpus").ok_or("missing --corpus")?);
+    let out = PathBuf::from(get("--out").ok_or("missing --out")?);
+    let scratch = get("--dir")
+        .map(PathBuf::from)
+        .unwrap_or_else(synapse_bench::x6::default_scratch);
+    let reps: usize = get("--reps")
+        .map_or(Ok(3), |v| v.parse())
+        .map_err(|_| "invalid --reps")?;
+    let idle: u64 = get("--idle-window-s")
+        .map_or(Ok(10), |v| v.parse())
+        .map_err(|_| "invalid --idle-window-s")?;
+    let only: Option<Vec<String>> = get("--only").map(|v| v.split(',').map(String::from).collect());
+    std::fs::create_dir_all(&scratch).map_err(|e| format!("create {}: {e}", scratch.display()))?;
+    let raw =
+        synapse_bench::x6::run_x6(&corpus, &scratch, reps, idle, only.as_deref(), &mut |m| {
+            eprintln!("{m}")
+        })?;
+    let bytes = serde_json::to_vec(&raw).map_err(|e| e.to_string())?;
+    std::fs::write(&out, bytes).map_err(|e| format!("write {}: {e}", out.display()))
+}
+
+/// `x6-report --raw <raw.json>`: the RULE.md section 6 decision as JSON on stdout.
+fn x6_report(args: &[String]) -> Result<(), String> {
+    use std::io::Write;
+    let opts = parse_pairs(args, &["--raw"])?;
+    let raw_path = opts
+        .iter()
+        .rev()
+        .find(|(k, _)| k == "--raw")
+        .map(|(_, v)| PathBuf::from(v))
+        .ok_or("missing --raw")?;
+    let raw: synapse_bench::x6::X6Raw = synapse_bench::read_json(&raw_path)?;
+    let report = synapse_bench::x6::decide(&raw);
+    let bytes = serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?;
+    std::io::stdout()
+        .write_all(&bytes)
+        .map_err(|e| format!("write stdout: {e}"))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
@@ -617,6 +676,8 @@ fn main() -> ExitCode {
         Some("crypto-vectors-verify") => crypto_vectors_verify(&args[1..]),
         Some("segments") => segments(&args[1..]),
         Some("segments-report") => segments_report(&args[1..]),
+        Some("x6") => x6(&args[1..]),
+        Some("x6-report") => x6_report(&args[1..]),
         Some("store-repair") => store_repair(&args[1..]),
         _ => Err("usage: synapse-bench run ... | synapse-bench child ... (see crate docs)".into()),
     };
