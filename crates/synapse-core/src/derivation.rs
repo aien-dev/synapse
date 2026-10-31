@@ -17,9 +17,9 @@
 
 use crate::revision::{malformed, put_str, Reader};
 use crate::{
-    encode_did_key_ed25519, AdmissionWitness, ChainPath, ChangeId, ChangesetId, IdempotencyKey,
-    PathMutation, RefusalCode, RepoId, RevisionContent, SynapseError, SynapseResult, TreeDigest,
-    WalSeq, WitnessSigner,
+    encode_did_key_ed25519, AdmissionWitness, BlobDigest, ChainPath, ChangeId, ChangesetId,
+    FileMode, IdempotencyKey, MutationOp, PathMutation, RefusalCode, RepoId, RevisionContent,
+    SynapseError, SynapseResult, TreeDigest, WalSeq, WitnessSigner,
 };
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
@@ -39,6 +39,7 @@ const RULE_TAG_MERGE: u8 = 2;
 // Tag 3 is reserved for the derived-file action (the `ActionDigest` of the declared action,
 // ADR 0003 section 5.3); it needs registered executors and is not decodable yet.
 const TIER_TAG_T0: u8 = 0;
+const TIER_TAG_T1: u8 = 1;
 const INPUT_TAG_REVISION: u8 = 1;
 const INPUT_TAG_TREE: u8 = 2;
 /// Encoded size of the smallest input (tag and a 32-byte digest).
@@ -56,12 +57,17 @@ fn recompute_mismatch(msg: impl Into<String>) -> SynapseError {
 // Rules and inputs
 // ---------------------------------------------------------------------------------------
 
-/// The level a merge works at (`MergeTier` in `CONTEXT.md`). Only T0 exists before step D1.
+/// The level a merge works at (`MergeTier` in `CONTEXT.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MergeTier {
     /// Path level: the merged revisions touch disjoint paths (no path of one equals, contains,
     /// or lies inside a path of another).
     T0Path,
+    /// Region level (step D1): the T0 rule, except that revisions may write the same file
+    /// when its versions merge line by line ([`crate::merge::region_merge`]: every changed
+    /// region separated from every other revision's by an unchanged base line). Identical
+    /// mutations of one path are taken once.
+    T1Region,
 }
 
 /// The deterministic rule a derivation applied.
@@ -90,6 +96,7 @@ impl DerivationRule {
                 buf.push(RULE_TAG_MERGE);
                 buf.push(match tier {
                     MergeTier::T0Path => TIER_TAG_T0,
+                    MergeTier::T1Region => TIER_TAG_T1,
                 });
             }
         }
@@ -101,6 +108,9 @@ impl DerivationRule {
             RULE_TAG_MERGE => match r.u8()? {
                 TIER_TAG_T0 => Ok(DerivationRule::Merge {
                     tier: MergeTier::T0Path,
+                }),
+                TIER_TAG_T1 => Ok(DerivationRule::Merge {
+                    tier: MergeTier::T1Region,
                 }),
                 tag => Err(malformed(format!("unknown merge tier tag {tag}"))),
             },
@@ -437,6 +447,20 @@ pub trait DerivationTrees {
     ) -> SynapseResult<TreeDigest>;
     /// Every file path whose entry differs between `from` and `to`.
     fn changed_paths(&mut self, from: TreeDigest, to: TreeDigest) -> SynapseResult<Vec<String>>;
+    /// The file at `path` of `tree` (mode and blob), `None` when there is none (tier T1).
+    fn file_at(
+        &mut self,
+        tree: TreeDigest,
+        path: &str,
+    ) -> SynapseResult<Option<(FileMode, BlobDigest)>>;
+    /// The bytes of a stored blob (`BlobNotFound` when this replica cannot read it; tier T1).
+    fn blob_bytes(&mut self, digest: BlobDigest) -> SynapseResult<Vec<u8>>;
+    /// Hold the bytes of a blob a derivation produced (a tier T1 merged file) so that later
+    /// mutations can name it and the store can write it with the derived revision; returns
+    /// its digest.
+    fn put_blob(&mut self, bytes: Vec<u8>) -> SynapseResult<BlobDigest>;
+    /// The bytes of a blob produced by [`DerivationTrees::put_blob`], if any.
+    fn produced_blob(&self, digest: BlobDigest) -> Option<&[u8]>;
 }
 
 /// `true` when `inner` lies strictly below directory `dir`.
@@ -461,7 +485,123 @@ fn first_collision<'a>(a: &'a [&'a str], b: &'a [&'a str]) -> Option<(&'a str, &
     None
 }
 
-/// The `ChangeId` of a T0 merge of `ids` (canonical order) on `base`.
+/// Tier T0 mutations of a merge: the union of every source's mutations, refused when a path
+/// of one source collides (equal, or one below the other) with a path of another.
+fn t0_mutations(sources: &[RevisionContent]) -> SynapseResult<Vec<PathMutation>> {
+    for i in 0..sources.len() {
+        let a: Vec<&str> = sources[i]
+            .mutations
+            .iter()
+            .map(|m| m.path.as_str())
+            .collect();
+        for s in &sources[i + 1..] {
+            let b: Vec<&str> = s.mutations.iter().map(|m| m.path.as_str()).collect();
+            if let Some((x, y)) = first_collision(&a, &b) {
+                return Err(recompute_mismatch(format!(
+                    "tier T0 merge conflicts: {x} collides with {y}"
+                )));
+            }
+        }
+    }
+    let mut mutations: Vec<PathMutation> = sources
+        .iter()
+        .flat_map(|s| s.mutations.iter().cloned())
+        .collect();
+    mutations.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(mutations)
+}
+
+/// Tier T1 mutations of a merge on `base` (step D1). Paths written by one source are taken
+/// as they are; byte-identical mutations of one path are taken once; a file several sources
+/// upsert differently with the base's mode is merged line by line
+/// ([`crate::merge::region_merge`]) and the merged bytes are held through
+/// [`DerivationTrees::put_blob`]. Refused (`DerivationRecomputeMismatch`): a path of one
+/// source lying below a path of another, a path deleted by one source and changed by
+/// another, a mode change, a file added by several sources with different content, and any
+/// region conflict.
+fn t1_mutations(
+    base: TreeDigest,
+    sources: &[RevisionContent],
+    trees: &mut dyn DerivationTrees,
+) -> SynapseResult<Vec<PathMutation>> {
+    let mut by_path: std::collections::BTreeMap<&str, Vec<(usize, &PathMutation)>> =
+        std::collections::BTreeMap::new();
+    for (i, s) in sources.iter().enumerate() {
+        for m in &s.mutations {
+            by_path.entry(m.path.as_str()).or_default().push((i, m));
+        }
+    }
+    let paths: Vec<(&str, Vec<usize>)> = by_path
+        .iter()
+        .map(|(p, v)| (*p, v.iter().map(|(i, _)| *i).collect()))
+        .collect();
+    for (x, xs) in &paths {
+        for (y, ys) in &paths {
+            if is_below(y, x) && xs.iter().any(|i| ys.iter().any(|j| i != j)) {
+                return Err(recompute_mismatch(format!(
+                    "tier T1 merge conflicts: {y} lies below {x}, written by another revision"
+                )));
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(by_path.len());
+    for (path, muts) in by_path {
+        let mut distinct: Vec<&PathMutation> = Vec::new();
+        for (_, m) in &muts {
+            if !distinct.contains(m) {
+                distinct.push(m);
+            }
+        }
+        if let [only] = distinct.as_slice() {
+            out.push((*only).clone());
+            continue;
+        }
+        let conflict =
+            |why: String| recompute_mismatch(format!("tier T1 merge conflicts on {path}: {why}"));
+        let mut versions = Vec::with_capacity(distinct.len());
+        for m in &distinct {
+            match &m.op {
+                MutationOp::Upsert {
+                    mode, blob_digest, ..
+                } => versions.push((*mode, *blob_digest)),
+                MutationOp::Delete => {
+                    return Err(conflict(
+                        "deleted by one revision and changed by another".into(),
+                    ))
+                }
+            }
+        }
+        let Some((base_mode, base_blob)) = trees.file_at(base, path)? else {
+            return Err(conflict(
+                "added by several revisions with different content".into(),
+            ));
+        };
+        // Every version keeps the base mode (a mode change is not merged line by line).
+        if versions.iter().any(|(mode, _)| *mode != base_mode) {
+            return Err(conflict("a revision changes the file's mode".into()));
+        }
+        let base_bytes = trees.blob_bytes(base_blob)?;
+        let mut bytes = Vec::with_capacity(versions.len());
+        for (_, v) in &versions {
+            bytes.push(trees.blob_bytes(*v)?);
+        }
+        let refs: Vec<&[u8]> = bytes.iter().map(Vec::as_slice).collect();
+        let merged =
+            crate::merge::region_merge(&base_bytes, &refs).map_err(|c| conflict(c.to_string()))?;
+        let size_bytes = merged.len() as u64;
+        let blob_digest = trees.put_blob(merged)?;
+        out.push(PathMutation {
+            path: path.to_string(),
+            op: MutationOp::Upsert {
+                mode: base_mode,
+                blob_digest,
+                size_bytes,
+            },
+        });
+    }
+    Ok(out)
+}
+
 fn require_tree(trees: &mut dyn DerivationTrees, t: TreeDigest, what: &str) -> SynapseResult<()> {
     if trees.holds_tree(t) {
         Ok(())
@@ -472,6 +612,7 @@ fn require_tree(trees: &mut dyn DerivationTrees, t: TreeDigest, what: &str) -> S
     }
 }
 
+/// The `ChangeId` of a merge (any tier) of `ids` (canonical order) on `base`.
 fn merge_change_id(base: TreeDigest, ids: &[ChangesetId]) -> ChangeId {
     let mut h = Sha256::new();
     h.update(DOMAIN_DERIVED_MERGE_CHANGE_V1);
@@ -545,9 +686,7 @@ pub fn derive_revision_output(
             let tree = trees.apply_mutations(*onto, &content.mutations)?;
             Ok((content, tree))
         }
-        DerivationRule::Merge {
-            tier: MergeTier::T0Path,
-        } => {
+        DerivationRule::Merge { tier } => {
             let Some((DerivationInput::Tree(base), rest)) = inputs.split_first() else {
                 return Err(input_mismatch(
                     "a merge names [Tree(base), Revision(a1), ..., Revision(an)]",
@@ -583,32 +722,23 @@ pub fn derive_revision_output(
                     )));
                 }
             }
-            for i in 0..sources.len() {
-                let a: Vec<&str> = sources[i]
-                    .mutations
-                    .iter()
-                    .map(|m| m.path.as_str())
-                    .collect();
-                for s in &sources[i + 1..] {
-                    let b: Vec<&str> = s.mutations.iter().map(|m| m.path.as_str()).collect();
-                    if let Some((x, y)) = first_collision(&a, &b) {
-                        return Err(recompute_mismatch(format!(
-                            "tier T0 merge conflicts: {x} collides with {y}"
-                        )));
-                    }
-                }
-            }
-            let mut mutations: Vec<PathMutation> = sources
-                .iter()
-                .flat_map(|s| s.mutations.iter().cloned())
-                .collect();
-            mutations.sort_by(|a, b| a.path.cmp(&b.path));
+            let mutations = match tier {
+                MergeTier::T0Path => t0_mutations(&sources)?,
+                MergeTier::T1Region => t1_mutations(*base, &sources, trees)?,
+            };
             let content = RevisionContent {
                 change_id: merge_change_id(*base, &ids),
                 base_tree: *base,
                 parents: ids.clone(),
                 mutations,
-                intent_summary: format!("merge tier T0 of {} revisions", ids.len()),
+                intent_summary: format!(
+                    "merge tier {} of {} revisions",
+                    match tier {
+                        MergeTier::T0Path => "T0",
+                        MergeTier::T1Region => "T1",
+                    },
+                    ids.len()
+                ),
             };
             content.validate()?;
             let tree = trees.apply_mutations(*base, &content.mutations)?;
@@ -675,8 +805,19 @@ mod tests {
             RefusalCode::EnvelopeMalformed
         );
         let mut tier = bytes.clone();
-        tier[rule_at + 1] = 1;
+        tier[rule_at + 1] = 2;
         assert!(DerivationAttestation::decode(&tier).is_err());
+        // Tier tag 1 is T1 (step D1): it decodes, to a different attestation whose
+        // signature no longer verifies.
+        tier[rule_at + 1] = 1;
+        let t1 = DerivationAttestation::decode(&tier).unwrap();
+        assert_eq!(
+            t1.rule,
+            DerivationRule::Merge {
+                tier: MergeTier::T1Region
+            }
+        );
+        assert!(t1.verify().is_err());
         let mut zero = bytes.clone();
         zero[rule_at + 2..rule_at + 6].copy_from_slice(&0u32.to_le_bytes());
         assert!(DerivationAttestation::decode(&zero).is_err());
