@@ -945,4 +945,75 @@ mod tests {
         changed.tree = TreeDigest::empty();
         assert_ne!(changed.changeset_id(), id);
     }
+
+    /// Issue #101 for kind 10: on a sealed store, a Git bridge record without a valid seal
+    /// maps nothing. Strict replay refuses the store; torn-tail replay opens it with the
+    /// record reported unsealed and the repository absent from the bridge map, and the
+    /// record is left out by compaction.
+    #[test]
+    fn kind_10_without_a_seal_maps_nothing_on_sealed_replay() {
+        use crate::{FsyncPolicy, RecoveryPolicy, RevisionSealKey, StoreLimits, SynapseStore};
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "synapse-h1-unsealed-{}-{nanos}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let limits = || StoreLimits {
+            wal_prealloc_bytes: 64 * 1024,
+            ..Default::default()
+        };
+        let key = || RevisionSealKey::new(ed25519_dalek::SigningKey::from_bytes(&[3; 32]));
+        let repo = RepoId::new("aien-dev/h1-unsealed").unwrap();
+        let body = b"unsealed\n";
+        let blob = BlobDigest::compute(body);
+        let git_oid = GitOid::compute_blob(body);
+        let entry = GitBridgeEntry::Objects {
+            blobs: vec![GitBlobMapping {
+                git_oid,
+                blob,
+                size_bytes: body.len() as u64,
+            }],
+            trees: Vec::new(),
+        };
+        let mut w = SynapseStore::open(
+            &dir,
+            FsyncPolicy::EveryCommit,
+            RecoveryPolicy::StrictFailClosed,
+            limits(),
+        )
+        .unwrap();
+        assert!(w
+            .record_git_import(&repo, entry, &[(blob, &body[..])])
+            .unwrap()
+            .is_some());
+        assert_eq!(
+            w.git_bridge_repo(&repo).and_then(|r| r.blob(git_oid)),
+            Some((blob, body.len() as u64)),
+            "an unsealed store maps it"
+        );
+        drop(w);
+
+        let sealed = |policy| {
+            SynapseStore::open_sealed(&dir, FsyncPolicy::EveryCommit, policy, limits(), key())
+        };
+        assert_eq!(
+            sealed(RecoveryPolicy::StrictFailClosed).err().unwrap().code,
+            RefusalCode::RevisionRecordUnsealed
+        );
+        let mut s = sealed(RecoveryPolicy::TruncateTornTail).unwrap();
+        assert_eq!(s.seal_replay_report().unsealed, 1);
+        assert!(
+            s.git_bridge_repo(&repo).is_none(),
+            "an unsealed kind 10 record mapped a Git ID on sealed replay"
+        );
+        s.checkpoint_and_compact(1_000).unwrap();
+        drop(s);
+        let s = sealed(RecoveryPolicy::StrictFailClosed).expect("strict accepts the compacted store");
+        assert!(s.git_bridge_repo(&repo).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
