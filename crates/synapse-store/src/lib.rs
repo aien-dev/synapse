@@ -34,8 +34,11 @@ pub mod blockdev;
 mod blockdev_a2_suite;
 #[cfg(test)]
 mod blockdev_tests;
+pub mod chunk;
 pub mod codec;
 pub mod git_bridge;
+#[cfg(test)]
+mod g2_tests;
 #[cfg(test)]
 mod group_tests;
 #[cfg(test)]
@@ -50,6 +53,7 @@ pub mod wal2;
 
 use blockdev::Medium;
 pub use blockdev::{BlockDeviceConfig, FormatPolicy};
+pub use chunk::{ChunkDigest, ChunkManifest, ChunkParams};
 pub use codec::{CheckpointChain, CheckpointState, CodecRefusal, RecordCodec};
 pub use revision::{
     verify_revision_log, AdmissionAuthority, ChangeStatus, RecordedMarker, RevisionOutcome,
@@ -202,6 +206,11 @@ pub struct StoreLimits {
     /// still goes into one segment on its own.
     #[serde(default = "default_segment_bytes")]
     pub segment_bytes: u64,
+    /// Content-defined chunking of large blobs (ADR 0003 G2): blobs above
+    /// `chunking.threshold_bytes` are stored as chunks, each once per `ChunkDigest`.
+    /// Applies to segment stores (group commit) only; the default is the X6 outcome.
+    #[serde(default)]
+    pub chunking: ChunkParams,
 }
 
 fn default_segment_bytes() -> u64 {
@@ -227,6 +236,7 @@ impl Default for StoreLimits {
             wal_prealloc_bytes: default_wal_prealloc_bytes(),
             max_wal_record_bytes: default_max_wal_record_bytes(),
             segment_bytes: default_segment_bytes(),
+            chunking: ChunkParams::default(),
         }
     }
 }
@@ -541,6 +551,12 @@ pub struct SynapseStore {
     wal_v2_recovered_end: (u64, u64),
     /// The blob index: digest to its location inside a segment.
     blob_locations: BTreeMap<BlobDigest, segment::BlobLoc>,
+    /// The chunk index (ADR 0003 G2): chunk digest to its location inside a segment.
+    chunk_locations: BTreeMap<ChunkDigest, segment::BlobLoc>,
+    /// Chunked blobs: blob digest to its manifest (chunks in order).
+    blob_chunks: BTreeMap<BlobDigest, ChunkManifest>,
+    /// Bytes of batches this store appended to its segments since it was opened.
+    log_bytes_written: u64,
     /// Set when a failed batch could not be rolled back: every write is refused until reopen.
     poisoned: Option<String>,
     /// Codec new WAL records are written with (ADR 0003 A1).
@@ -626,6 +642,10 @@ struct BatchOverlay {
     idempotency: BTreeMap<(RepoId, IdempotencyKey), (WalSeq, ChangesetId)>,
     changesets: BTreeMap<ChangesetId, RepoId>,
     blobs: BTreeSet<BlobDigest>,
+    /// Chunks carried by records accepted earlier in this batch (ADR 0003 G2).
+    chunks: BTreeSet<ChunkDigest>,
+    /// Blobs stored as chunks by records accepted earlier in this batch.
+    chunked_blobs: BTreeSet<BlobDigest>,
 }
 
 /// Result of the stateful half of an ingest.
@@ -653,6 +673,8 @@ pub(crate) struct V2Ticket {
     fault: FaultInjection,
     base_seq: WalSeq,
     prev_sha: [u8; 32],
+    /// Length of the batch written (set by `v2_write`).
+    batch_len: u64,
 }
 
 impl SynapseStore {
@@ -787,6 +809,11 @@ impl SynapseStore {
     ) -> SynapseResult<Self> {
         let blobs_dir = root_dir.join("blobs");
         let wal_path = root_dir.join("wal.log");
+        // ADR 0003 G2: chunk parameters the chunker cannot use are refused, never guessed.
+        limits
+            .chunking
+            .validate()
+            .map_err(|e| SynapseError::new(RefusalCode::IoFailure, e))?;
 
         let mut store = Self {
             medium,
@@ -812,6 +839,9 @@ impl SynapseStore {
             segment_readers: BTreeMap::new(),
             wal_v2_recovered_end: (1, 0),
             blob_locations: BTreeMap::new(),
+            chunk_locations: BTreeMap::new(),
+            blob_chunks: BTreeMap::new(),
+            log_bytes_written: 0,
             poisoned: None,
             codec: RecordCodec::BinaryV2,
             checkpoint_chain: None,
@@ -860,6 +890,36 @@ impl SynapseStore {
     /// Chain fields of the binary checkpoint this store holds, if it has one.
     pub fn checkpoint_chain(&self) -> Option<CheckpointChain> {
         self.checkpoint_chain
+    }
+
+    /// Manifest of `blob` when the store holds it as chunks (ADR 0003 G2).
+    pub fn blob_manifest(&self, blob: &BlobDigest) -> Option<&ChunkManifest> {
+        self.blob_chunks.get(blob)
+    }
+
+    /// Chunk storage of the store: (indexed chunks, their total content bytes).
+    pub fn chunk_storage(&self) -> (usize, u64) {
+        let bytes = self
+            .chunk_locations
+            .values()
+            .map(|l| u64::from(l.len))
+            .sum();
+        (self.chunk_locations.len(), bytes)
+    }
+
+    /// Total content bytes of the whole blobs stored inline in segments.
+    pub fn inline_blob_bytes(&self) -> u64 {
+        self.blob_locations.values().map(|l| u64::from(l.len)).sum()
+    }
+
+    /// Bytes of batches this store appended to its segments since it was opened.
+    pub fn log_bytes_written(&self) -> u64 {
+        self.log_bytes_written
+    }
+
+    /// The chunk parameters in force (invalid parameters were refused at open).
+    pub fn chunk_params(&self) -> ChunkParams {
+        self.limits.chunking
     }
 
     /// True when this store writes WAL v2 (group commit).
@@ -1074,13 +1134,50 @@ impl SynapseStore {
         };
         if let Some(codec) = wal_v2_codec {
             if clean {
+                // ADR 0003 G2: a blob above the chunk threshold is cut into chunks; each
+                // distinct chunk is carried once per record (the store drops the chunks it
+                // already holds at commit, `conform_v2`).
+                let params = if limits.chunking.validate().is_ok() {
+                    limits.chunking
+                } else {
+                    ChunkParams::OFF
+                };
                 let mut inline: Vec<(BlobDigest, &[u8])> = Vec::new();
+                let mut manifests: Vec<ChunkManifest> = Vec::new();
+                let mut chunks: Vec<(ChunkDigest, &[u8])> = Vec::new();
+                let mut seen_chunks = BTreeSet::new();
                 for d in &prepared.new_blobs {
-                    if !inline.iter().any(|(x, _)| x == d) {
-                        inline.push((*d, provided_map[d]));
+                    if inline.iter().any(|(x, _)| x == d) || manifests.iter().any(|m| m.blob == *d)
+                    {
+                        continue;
+                    }
+                    let bytes = provided_map[d];
+                    if params.is_chunked(bytes.len()) {
+                        let cb = chunk::chunk_blob(*d, bytes, &params);
+                        for (cd, r) in cb.distinct {
+                            if seen_chunks.insert(cd) {
+                                chunks.push((cd, &bytes[r]));
+                            }
+                        }
+                        manifests.push(cb.manifest);
+                    } else {
+                        inline.push((*d, bytes));
                     }
                 }
-                prepared.encoded = Some(wal2::encode_record(&prepared.record(), &inline, codec)?);
+                let record = prepared.record();
+                prepared.encoded = Some(if manifests.is_empty() {
+                    wal2::encode_record(&record, &inline, codec)?
+                } else {
+                    let meta = codec::encode_record_with(&record, codec)?;
+                    wal2::encode_parts(
+                        record.kind_byte(),
+                        codec,
+                        &meta,
+                        &inline,
+                        &manifests,
+                        &chunks,
+                    )?
+                });
             }
         } else {
             prepared.provided = provided_map
@@ -1116,12 +1213,12 @@ impl SynapseStore {
         let record = prepared.record();
 
         if self.v2_mode {
-            self.conform_v2(&mut prepared)?;
+            self.conform_v2(&mut prepared, &mut BatchOverlay::default())?;
             let encoded = prepared.encoded.expect("conform_v2 checked it");
             let mut ticket = self.v2_begin()?;
             let result = Self::v2_write(&mut ticket, &[&encoded]);
             let placed = self.v2_finish(ticket, result)?;
-            self.apply_v2_ingest(&placed[0], record, &encoded.inline);
+            self.apply_v2_ingest(&placed[0], record, &encoded);
             return Ok(IngestOutcome::Committed {
                 wal_seq: placed[0].seq,
                 changeset_id,
@@ -1281,6 +1378,7 @@ impl SynapseStore {
             fault: std::mem::replace(&mut self.fault_injection, FaultInjection::None),
             base_seq: self.committed_seq,
             prev_sha: self.last_frame_sha256,
+            batch_len: 0,
         })
     }
 
@@ -1363,6 +1461,7 @@ impl SynapseStore {
         // The finished batch is padded to the next 4 KiB after its 8-byte trailer.
         let batch_len = wal2::align_up((capacity + wal2::WAL_V2_BATCH_TRAILER.len()) as u64);
         let (segment, base) = ticket.writer.reserve(batch_len, rotation_fault)?;
+        ticket.batch_len = batch_len;
         let mut builder = wal2::BatchBuilder::new(segment, base, capacity);
         let mut seq = ticket.base_seq;
         let mut prev = ticket.prev_sha;
@@ -1408,6 +1507,7 @@ impl SynapseStore {
                     self.committed_seq = last.seq;
                     self.last_frame_sha256 = last.frame_sha256;
                 }
+                self.log_bytes_written += ticket.batch_len;
                 Ok(placed)
             }
             Err(wal2::BatchFailure::RolledBack(e)) => Err(e),
@@ -1423,18 +1523,90 @@ impl SynapseStore {
         &mut self,
         placed: &wal2::PlacedFrame,
         record: WalRecord,
-        inline: &[(BlobDigest, u32, u32)],
+        enc: &wal2::EncodedRecord,
     ) {
-        for &(digest, off, len) in inline {
-            self.blob_locations
-                .entry(digest)
-                .or_insert(segment::BlobLoc {
-                    segment: placed.segment,
-                    offset: placed.payload_offset + u64::from(off),
-                    len,
-                });
+        let loc = |off: u32, len: u32| segment::BlobLoc {
+            segment: placed.segment,
+            offset: placed.payload_offset + u64::from(off),
+            len,
+        };
+        for &(digest, off, len) in &enc.inline {
+            self.blob_locations.entry(digest).or_insert(loc(off, len));
+        }
+        for &(digest, off, len) in &enc.chunks {
+            self.chunk_locations.entry(digest).or_insert(loc(off, len));
+        }
+        for m in &enc.manifests {
+            self.blob_chunks.entry(m.blob).or_insert_with(|| m.clone());
         }
         self.apply_record(placed.seq, record);
+    }
+
+    /// Read a chunked blob (ADR 0003 G2): its chunks in manifest order, contiguous chunk
+    /// runs of one segment in one read, then the `BlobDigest` over the whole content.
+    fn read_chunked_blob(&self, m: &ChunkManifest) -> SynapseResult<Vec<u8>> {
+        let digest = m.blob;
+        let len = usize::try_from(m.len).map_err(|_| {
+            SynapseError::new(RefusalCode::QuotaPayloadTooLarge, "chunked blob too large")
+        })?;
+        let mut out = vec![0u8; len];
+        let mut at = 0usize;
+        // Pending run: (segment, file offset, start in `out`, length).
+        let mut run: Option<(u64, u64, usize, usize)> = None;
+        let flush = |run: (u64, u64, usize, usize), out: &mut [u8]| -> SynapseResult<()> {
+            let (seg, off, start, n) = run;
+            let f = self.segment_readers.get(&seg).ok_or_else(|| {
+                SynapseError::new(
+                    RefusalCode::BlobNotFound,
+                    format!("segment {seg} is not open for reads"),
+                )
+            })?;
+            f.read_into(off, &mut out[start..start + n]).map_err(|e| {
+                SynapseError::new(
+                    RefusalCode::BlobNotFound,
+                    format!("read chunks of blob {digest} from segment {seg}: {e}"),
+                )
+            })
+        };
+        for (cd, clen) in &m.chunks {
+            let loc = self.chunk_locations.get(cd).copied().ok_or_else(|| {
+                SynapseError::new(
+                    RefusalCode::BlobNotFound,
+                    format!("chunk {cd} of blob {digest} is not indexed"),
+                )
+            })?;
+            let n = *clen as usize;
+            if loc.len != *clen || at + n > len {
+                return Err(SynapseError::new(
+                    RefusalCode::BlobDigestMismatch,
+                    format!("chunk {cd} of blob {digest} has inconsistent length"),
+                ));
+            }
+            run = match run {
+                Some((seg, off, start, rn))
+                    if seg == loc.segment && off + rn as u64 == loc.offset =>
+                {
+                    Some((seg, off, start, rn + n))
+                }
+                Some(r) => {
+                    flush(r, &mut out)?;
+                    Some((loc.segment, loc.offset, at, n))
+                }
+                None => Some((loc.segment, loc.offset, at, n)),
+            };
+            at += n;
+        }
+        if let Some(r) = run {
+            flush(r, &mut out)?;
+        }
+        let computed = BlobDigest::compute(&out);
+        if at != len || computed != digest {
+            return Err(SynapseError::new(
+                RefusalCode::BlobDigestMismatch,
+                format!("on-disk chunked blob corruption for {digest}: computed {computed}"),
+            ));
+        }
+        Ok(out)
     }
 
     fn read_inline_blob(
@@ -1489,6 +1661,8 @@ impl SynapseStore {
             replay_segment: 1,
             replay_offset: 0,
             entries: BTreeMap::new(),
+            chunks: BTreeMap::new(),
+            manifests: BTreeMap::new(),
         };
         let keep = index.write(&self.medium)?;
         if let Medium::Block(_) = &self.medium {
@@ -1776,6 +1950,9 @@ impl SynapseStore {
         if let Some(&loc) = self.blob_locations.get(&digest) {
             return self.read_inline_blob(digest, loc);
         }
+        if let Some(m) = self.blob_chunks.get(&digest) {
+            return self.read_chunked_blob(m);
+        }
         let path = self.blob_path(digest);
         let bytes = fs::read(&path).map_err(|_| {
             SynapseError::new(
@@ -1984,7 +2161,27 @@ impl SynapseStore {
                     .filter(|(d, _)| retained_blobs.contains(d))
                     .map(|(d, l)| (*d, *l))
                     .collect(),
+                chunks: BTreeMap::new(),
+                manifests: self
+                    .blob_chunks
+                    .iter()
+                    .filter(|(d, _)| retained_blobs.contains(d))
+                    .map(|(d, m)| (*d, m.clone()))
+                    .collect(),
             };
+            // ADR 0003 G2: the chunks the retained chunked blobs name.
+            let mut index = index;
+            for m in index.manifests.values() {
+                for (cd, _) in &m.chunks {
+                    let loc = self.chunk_locations.get(cd).copied().ok_or_else(|| {
+                        SynapseError::new(
+                            RefusalCode::CheckpointCorrupt,
+                            format!("chunk {cd} of retained blob {} is not indexed", m.blob),
+                        )
+                    })?;
+                    index.chunks.insert(*cd, loc);
+                }
+            }
             let name = index.write(&self.medium)?;
             if self.fault_injection == FaultInjection::CrashAfterSegmentIndexBeforeCheckpoint {
                 std::process::exit(FAULT_CRASH_EXIT_CODE);
@@ -2017,6 +2214,8 @@ impl SynapseStore {
             self.replace_wal_log_with_segment_marker()?;
             segment::remove_other_indexes(&self.medium, &name)?;
             self.blob_locations = index.entries;
+            self.chunk_locations = index.chunks;
+            self.blob_chunks = index.manifests;
         } else {
             let f = OpenOptions::new()
                 .create(true)
@@ -2196,19 +2395,49 @@ impl SynapseStore {
     }
 
     /// Bring a prepared WAL v2 payload to this store's codec (it changes once, at the
-    /// migration checkpoint, possibly between prepare and commit) and check the cap.
-    pub(crate) fn conform_v2(&self, p: &mut PreparedIngest) -> SynapseResult<()> {
+    /// migration checkpoint, possibly between prepare and commit), drop what the store
+    /// already holds (ADR 0003 G2: a manifest of a blob already stored, a chunk already
+    /// indexed, counting the records accepted earlier in this batch), and check the cap.
+    /// On success the record's chunks and chunked blobs join `overlay`.
+    pub(crate) fn conform_v2(
+        &self,
+        p: &mut PreparedIngest,
+        overlay: &mut BatchOverlay,
+    ) -> SynapseResult<()> {
         let enc = p.encoded.as_ref().ok_or_else(|| {
             SynapseError::new(
                 RefusalCode::IoFailure,
                 "changeset was prepared for WAL v1 but the store writes WAL v2",
             )
         })?;
-        if enc.codec() != self.codec {
+        let blob_held = |d: &BlobDigest| {
+            self.blob_chunks.contains_key(d)
+                || self.blob_locations.contains_key(d)
+                || overlay.blobs.contains(d)
+        };
+        let chunk_held =
+            |d: &ChunkDigest| self.chunk_locations.contains_key(d) || overlay.chunks.contains(d);
+        let drops = enc.manifests.iter().any(|m| blob_held(&m.blob))
+            || enc.chunks.iter().any(|(d, _, _)| chunk_held(d));
+        if drops {
+            let rebuilt = enc.rebuild(
+                &p.record(),
+                self.codec,
+                |m| !blob_held(&m.blob),
+                |d| !chunk_held(d),
+            )?;
+            p.encoded = Some(rebuilt);
+        } else if enc.codec() != self.codec {
             let recoded = enc.recode(&p.record(), self.codec)?;
             p.encoded = Some(recoded);
         }
-        self.check_frame_cap(p.encoded.as_ref().map_or(0, |e| e.payload.len()))
+        let enc = p.encoded.as_ref().expect("set above");
+        self.check_frame_cap(enc.payload.len())?;
+        overlay.chunks.extend(enc.chunks.iter().map(|(d, _, _)| *d));
+        overlay
+            .chunked_blobs
+            .extend(enc.manifests.iter().map(|m| m.blob));
+        Ok(())
     }
 
     fn append_wal_record(
@@ -2850,6 +3079,8 @@ impl SynapseStore {
             let binding = segment::checkpoint_binding_on(&self.medium)?;
             let index = segment::SegmentIndex::load_from(&self.medium, &binding)?;
             self.blob_locations = index.entries.clone();
+            self.chunk_locations = index.chunks.clone();
+            self.blob_chunks = index.manifests.clone();
             if (index.replay_segment, index.replay_offset) != (1, 0) {
                 // The index vouches for every segment byte before its replay position:
                 // those frames are covered by the checkpoint it is bound to.
@@ -3000,7 +3231,12 @@ impl SynapseStore {
                             for blob_digest in &fr.record.upsert_blobs() {
                                 {
                                     let inline = fr.inline.iter().any(|(d, _, _)| d == blob_digest);
-                                    if inline || self.blob_locations.contains_key(blob_digest) {
+                                    let inline = inline
+                                        || fr.manifests.iter().any(|m| m.blob == *blob_digest);
+                                    if inline
+                                        || self.blob_locations.contains_key(blob_digest)
+                                        || self.blob_chunks.contains_key(blob_digest)
+                                    {
                                         continue;
                                     }
                                     let raw = fs::read(self.blob_path(*blob_digest)).map_err(|_| {
@@ -3024,6 +3260,32 @@ impl SynapseStore {
                                 offset: base + rel,
                                 len,
                             });
+                        }
+                        // ADR 0003 G2: the frame's chunks join the chunk index; every chunk a
+                        // manifest names must then be indexed (in this frame or earlier).
+                        for &(d, rel, len) in &fr.chunks {
+                            self.chunk_locations.entry(d).or_insert(segment::BlobLoc {
+                                segment: id,
+                                offset: base + rel,
+                                len,
+                            });
+                        }
+                        for m in fr.manifests {
+                            for (cd, clen) in &m.chunks {
+                                match self.chunk_locations.get(cd) {
+                                    Some(loc) if loc.len == *clen => {}
+                                    _ => {
+                                        return Err(SynapseError::new(
+                                            RefusalCode::BlobNotFound,
+                                            format!(
+                                                "chunk {cd} of blob {} missing during WAL v2 replay at {}",
+                                                m.blob, fr.seq
+                                            ),
+                                        ))
+                                    }
+                                }
+                            }
+                            self.blob_chunks.entry(m.blob).or_insert(m);
                         }
                         self.committed_seq = fr.seq;
                         self.last_frame_sha256 = fr.frame_sha256;

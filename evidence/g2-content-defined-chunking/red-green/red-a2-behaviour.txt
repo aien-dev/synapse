@@ -1,0 +1,9 @@
+# Red 1: behaviour of A2 (6431fcf). A probe with the same name and core assertion as
+# g2_dedup_between_two_revisions_follows_the_x6_rule (A = 400,000 random bytes, B = A with a
+# 100-byte insert, a 50-byte edit and 30 KB appended), run in an A2 worktree (not committed):
+# A2 stores B whole, so B costs as many log bytes as its full length.
+# cargo test -p synapse-store --lib g2_probe
+test g2_probe::g2_dedup_between_two_revisions_follows_the_x6_rule ... FAILED
+thread 'g2_probe::g2_dedup_between_two_revisions_follows_the_x6_rule' (1191437) panicked at crates/synapse-store/src/g2_probe.rs:27:5:
+revision B appended 434176 log bytes for a 430100 byte blob sharing all but ~30 KB with A
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.09s

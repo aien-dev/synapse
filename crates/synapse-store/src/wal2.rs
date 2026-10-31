@@ -25,6 +25,12 @@
 //!   SHA-256("SYNAPSE_WAL_FRAME_V2\0" || header[0..56] || payload_sha256)` with
 //!   `payload_sha256 = SHA-256("SYNAPSE_WAL_PAYLOAD_V2\0" || payload)`, so the payload
 //!   digest is computed by the submitter in parallel and the writer hashes 120 bytes.
+//! * Chunked frames (ADR 0003 G2, flag [`WAL_FLAG_CHUNKED`]): after the inline blobs the
+//!   payload carries the manifests of its chunked blobs, a chunk table, and the chunk
+//!   bytes (layout at [`encode_parts`]). Its `payload_sha256` is
+//!   `SHA-256("SYNAPSE_WAL_PAYLOAD_CHUNKED_V1\0" || u64 LE payload length || payload up to
+//!   the chunk bytes)`: the chunk bytes are bound through the chunk digests in the table,
+//!   and recovery verifies every chunk against its digest before the frame digest.
 //! * `seq`, `prev_frame_sha256` and the hash chain continue across v1 and v2 frames.
 //!
 //! Recovery applies a batch only when every frame in it validates (all or nothing).
@@ -62,23 +68,53 @@ pub(crate) fn align_up(x: u64) -> u64 {
     x.div_ceil(WAL_V2_ALIGN) * WAL_V2_ALIGN
 }
 
+/// Frame flags bit: the payload carries content-defined chunks and chunk manifests (ADR
+/// 0003 G2). The other flag bits still name the record codec. Binaries that predate G2
+/// refuse the bit (`WalFlagsNonZero`) instead of misreading the payload.
+pub const WAL_FLAG_CHUNKED: u8 = 0x02;
+/// Domain tag of the payload digest of a chunked payload.
+pub const DOMAIN_WAL_PAYLOAD_CHUNKED_V1: &[u8] = b"SYNAPSE_WAL_PAYLOAD_CHUNKED_V1\0";
+
+/// Codec and chunk flag declared by a v2 frame header flags byte.
+pub(crate) fn parse_frame_flags(flags: u8) -> Option<(RecordCodec, bool)> {
+    let chunked = flags & WAL_FLAG_CHUNKED != 0;
+    RecordCodec::from_frame_flags(flags & !WAL_FLAG_CHUNKED).map(|c| (c, chunked))
+}
+
 /// A record encoded for WAL v2 before the critical section (payload, its digest, CRC).
 #[derive(Debug, Clone)]
 pub(crate) struct EncodedRecord {
     pub kind: u8,
-    /// Frame header flags byte: the codec of the record metadata.
+    /// Frame header flags byte: the codec of the record metadata, plus
+    /// [`WAL_FLAG_CHUNKED`] when the payload carries chunk manifests.
     pub flags: u8,
     pub payload: Vec<u8>,
     pub payload_sha256: [u8; 32],
     pub payload_crc32c: u32,
     /// Inline blobs: (digest, byte offset inside the payload, length).
     pub inline: Vec<(BlobDigest, u32, u32)>,
+    /// Manifests of the chunked blobs this record stores (ADR 0003 G2).
+    pub manifests: Vec<ChunkManifest>,
+    /// Chunks carried by this record: (digest, byte offset inside the payload, length).
+    pub chunks: Vec<(ChunkDigest, u32, u32)>,
 }
 
 pub(crate) fn payload_digest(payload: &[u8]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(DOMAIN_WAL_PAYLOAD_V2);
     h.update(payload);
+    h.finalize().into()
+}
+
+/// Payload digest of a chunked payload: the prefix before the chunk bytes, which holds
+/// the chunk table (every chunk's `ChunkDigest` and length), is hashed; the chunk bytes
+/// themselves are bound through their digests (verified on decode and on every read),
+/// so dropping an already stored chunk never re-hashes the others.
+pub(crate) fn chunked_payload_digest(payload: &[u8], prefix_len: usize) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update(DOMAIN_WAL_PAYLOAD_CHUNKED_V1);
+    h.update((payload.len() as u64).to_le_bytes());
+    h.update(&payload[..prefix_len]);
     h.finalize().into()
 }
 
@@ -89,83 +125,148 @@ fn too_large(what: &str) -> SynapseError {
     )
 }
 
-/// Encode `record` with `blobs` stored inline.
+fn len32(n: usize, what: &str) -> SynapseResult<[u8; 4]> {
+    Ok(u32::try_from(n).map_err(|_| too_large(what))?.to_le_bytes())
+}
+
+/// Encode `record` with `blobs` stored inline (no chunks).
 pub(crate) fn encode_record(
     record: &WalRecord,
     blobs: &[(BlobDigest, &[u8])],
     codec: RecordCodec,
 ) -> SynapseResult<EncodedRecord> {
     let meta = codec::encode_record_with(record, codec)?;
+    encode_parts(record.kind_byte(), codec, &meta, blobs, &[], &[])
+}
+
+/// Encode a record whose metadata is `meta`: whole blobs inline, then (when `manifests`
+/// is not empty, with [`WAL_FLAG_CHUNKED`]) the manifests, the chunk table, and the chunk
+/// bytes. Layout of a chunked payload, little-endian:
+/// `u32 meta_len | meta | u32 blob_count | (digest[32] | u32 len | bytes)* |
+/// u32 manifest_count | (blob_digest[32] | u64 blob_len | u32 n | n x (chunk_digest[32] |
+/// u32 len))* | u32 chunk_count | chunk_count x (chunk_digest[32] | u32 len) |
+/// chunk bytes in table order`.
+pub(crate) fn encode_parts(
+    kind: u8,
+    codec: RecordCodec,
+    meta: &[u8],
+    blobs: &[(BlobDigest, &[u8])],
+    manifests: &[ChunkManifest],
+    chunks: &[(ChunkDigest, &[u8])],
+) -> SynapseResult<EncodedRecord> {
+    let chunked = !manifests.is_empty();
+    debug_assert!(chunked || chunks.is_empty(), "chunks without a manifest");
     let blob_bytes: usize = blobs.iter().map(|(_, b)| 36 + b.len()).sum();
-    let mut payload = Vec::with_capacity(8 + meta.len() + blob_bytes);
-    payload.extend_from_slice(
-        &u32::try_from(meta.len())
-            .map_err(|_| too_large("record metadata"))?
-            .to_le_bytes(),
-    );
-    payload.extend_from_slice(&meta);
-    payload.extend_from_slice(
-        &u32::try_from(blobs.len())
-            .map_err(|_| too_large("blob count"))?
-            .to_le_bytes(),
-    );
+    let manifest_bytes: usize = manifests.iter().map(|m| 44 + 36 * m.chunks.len()).sum();
+    let chunk_bytes: usize = chunks.iter().map(|(_, b)| 36 + b.len()).sum();
+    let mut payload =
+        Vec::with_capacity(16 + meta.len() + blob_bytes + manifest_bytes + chunk_bytes);
+    payload.extend_from_slice(&len32(meta.len(), "record metadata")?);
+    payload.extend_from_slice(meta);
+    payload.extend_from_slice(&len32(blobs.len(), "blob count")?);
     let mut inline = Vec::with_capacity(blobs.len());
     for (digest, bytes) in blobs {
-        let len = u32::try_from(bytes.len()).map_err(|_| too_large("blob"))?;
         payload.extend_from_slice(&digest.0);
-        payload.extend_from_slice(&len.to_le_bytes());
+        payload.extend_from_slice(&len32(bytes.len(), "blob")?);
         let off = u32::try_from(payload.len()).map_err(|_| too_large("payload"))?;
         payload.extend_from_slice(bytes);
-        inline.push((*digest, off, len));
+        inline.push((*digest, off, bytes.len() as u32));
     }
+    let mut placed_chunks = Vec::with_capacity(chunks.len());
+    let prefix_len = if chunked {
+        payload.extend_from_slice(&len32(manifests.len(), "manifest count")?);
+        for m in manifests {
+            payload.extend_from_slice(&m.blob.0);
+            payload.extend_from_slice(&m.len.to_le_bytes());
+            payload.extend_from_slice(&len32(m.chunks.len(), "manifest length")?);
+            for (d, l) in &m.chunks {
+                payload.extend_from_slice(&d.0);
+                payload.extend_from_slice(&l.to_le_bytes());
+            }
+        }
+        payload.extend_from_slice(&len32(chunks.len(), "chunk count")?);
+        for (d, b) in chunks {
+            payload.extend_from_slice(&d.0);
+            payload.extend_from_slice(&len32(b.len(), "chunk")?);
+        }
+        let prefix_len = payload.len();
+        for (d, b) in chunks {
+            let off = u32::try_from(payload.len()).map_err(|_| too_large("payload"))?;
+            payload.extend_from_slice(b);
+            placed_chunks.push((*d, off, b.len() as u32));
+        }
+        Some(prefix_len)
+    } else {
+        None
+    };
     u32::try_from(payload.len()).map_err(|_| too_large("payload"))?;
     Ok(EncodedRecord {
-        kind: record.kind_byte(),
-        flags: codec.frame_flags(),
-        payload_sha256: payload_digest(&payload),
+        kind,
+        flags: codec.frame_flags() | if chunked { WAL_FLAG_CHUNKED } else { 0 },
+        payload_sha256: match prefix_len {
+            Some(p) => chunked_payload_digest(&payload, p),
+            None => payload_digest(&payload),
+        },
         payload_crc32c: crc32c(&payload),
         payload,
         inline,
+        manifests: manifests.to_vec(),
+        chunks: placed_chunks,
     })
 }
 
 impl EncodedRecord {
     /// Codec of the record metadata.
     pub fn codec(&self) -> RecordCodec {
-        RecordCodec::from_frame_flags(self.flags).expect("encoded with a known codec")
+        parse_frame_flags(self.flags)
+            .expect("encoded with a known codec")
+            .0
     }
 
-    /// The same record with its metadata re-encoded as `codec` (inline blobs kept, their
-    /// offsets shifted). Used when a store migrates between prepare and commit.
+    /// The same record with its metadata encoded as `codec`, keeping only the manifests
+    /// `keep_manifest` accepts and the chunks `keep_chunk` accepts. Used when a store
+    /// migrates between prepare and commit, and to drop chunks (or whole manifests) the
+    /// store already holds (ADR 0003 G2).
+    pub fn rebuild(
+        &self,
+        record: &WalRecord,
+        codec: RecordCodec,
+        keep_manifest: impl Fn(&ChunkManifest) -> bool,
+        keep_chunk: impl Fn(&ChunkDigest) -> bool,
+    ) -> SynapseResult<Self> {
+        let meta = codec::encode_record_with(record, codec)?;
+        let slice = |off: u32, len: u32| &self.payload[off as usize..(off + len) as usize];
+        let blobs: Vec<(BlobDigest, &[u8])> = self
+            .inline
+            .iter()
+            .map(|&(d, o, l)| (d, slice(o, l)))
+            .collect();
+        let manifests: Vec<ChunkManifest> = self
+            .manifests
+            .iter()
+            .filter(|m| keep_manifest(m))
+            .cloned()
+            .collect();
+        let referenced: BTreeSet<ChunkDigest> = manifests
+            .iter()
+            .flat_map(|m| m.chunks.iter().map(|(d, _)| *d))
+            .collect();
+        let chunks: Vec<(ChunkDigest, &[u8])> = self
+            .chunks
+            .iter()
+            .filter(|(d, _, _)| referenced.contains(d) && keep_chunk(d))
+            .map(|&(d, o, l)| (d, slice(o, l)))
+            .collect();
+        encode_parts(self.kind, codec, &meta, &blobs, &manifests, &chunks)
+    }
+
+    /// The same record with its metadata re-encoded as `codec` (inline blobs, manifests,
+    /// and chunks kept).
     pub fn recode(&self, record: &WalRecord, codec: RecordCodec) -> SynapseResult<Self> {
         if self.codec() == codec {
             return Ok(self.clone());
         }
-        let old_meta = u32::from_le_bytes(self.payload[0..4].try_into().expect("4 bytes")) as usize;
-        let meta = codec::encode_record_with(record, codec)?;
-        let rest = &self.payload[4 + old_meta..];
-        let mut payload = Vec::with_capacity(4 + meta.len() + rest.len());
-        payload.extend_from_slice(
-            &u32::try_from(meta.len())
-                .map_err(|_| too_large("record metadata"))?
-                .to_le_bytes(),
-        );
-        payload.extend_from_slice(&meta);
-        payload.extend_from_slice(rest);
-        u32::try_from(payload.len()).map_err(|_| too_large("payload"))?;
-        let shift = |off: u32| (off as usize - 4 - old_meta + 4 + meta.len()) as u32;
-        Ok(Self {
-            kind: self.kind,
-            flags: codec.frame_flags(),
-            payload_sha256: payload_digest(&payload),
-            payload_crc32c: crc32c(&payload),
-            inline: self
-                .inline
-                .iter()
-                .map(|(d, o, l)| (*d, shift(*o), *l))
-                .collect(),
-            payload,
-        })
+        self.rebuild(record, codec, |_| true, |_| true)
     }
 }
 
@@ -174,6 +275,12 @@ pub(crate) struct DecodedPayload {
     pub record: WalRecord,
     /// Inline blobs: (digest, byte offset inside the payload, length).
     pub inline: Vec<(BlobDigest, u32, u32)>,
+    /// Chunk manifests (chunked payloads only).
+    pub manifests: Vec<ChunkManifest>,
+    /// Chunks carried by the payload: (digest, byte offset inside the payload, length).
+    pub chunks: Vec<(ChunkDigest, u32, u32)>,
+    /// Length of the hashed prefix of a chunked payload (`None` for a plain one).
+    pub prefix_len: Option<usize>,
 }
 
 fn corrupt(seq: WalSeq, what: &str) -> SynapseError {
@@ -183,11 +290,15 @@ fn corrupt(seq: WalSeq, what: &str) -> SynapseError {
     )
 }
 
-/// Decode a v2 payload, verifying every inline blob digest.
+/// Decode a v2 payload, verifying every inline blob digest and every chunk digest. A
+/// chunked payload must list each carried chunk once, carry only chunks its manifests
+/// name, and state manifests whose chunk lengths add up to the blob length. Manifest
+/// chunks the payload does not carry must already be stored (the caller checks).
 pub(crate) fn decode_payload(
     seq: WalSeq,
     payload: &[u8],
     codec: RecordCodec,
+    chunked: bool,
     cap: u64,
 ) -> SynapseResult<DecodedPayload> {
     let rd_u32 = |at: usize| -> SynapseResult<u32> {
@@ -195,6 +306,13 @@ pub(crate) fn decode_payload(
             .get(at..at + 4)
             .map(|b| u32::from_le_bytes(b.try_into().expect("4 bytes")))
             .ok_or_else(|| corrupt(seq, "truncated length field"))
+    };
+    let rd_digest = |at: usize, what: &str| -> SynapseResult<[u8; 32]> {
+        Ok(payload
+            .get(at..at + 32)
+            .ok_or_else(|| corrupt(seq, what))?
+            .try_into()
+            .expect("32 bytes"))
     };
     let meta_len = rd_u32(0)? as usize;
     let meta = payload
@@ -216,17 +334,12 @@ pub(crate) fn decode_payload(
     at += 4;
     let mut inline = Vec::with_capacity(count.min(4096));
     for _ in 0..count {
-        let digest_bytes: [u8; 32] = payload
-            .get(at..at + 32)
-            .ok_or_else(|| corrupt(seq, "truncated blob digest"))?
-            .try_into()
-            .expect("32 bytes");
+        let digest = BlobDigest(rd_digest(at, "truncated blob digest")?);
         let len = rd_u32(at + 32)? as usize;
         let start = at + 36;
         let bytes = payload
             .get(start..start + len)
             .ok_or_else(|| corrupt(seq, "truncated blob bytes"))?;
-        let digest = BlobDigest(digest_bytes);
         if BlobDigest::compute(bytes) != digest {
             return Err(SynapseError::new(
                 RefusalCode::BlobDigestMismatch,
@@ -236,10 +349,106 @@ pub(crate) fn decode_payload(
         inline.push((digest, start as u32, len as u32));
         at = start + len;
     }
-    if at != payload.len() {
-        return Err(corrupt(seq, "trailing bytes after the last inline blob"));
+    let mut manifests = Vec::new();
+    let mut chunks = Vec::new();
+    let mut prefix_len = None;
+    if chunked {
+        let malformed = |what: &str| {
+            SynapseError::new(
+                RefusalCode::WalRecordMalformed,
+                format!("chunked WAL v2 payload at {seq}: {what}"),
+            )
+        };
+        let m_count = rd_u32(at)? as usize;
+        at += 4;
+        if m_count == 0 {
+            return Err(malformed("chunk flag set without a manifest"));
+        }
+        let mut named = BTreeSet::new();
+        for _ in 0..m_count {
+            let blob = BlobDigest(rd_digest(at, "truncated manifest")?);
+            let blob_len = u64::from_le_bytes(
+                payload
+                    .get(at + 32..at + 40)
+                    .ok_or_else(|| corrupt(seq, "truncated manifest length"))?
+                    .try_into()
+                    .expect("8 bytes"),
+            );
+            let n = rd_u32(at + 40)? as usize;
+            at += 44;
+            if n == 0 || n > payload.len() / 36 + 1 {
+                return Err(malformed("manifest chunk count out of range"));
+            }
+            let mut list = Vec::with_capacity(n);
+            let mut total = 0u64;
+            for _ in 0..n {
+                let d = ChunkDigest(rd_digest(at, "truncated manifest entry")?);
+                let l = rd_u32(at + 32)?;
+                if l == 0 {
+                    return Err(malformed("empty chunk in a manifest"));
+                }
+                total += u64::from(l);
+                named.insert(d);
+                list.push((d, l));
+                at += 36;
+            }
+            if total != blob_len {
+                return Err(malformed(
+                    "manifest chunk lengths do not add up to the blob",
+                ));
+            }
+            manifests.push(ChunkManifest {
+                blob,
+                len: blob_len,
+                chunks: list,
+            });
+        }
+        let c_count = rd_u32(at)? as usize;
+        at += 4;
+        if c_count > payload.len() / 36 + 1 {
+            return Err(malformed("chunk count out of range"));
+        }
+        let mut table = Vec::with_capacity(c_count);
+        let mut carried = BTreeSet::new();
+        for _ in 0..c_count {
+            let d = ChunkDigest(rd_digest(at, "truncated chunk table")?);
+            let l = rd_u32(at + 32)?;
+            if l == 0 || !carried.insert(d) || !named.contains(&d) {
+                return Err(malformed(
+                    "chunk table entry empty, repeated, or named by no manifest",
+                ));
+            }
+            table.push((d, l));
+            at += 36;
+        }
+        prefix_len = Some(at);
+        for (d, l) in table {
+            let bytes = payload
+                .get(at..at + l as usize)
+                .ok_or_else(|| corrupt(seq, "truncated chunk bytes"))?;
+            if ChunkDigest::compute(bytes) != d {
+                return Err(SynapseError::new(
+                    RefusalCode::BlobDigestMismatch,
+                    format!("chunk {d} corrupt in WAL v2 frame {seq}"),
+                ));
+            }
+            chunks.push((d, at as u32, l));
+            at += l as usize;
+        }
     }
-    Ok(DecodedPayload { record, inline })
+    if at != payload.len() {
+        return Err(corrupt(
+            seq,
+            "trailing bytes after the last inline blob or chunk",
+        ));
+    }
+    Ok(DecodedPayload {
+        record,
+        inline,
+        manifests,
+        chunks,
+        prefix_len,
+    })
 }
 
 /// Build the 88-byte v2 frame header and its chain digest.
@@ -694,6 +903,10 @@ pub(crate) struct RecoveredFrame {
     pub record: WalRecord,
     /// Inline blobs: (digest, absolute file offset, length).
     pub inline: Vec<(BlobDigest, u64, u32)>,
+    /// Chunk manifests (ADR 0003 G2).
+    pub manifests: Vec<ChunkManifest>,
+    /// Chunks carried by the frame: (digest, absolute file offset, length).
+    pub chunks: Vec<(ChunkDigest, u64, u32)>,
 }
 
 /// Validate the batch at `off`; on success return its frames and the aligned next offset.
@@ -752,7 +965,7 @@ pub(crate) fn validate_batch(
                 format!("frame version {version} inside a WAL v2 batch at offset {at}"),
             ));
         }
-        let codec = RecordCodec::from_frame_flags(h[7]).ok_or_else(|| {
+        let (codec, chunked) = parse_frame_flags(h[7]).ok_or_else(|| {
             SynapseError::new(
                 RefusalCode::WalFlagsNonZero,
                 format!("unknown WAL flags {} at offset {at}", h[7]),
@@ -798,13 +1011,27 @@ pub(crate) fn validate_batch(
                 ),
             ));
         }
-        if frame_digest(&h[0..56], &payload_digest(payload)) != stored_sha {
+        // A chunked payload's digest covers the prefix before its chunk bytes, so it is
+        // decoded (every chunk digest verified) before the chain digest is checked.
+        let decoded = if chunked {
+            Some(decode_payload(seq, payload, codec, true, cap)?)
+        } else {
+            None
+        };
+        let payload_sha = match decoded.as_ref().and_then(|d| d.prefix_len) {
+            Some(p) => chunked_payload_digest(payload, p),
+            None => payload_digest(payload),
+        };
+        if frame_digest(&h[0..56], &payload_sha) != stored_sha {
             return Err(SynapseError::new(
                 RefusalCode::WalChainMismatch,
                 format!("WAL frame_sha256 mismatch at {seq}"),
             ));
         }
-        let decoded = decode_payload(seq, payload, codec, cap)?;
+        let decoded = match decoded {
+            Some(d) => d,
+            None => decode_payload(seq, payload, codec, false, cap)?,
+        };
         if decoded.record.kind_byte() != h[6] {
             return Err(match codec {
                 RecordCodec::JsonV1 => corrupt(seq, "record kind byte does not match payload"),
@@ -821,6 +1048,12 @@ pub(crate) fn validate_batch(
             record: decoded.record,
             inline: decoded
                 .inline
+                .into_iter()
+                .map(|(d, o, l)| (d, (p_start + o as usize) as u64, l))
+                .collect(),
+            manifests: decoded.manifests,
+            chunks: decoded
+                .chunks
                 .into_iter()
                 .map(|(d, o, l)| (d, (p_start + o as usize) as u64, l))
                 .collect(),

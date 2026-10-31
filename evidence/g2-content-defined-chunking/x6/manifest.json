@@ -1,0 +1,15 @@
+{
+  "step": "ADR 0003 G2 (issue #45), experiment X6: content-defined chunking threshold and chunk sizes",
+  "host": "DGX Spark, 20 CPUs, kernel 7.0.0-1019-nvidia, store on /dev/nvme0n1p2 ext4 (shared host)",
+  "binary_commit": "7145a26d937dc43ed44bfe31b36c7c2c1ccf5232",
+  "rule_sha256": "dd4ed8f936fdbeadb05fc12278fb05448e63dc44b8e8fb8bb006e0729b3f3935",
+  "commands": [
+    "synapse-bench x6 --corpus <bare clones> --out raw.json --dir <scratch> --reps 3 --idle-window-s 10",
+    "synapse-bench x6-report --raw raw.json > report.json"
+  ],
+  "run_start_utc": "2026-10-16T09:01:04Z",
+  "loadavg_start": "5.69 4.97 4.53",
+  "clock": "std::time::Instant (CLOCK_MONOTONIC), ns",
+  "energy": "aien_spbm hwmon, SoC package only, 1 mJ step, 10 Hz sampling, uncalibrated; NVMe UNMEASURED",
+  "corpus": "see RULE.md section 3 (bare clones at the recorded commits)"
+}

@@ -10,6 +10,7 @@ use std::fmt;
 
 mod derivation;
 mod key_cache;
+pub mod merge;
 mod revision;
 mod revision_state;
 mod tree;
