@@ -1,7 +1,7 @@
 # Audit scope
 
 Written for an outside, independent security audit. Revision described:
-`b1870353077b645b294e4476b9c8f04f49de91a5` on `main`, 2026-10-31. Everything below is taken from
+`5f9a638d6be5c271748dc740f69159422788ca81` on `main`, 2026-10-30. Everything below is taken from
 the repository's own files at that revision; items marked NOT_RUN were not executed while writing
 this document.
 
@@ -26,9 +26,13 @@ under `crates/`: `synapse-core`, `-store`, `-auth`, `-api`, `-git`, `-radicle`, 
    (`docs/G3_SHM_RING.md`), connection closing after 64 refusals.
 4. `crates/synapse-store`: SWAL v1 parsing and recovery, blob store, compaction and GC, torn write
    handling; malformed corpus tests; the R1 raw block store repair after `CheckpointCorrupt`
-   (`src/blockdev/repair.rs`, `docs/R1_RAW_BLOCK_STORE.md`), which writes to the device.
+   (`src/blockdev/repair.rs`, `docs/R1_RAW_BLOCK_STORE.md`), which writes to the device; the G2
+   content-defined chunking and WAL v2 path (`src/chunk.rs`, `src/wal2.rs`, `src/segment.rs`,
+   `docs/G2_CONTENT_DEFINED_CHUNKING.md`), which parses committed v2 checkpoints and logs.
 5. `crates/synapse-api`: bounds, pagination, cross-repository lookups; the M1 admission secret
    scanner (`src/secret_scan.rs`: hand-written single pass, refuse by default, no allowlist).
+   With `crates/synapse-core/src/merge.rs` and both `derivation.rs` files: merge tier T1, which
+   combines changes to different parts of one file (`docs/D1_MERGE_TIER_T1.md`).
 6. `crates/synapse-git`: loose object writer and reader, `ChangesetId <-> GitOid` map, ref
    namespaces, GitHub pull request projection.
 7. `crates/synapse-coord` (Unix datagram socket notifications in `src/board/notify.rs`) and
@@ -76,7 +80,7 @@ for the crumb qualification scripts. `Cargo.lock` is committed.
 ```sh
 git clone https://github.com/aien-dev/synapse.git
 cd synapse
-git checkout b1870353077b645b294e4476b9c8f04f49de91a5
+git checkout 5f9a638d6be5c271748dc740f69159422788ca81
 cargo build --locked --workspace
 ```
 
@@ -118,10 +122,11 @@ tests/gates/run.sh conformance
 
 ## Evidence
 
-- `evidence/<item>/`, 25 items, treated as immutable; a new run writes new evidence. 16 carry a
-  `SHA256SUMS` (for example `gate0-baseline`, `gate4-qualification`, `f1-capability-chains`,
-  `j3-crypto-vectors`); 9 do not: `REPAIR-RECOVERY-L662`, `a1-binary-codec`, `a2-segment-store`,
-  `bench-pmu-diagnostics`, `g1-wire-frames`, `g3-shm-ring`, `j1-codec-corpus`,
-  `r1-raw-block-store`, `swarm-board`.
+- `evidence/<item>/`, 27 items, treated as immutable; a new run writes new evidence. 17 carry a
+  top-level `SHA256SUMS` (for example `gate0-baseline`, `gate4-qualification`,
+  `f1-capability-chains`, `j3-crypto-vectors`, `d1-merge-tier-t1`); 10 do not:
+  `REPAIR-RECOVERY-L662`, `a1-binary-codec`, `a2-segment-store`, `bench-pmu-diagnostics`,
+  `g1-wire-frames`, `g2-content-defined-chunking` (one only under `x6/`), `g3-shm-ring`,
+  `j1-codec-corpus`, `r1-raw-block-store`, `swarm-board`.
 - Signed Spark bundles: `aien-dev/aien-receipts` at `synapse/<sha>/bundle.json` (workflow path).
   Receipts are append-only and never edited.
