@@ -17,6 +17,7 @@
 //! synapse-bench pmu-verify --evidence <dir>
 //! synapse-bench segments --dir <dir on the store filesystem> --out <raw.json> [--agents 1,4,8,32]
 //!     [--changes N] [--reps N] [--blob-bytes N] [--segment-mib N] [--checkpoint-every N] [--idle-window-s S]
+//!     [--block-device <absolute path that does not exist> [--block-device-mib N] [--block-meta-mib N]]
 //! synapse-bench segments-report --raw <raw.json> --floor <floor.json>   (prints the A2 report)
 //! ```
 
@@ -477,6 +478,9 @@ fn segments(args: &[String]) -> Result<(), String> {
             "--segment-mib",
             "--checkpoint-every",
             "--idle-window-s",
+            "--block-device",
+            "--block-device-mib",
+            "--block-meta-mib",
         ],
     )?;
     let get = |k: &str| {
@@ -498,11 +502,83 @@ fn segments(args: &[String]) -> Result<(), String> {
         segment_bytes: num("--segment-mib", 16)? * 1024 * 1024,
         checkpoint_every: num("--checkpoint-every", 1000)? as usize,
         idle_window_s: num("--idle-window-s", 30)?,
+        block_device: get("--block-device"),
+        block_device_bytes: num(
+            "--block-device-mib",
+            synapse_bench::segments::DEFAULT_BLOCK_DEVICE_BYTES >> 20,
+        )? << 20,
+        block_meta_bytes: num(
+            "--block-meta-mib",
+            synapse_bench::segments::DEFAULT_BLOCK_META_BYTES >> 20,
+        )? << 20,
     };
     let dir = PathBuf::from(get("--dir").ok_or("missing --dir")?);
     let out = PathBuf::from(get("--out").ok_or("missing --out")?);
     let raw = synapse_bench::segments::run_segments(&dir, &cfg)?;
     synapse_bench::write_json(&out, &raw)
+}
+
+/// R1 store repair (issue #105). Without an action flag it only reports (read-only open)
+/// and never writes. A write needs exactly one of `--roll-forward` or
+/// `--adopt-older-checkpoint`, plus `--operator-key <file>` (64 hex characters: the
+/// Ed25519 seed that signs the repair entry) and `--backup <new file>` (every byte range
+/// the repair overwrites is saved there first). Prints the signed receipt.
+fn store_repair(args: &[String]) -> Result<(), String> {
+    use synapse_store::blockdev::repair::{diagnose_path, repair_path, RepairAction};
+    let flags = [
+        ("--roll-forward", RepairAction::RollForward),
+        (
+            "--adopt-older-checkpoint",
+            RepairAction::AdoptOlderCheckpoint,
+        ),
+    ];
+    let actions: Vec<RepairAction> = flags
+        .iter()
+        .filter(|(f, _)| args.iter().any(|a| a == f))
+        .map(|(_, a)| *a)
+        .collect();
+    let rest: Vec<String> = args
+        .iter()
+        .filter(|a| !flags.iter().any(|(f, _)| f == a))
+        .cloned()
+        .collect();
+    let opts = parse_pairs(&rest, &["--device", "--backup", "--operator-key"])?;
+    let get = |k: &str| {
+        opts.iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| PathBuf::from(v))
+    };
+    let device = get("--device").ok_or("missing --device (absolute path)")?;
+    let action = match actions[..] {
+        [] => {
+            print!("{}", diagnose_path(&device).map_err(|e| e.to_string())?);
+            return Ok(());
+        }
+        [a] => a,
+        _ => return Err("give one action: --roll-forward or --adopt-older-checkpoint".into()),
+    };
+    let backup = get("--backup").ok_or("a repair needs --backup <new file>")?;
+    let key_path = get("--operator-key").ok_or("a repair needs --operator-key <file>")?;
+    let key_hex = std::fs::read_to_string(&key_path)
+        .map_err(|e| format!("operator key {}: {e}", key_path.display()))?;
+    let seed: [u8; 32] = hex::decode(key_hex.trim())
+        .ok()
+        .and_then(|b| b.try_into().ok())
+        .ok_or("the operator key file must hold 64 hex characters (an Ed25519 seed)")?;
+    let operator = ed25519_dalek::SigningKey::from_bytes(&seed);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let receipt =
+        repair_path(&device, action, &operator, &backup, now).map_err(|e| e.to_string())?;
+    print!("{}", receipt.report);
+    println!("{receipt}");
+    if receipt.wrote {
+        println!("backup at {}", backup.display());
+    }
+    Ok(())
 }
 
 /// `segments-report`: recompute the A2 report from `--raw` and a `--floor` report.
@@ -541,6 +617,7 @@ fn main() -> ExitCode {
         Some("crypto-vectors-verify") => crypto_vectors_verify(&args[1..]),
         Some("segments") => segments(&args[1..]),
         Some("segments-report") => segments_report(&args[1..]),
+        Some("store-repair") => store_repair(&args[1..]),
         _ => Err("usage: synapse-bench run ... | synapse-bench child ... (see crate docs)".into()),
     };
     match outcome {

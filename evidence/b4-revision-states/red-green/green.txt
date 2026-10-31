@@ -1,0 +1,43 @@
+# Green (2026-10-17, B4 commit 6ad04b9 on origin/main 3d78efe; workspace 341 passed, 0 failed, 1 ignored; clippy -D warnings and fmt clean)
+
+# Command: cargo test --locked -p synapse-core --lib b4_ -- --test-threads=1
+test revision_state::tests::b4_every_allowed_move_raises_the_rank_and_every_other_pair_is_refused ... ok
+test revision_state::tests::b4_owner_moves_never_reach_verified_or_canonical ... ok
+test revision_state::tests::b4_property_random_move_sequences_never_move_backwards ... ok
+test revision_state::tests::b4_state_tags_round_trip_and_unknown_tags_are_not_states ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished
+
+# Command: cargo test --locked -p synapse-store --lib b4_ -- --test-threads=1
+test revision::b4_tests::b4_property_forged_record_sequences_never_move_a_revision_backwards ... ok
+test revision::b4_tests::b4_replay_refuses_a_forged_move_to_verified ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished
+
+# Command: cargo test --locked -p synapse-store --test b4_revision_states -- --test-threads=1
+test b4_any_move_to_canonical_outside_the_promotion_queue_is_refused ... ok
+test b4_joining_identical_content_grants_no_ownership_of_a_private_revision ... ok
+test b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain ... ok
+test b4_property_random_operation_sequences_never_move_a_revision_backwards ... ok
+test b4_state_move_records_round_trip_and_malformed_bytes_are_refused_typed ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished
+
+# Command: cargo test --locked -p synapse-api --test b4_revision_states -- --test-threads=1
+test b4_api_joining_identical_content_grants_no_ownership_of_a_private_revision ... ok
+test b4_api_move_to_canonical_outside_the_promotion_queue_is_refused ... ok
+test b4_api_private_revision_is_invisible_outside_its_owner_chain_with_real_f1_chains ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished
+
+# Command: cargo test --locked -p synapse-store --test b1_change_identity -- --test-threads=1
+test b1_divergence_two_live_successors_is_detected ... ok
+test b1_every_v1_changeset_id_still_resolves_to_its_record ... ok
+test b1_identical_content_two_agents_one_chain_one_change_is_one_revision_two_attestations_two_witnesses ... ok
+test b1_join_from_key_outside_creating_chain_without_change_scope_is_refused ... ok
+test b1_prune_by_chain_not_dominating_creating_chain_is_refused ... ok
+test b1_repeat_same_repo_did_idempotency_key_returns_first_wal_seq ... ok
+test b1_revision_records_round_trip_and_malformed_bytes_are_refused_typed ... ok
+test b1_rewrite_keeps_change_id_and_gets_new_changeset_id ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished
+
+# Command: cargo test --locked -p synapse-api --test b1_chained_revisions -- --test-threads=1
+test b1_api_join_and_prune_follow_the_creating_chain_of_real_f1_chains ... ok
+test b1_api_refuses_paths_outside_scope_foreign_authors_and_unknown_bases ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished

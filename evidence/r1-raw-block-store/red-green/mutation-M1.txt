@@ -1,0 +1,20 @@
+mutation M1: batch flush on the device skipped (ack without fdatasync)
+test: blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack
+diff --git a/crates/synapse-store/src/wal2.rs b/crates/synapse-store/src/wal2.rs
+index b163102..f00b681 100644
+--- a/crates/synapse-store/src/wal2.rs
++++ b/crates/synapse-store/src/wal2.rs
+@@ -476,7 +476,7 @@ impl SegFile {
+     fn sync_data(&self) -> std::io::Result<()> {
+         match self {
+             SegFile::Fs(f) => f.sync_data(),
+-            SegFile::Block { dev, .. } => dev.flush(),
++            SegFile::Block { .. } => Ok(()),
+         }
+     }
+ 
+---
+test blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack ... FAILED
+thread 'blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack' (1696465) panicked at crates/synapse-store/src/blockdev_tests.rs:547:9:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 72 filtered out; finished in 3.98s
+error: test failed, to rerun pass `-p synapse-store --lib`

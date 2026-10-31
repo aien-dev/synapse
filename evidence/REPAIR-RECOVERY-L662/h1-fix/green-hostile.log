@@ -1,0 +1,16 @@
+   Compiling synapse-git v0.1.0 (/home/drakestapleton/workspace/hermes-loop-synapse-H1-L664/crates/synapse-git)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.93s
+     Running tests/h1_hostile_repo.rs (/home/drakestapleton/workspace/targets/L664/green/debug/deps/h1_hostile_repo-3e7adececa1fa9f1)
+
+running 8 tests
+test h1_hostile_reference_linked_to_dev_zero_is_refused ... ok
+test h1_hostile_fifo_reference_is_refused_without_blocking ... ok
+test h1_hostile_oversized_reference_file_is_refused ... ok
+test h1_hostile_fifo_loose_object_is_refused_without_blocking ... ok
+test h1_detached_head_commit_is_collected ... ok
+test h1_hostile_reference_linked_outside_the_repository_is_refused ... ok
+test h1_hostile_fifo_packed_refs_and_head_are_refused_without_blocking ... ok
+test h1_hostile_delta_bomb_pack_is_refused_before_it_is_resolved ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.86s
+

@@ -15,9 +15,12 @@
 //!   `object` line opaque.
 //! * `Refs`: the repository's references and `HEAD` at import.
 //!
-//! The ledger is a pure function of the kind 10 records in `WalSeq` order: replay, a checkpoint
-//! (which keeps the records) and a live store rebuild the same map. Every check runs before the
-//! write ([`crate::SynapseStore::record_git_import`]); apply itself is total.
+//! The ledger is a pure function of the kind 10 records that took effect, in `WalSeq` order:
+//! replay, a checkpoint (which keeps the records) and a live store rebuild the same map. In a
+//! store opened with a seal key, kind 10 is a revision record like kinds 7, 8, 9 and 11: it is
+//! written sealed and applied only when its seal verifies against the chain so far (issue
+//! #101). Every check runs before the write ([`crate::SynapseStore::record_git_import`]);
+//! apply itself is total.
 
 use crate::WalRecord;
 use sha2::{Digest, Sha256};
@@ -293,7 +296,7 @@ impl GitBridgeLedger {
     /// Apply one kind 10 record (other records are ignored). Total: replay applies every
     /// record the same way on every replica.
     pub(crate) fn apply(&mut self, record: &WalRecord) {
-        let WalRecord::GitBridgeImported { repo_id, entry } = record else {
+        let WalRecord::GitBridgeImported { repo_id, entry, .. } = record else {
             return;
         };
         let repo = self.repos.entry(repo_id.clone()).or_default();
@@ -640,9 +643,10 @@ pub fn check_git_ref_names<'a>(
     Ok(())
 }
 
-/// Digest input of one kind 10 record for the state root: its canonical record encoding.
-pub(crate) fn record_digest_input(record: &WalRecord, h: &mut Sha256) {
-    if let Ok(bytes) = crate::codec::encode_record(record) {
+/// Digest input of one kind 10 record for the state root and the seal chain: its body
+/// (`repo_id | entry`) without the seal trailer, length first.
+pub(crate) fn record_digest_input(repo_id: &RepoId, entry: &GitBridgeEntry, h: &mut Sha256) {
+    if let Ok(bytes) = crate::codec::git_bridge_body(repo_id, entry) {
         h.update((bytes.len() as u64).to_le_bytes());
         h.update(&bytes);
     }
@@ -687,6 +691,7 @@ impl crate::SynapseStore {
             let record = WalRecord::GitBridgeImported {
                 repo_id: repo_id.clone(),
                 entry,
+                seal: None,
             };
             if let Some(sim) = sim.as_mut() {
                 let visible = |d: &BlobDigest| {
@@ -706,7 +711,7 @@ impl crate::SynapseStore {
             let visible = |d: &BlobDigest| self.blob_first_visible_seq.contains_key(d);
             let seq = match self.prepare_git_import(&self.git_bridge, &record, &blobs, &visible)? {
                 None => None,
-                Some(inline) => Some(self.append_revision_record(record, &inline)?),
+                Some(inline) => Some(self.append_revision_record(record, &inline, None)?),
             };
             out.push(seq);
         }
@@ -722,7 +727,7 @@ impl crate::SynapseStore {
         blobs: &[(BlobDigest, &'b [u8])],
         visible: &dyn Fn(&BlobDigest) -> bool,
     ) -> SynapseResult<Option<GitImportBlobs<'b>>> {
-        let WalRecord::GitBridgeImported { repo_id, entry } = record else {
+        let WalRecord::GitBridgeImported { repo_id, entry, .. } = record else {
             return Err(refused(
                 RefusalCode::GitObjectCorrupt,
                 "not a Git bridge record",
@@ -770,13 +775,19 @@ impl crate::SynapseStore {
 
     /// The exact WAL payload length `append_revision_record` gives `record` with `inline`
     /// blobs (v2: `u32 meta_len | meta | u32 count | (digest | u32 len | bytes)*`; v1: the
-    /// metadata, blobs go to files).
+    /// metadata, blobs go to files). A sealed store adds the seal trailer `tag | server key |
+    /// signature` (1 + 32 + 64 bytes) that the write seals `record` with.
     fn git_import_frame_len(
         &self,
         record: &WalRecord,
         inline: &[(BlobDigest, &[u8])],
     ) -> SynapseResult<usize> {
-        let meta = crate::codec::encode_record_with(record, self.codec)?.len();
+        let trailer = if self.revision_seal.is_some() && record.seal().is_none() {
+            1 + 32 + 64
+        } else {
+            0
+        };
+        let meta = crate::codec::encode_record_with(record, self.codec)?.len() + trailer;
         Ok(if self.v2_mode {
             inline
                 .iter()
@@ -858,6 +869,7 @@ mod tests {
             .map(|entry| WalRecord::GitBridgeImported {
                 repo_id: repo.clone(),
                 entry,
+                seal: None,
             })
             .collect()
     }

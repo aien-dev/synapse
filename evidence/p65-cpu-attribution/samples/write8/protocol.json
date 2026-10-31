@@ -1,0 +1,11 @@
+{
+  "schema": "synapse-bench/pmu-diag-protocol/v1",
+  "purpose": "Issue #65 Stage A stack-sampling run (not timed evidence): accepted submit, group commit, 8 agents.",
+  "seed": 65,
+  "fixture_rev": "e863c87b581ddd0d33183667d6d4842d2de1f4fe",
+  "reps": 1,
+  "order": "control-then-instrumented",
+  "affinity": ["unpinned"],
+  "legs": [ {"kind": "write", "arm": "group_commit", "agents": 8, "ops_per_agent": 1500} ],
+  "held_out": "Sampling only."
+}

@@ -510,9 +510,10 @@ pub fn project_github_pull_request(
     let repo_id = service.repo_id().clone();
     service.authorize_export("project_github_pr", req, now_ms)?;
 
-    let stored = service
-        .store()
-        .get_changeset(req.payload.changeset_id, None, None)?;
+    let stored =
+        service
+            .store()
+            .get_changeset_in_repo(&repo_id, req.payload.changeset_id, None, None)?;
     let head_git_oid = index
         .commit_for_changeset(req.payload.changeset_id)
         .ok_or_else(|| {
@@ -892,6 +893,44 @@ mod tests {
                 },
             )
             .unwrap();
+
+        // A shared store must not expose another repository through PR projection.
+        let mut foreign = svc
+            .store()
+            .get_changeset(cs2_id, None, None)
+            .unwrap()
+            .envelope;
+        foreign.repo_id = RepoId::new("example/foreign").unwrap();
+        foreign.parent_changesets.clear();
+        foreign.idempotency_key = IdempotencyKey::from_label("foreign-projection");
+        foreign.sign(&agent_key);
+        let foreign_id = match svc.store_mut().ingest_changeset(foreign, &[]).unwrap() {
+            IngestOutcome::Committed { changeset_id, .. } => changeset_id,
+            _ => unreachable!(),
+        };
+        let foreign_req = AuthenticatedRequest::sign_new(
+            &agent_key,
+            grant.clone(),
+            repo_id.clone(),
+            Capability::Publish,
+            Sha256::digest(b"foreign-projection-request").into(),
+            2_900,
+            0,
+            GitHubPrProjectionRequest {
+                pr_number: 43,
+                changeset_id: foreign_id,
+                pr_branch_ref: "refs/synapse/agent-head/foreign".to_string(),
+                title: "must not expose foreign evidence".to_string(),
+                github_merged: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            project_github_pull_request(&mut svc, &index, &foreign_req, 2_900)
+                .unwrap_err()
+                .code,
+            RefusalCode::ChangesetNotFound
+        );
 
         let pr_req = AuthenticatedRequest::sign_new(
             &agent_key,

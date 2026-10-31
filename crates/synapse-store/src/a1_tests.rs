@@ -135,7 +135,7 @@ fn v2_flags(dir: &Path) -> Vec<u8> {
 }
 
 /// Every v1 JSON record payload in both fixtures.
-fn fixture_json_records() -> Vec<Vec<u8>> {
+pub(super) fn fixture_json_records() -> Vec<Vec<u8>> {
     let mut out = Vec::new();
     for (kind, flags, json) in
         v1_log_frames(&fs::read(fixture_dir("v1-wal-log").join("wal.log")).unwrap())
@@ -189,7 +189,7 @@ fn a1_every_record_kind_matches_its_v1_json_form_in_both_directions() {
     );
 }
 
-fn edge_records() -> Vec<WalRecord> {
+pub(super) fn edge_records() -> Vec<WalRecord> {
     let key = SigningKey::from_bytes(&[0xE1; 32]);
     let a = BlobDigest::compute(b"a");
     let mut env = ChangesetEnvelope {
@@ -407,7 +407,7 @@ fn a1_documented_layout_decodes_and_every_non_canonical_form_is_refused() {
         Err(CodecRefusal::VersionUnsupported { found: 1 })
     );
     let mut k = review.clone();
-    k[1] = 11; // first unused kind (7 and 8 are the B1 revision records, 10 the H1 Git bridge; PR #88 claims 9)
+    k[1] = 12; // first unused kind (7, 8, 9 and 11 are revision records, 10 the H1 Git bridge)
     assert_eq!(kind(decode_record(&k, CAP)), "UnknownTag");
     let mut k0 = review.clone();
     k0[1] = 0;

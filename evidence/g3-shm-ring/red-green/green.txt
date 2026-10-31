@@ -1,0 +1,18 @@
+# Green (2026-10-16, rev 864aeca): cargo test --locked -p synapse-wire --test g3_ring
+     Running tests/g3_ring.rs (target/debug/deps/g3_ring-ac2101650dcb2e6c)
+test attached_peer_cannot_shrink_or_grow_the_sealed_region ... ok
+test hostile_writer_cannot_make_the_reader_accept_a_record_twice ... ok
+test hostile_reader_tail_is_refused_by_the_sender ... ok
+test ring_refusal_reaches_the_frame_transport_as_wire_ring_violation ... ok
+test attach_refuses_an_unsealed_wrong_size_or_mismatched_region ... ok
+test hostile_writer_bad_lengths_cannot_make_the_reader_panic_or_read_outside_the_ring ... ok
+test hostile_writer_index_wrap_cannot_make_the_reader_panic_or_read_outside_the_ring ... ok
+test negative_control_trusting_reader_panics_or_accepts_twice_on_the_same_inputs ... ok
+test honest_indices_wrap_past_u64_max_and_the_ring_end_without_loss ... ok
+test hostile_writer_torn_frames_are_refused_and_payloads_are_copied_out_before_validation ... ok
+test hostile_writer_random_pokes_never_panic_and_never_deliver_a_record_twice ... ok
+test ring_stream_carries_the_g1_session_and_acknowledges_durable_changes ... ok
+test model_test_no_frame_is_lost_or_duplicated ... ok
+test cross_process_ring_delivers_every_record_once_in_order ... ok
+test model_test_two_threads_two_mappings_no_record_lost_or_duplicated ... ok
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.89s

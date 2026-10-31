@@ -1,0 +1,323 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_api-6ea47c06b20eb2ec)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 31 filtered out; finished in 0.00s
+
+     Running tests/b1_chained_revisions.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/b1_chained_revisions-1093d0d9652e6f10)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/b4_revision_states.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/b4_revision_states-7ccfccef2742a3c3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/b5_derivation_attestation.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/b5_derivation_attestation-9cd76699ef41eb01)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running tests/c1_tree_digest.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/c1_tree_digest-e3820379d36be282)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/payload_digest_parity.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/payload_digest_parity-dacf0463b07154af)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_auth-7acbd1bb7d7e98b0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+     Running tests/f1_capability_chains.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/f1_capability_chains-2ea243f07a43349d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
+     Running tests/payload_digest_streaming.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/payload_digest_streaming-26fe15175a2d7c03)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_bench-ff0e3b8f4bedcee0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_bench-57799f139af8b52d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/verify-qualification.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/verify_qualification-4a7fe3813df08039)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running unittests src/bin/wire-transport.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/wire_transport-232af8e468a1d314)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/c1_tree_cache_bound.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/c1_tree_cache_bound-a1d535debdc70b16)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/c1_tree_parity.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/c1_tree_parity-8009bcc9a53428f8)
+
+running 1 test
+test c1_tree_and_diff_parity_with_git_on_gate4_fixture ... c1 gate4 fixture parity: base tree plus 400 changesets, tree and diff, per entry: all equal
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 32.10s
+
+     Running tests/crumb_synapse_qualification.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/crumb_synapse_qualification-0b7ddb0ee981164a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+     Running tests/store_repair_cli.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/store_repair_cli-f421ba62afa7e18d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_coord-9a803c56fb718270)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running unittests src/bin/synapse-coord.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_coord-6582b16ba529a298)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/hostile.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/hostile-4aacd66e6933b041)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
+     Running tests/identity.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/identity-f5d01ff84bdcbca9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests/plane.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/plane-7cb743d74818ecad)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_core-5cddeefcaaa0fd65)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_crumb-644531e8fa300796)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+
+     Running tests/parity.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/parity-2909841313d98fac)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/repo_root.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/repo_root-fdc4b5c8c34b5825)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_evidence-8dbc9e3efb0e68b2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_git-83f7f678f78d730d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+     Running tests/h1_git_bridge.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/h1_git_bridge-945779b89b4e90b0)
+
+running 1 test
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... real repository /home/drakestapleton/workspace/hermes-loop-synapse105-L662/.git: 2597 objects (214 commits), 30 refs, pack 85603955 bytes
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 16.56s
+
+     Running tests/h1_hostile_repo.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/h1_hostile_repo-3e7adececa1fa9f1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/h1_read_limits.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/h1_read_limits-ea9e71eb4998de11)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_radicle-c8ed495642d19e0f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/e0_identity_document.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/e0_identity_document-81c69c00bb23c8e9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_store-67e309c4eb45f3e9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 140 filtered out; finished in 0.00s
+
+     Running tests/a1_malformed_corpus.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/a1_malformed_corpus-48a6a6299254d049)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/b1_change_identity.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/b1_change_identity-f2cb1bc63ebc3dc1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/b4_revision_states.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/b4_revision_states-f614eb5b7c56fa8e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/b5_derived_record.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/b5_derived_record-74e1778e1d141b7c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_wire-4ed3d0abdebb57de)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/synapse-wire-fuzz.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/synapse_wire_fuzz-fcb4ff87bebb60bd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/g1_fuzz.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/g1_fuzz-9bbee4ea6ef9e55c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/g1_wire.rs (/home/drakestapleton/workspace/targets/L662/0d95893afc6309dc280befe77806975734af8148/debug/deps/g1_wire-6ce83511f18e00e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+   Doc-tests synapse_api
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_auth
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_bench
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_coord
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_crumb
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_evidence
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_git
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_radicle
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_store
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_wire
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -1,0 +1,9 @@
+   Compiling synapse-git v0.1.0 (/home/drakestapleton/workspace/hermes-loop-synapse-H1-L664/crates/synapse-git)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.33s
+     Running tests/h1_git_bridge.rs (/home/drakestapleton/workspace/targets/L664/red/debug/deps/h1_git_bridge-945779b89b4e90b0)
+
+running 1 test
+test h1_native_reader_resolves_symbolic_ref_chains_and_loose_shadowing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.30s
+

@@ -19,3 +19,6 @@ synapse-coord.workspace = true
 synapse-crumb.workspace = true
 synapse-evidence.workspace = true
 synapse-store.workspace = true
+
+[dev-dependencies]
+synapse-radicle.workspace = true

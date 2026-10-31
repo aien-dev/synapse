@@ -11,6 +11,10 @@
 //! walks only `dirs/`, `agents/` and `continuations/`. So the marker is invisible to it and
 //! survives its mutations and pruning (checked against the real binary by
 //! `scripts/crumb-coord-interop.sh`, I11).
+//!
+//! The hardened crumb.c (aien-architecture dbc688c8, PR #235) does read the marker: with a
+//! registered store id it refuses a root whose marker differs or is missing, and in unregistered
+//! mode it keeps the Rust-written marker byte-identical (same script, I13-I20).
 
 use crate::CoordError;
 use std::ffi::OsStr;

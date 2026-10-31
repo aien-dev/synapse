@@ -1,0 +1,23 @@
+# Green (2026-10-17, B5 commit bbe1734 on main 3d78efe; workspace 340 passed, 0 failed, 1 ignored; clippy -D warnings and fmt clean)
+
+# Command: cargo test --locked -p synapse-core --lib b5_ -- --test-threads=1
+test derivation::tests::b5_attestation_round_trips_and_refuses_malformed_bytes ... ok
+test derivation::tests::b5_attestation_signature_binds_every_field ... ok
+test derivation::tests::b5_path_collision_is_equal_or_below ... ok
+test derivation::tests::b5_server_witness_round_trips_and_is_not_an_agent ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.01s
+
+# Command: cargo test --locked -p synapse-store --test b5_derived_record -- --test-threads=1
+test b5_derived_revision_records_round_trip_and_malformed_bytes_are_refused_typed ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+# Command: cargo test --locked -p synapse-api --test b5_derivation_attestation -- --test-threads=1
+test b5_attestation_naming_a_different_rule_is_refused_at_admission_and_replay ... ok
+test b5_attestation_naming_different_inputs_is_refused_at_admission_and_replay ... ok
+test b5_attestation_signed_by_another_key_is_refused_at_admission_and_replay ... ok
+test b5_derived_revision_presented_with_an_agent_signature_it_does_not_have_is_refused ... ok
+test b5_recomputation_that_disagrees_is_refused_at_admission_and_replay ... ok
+test b5_replayed_attestation_is_refused_at_admission_and_replay ... ok
+test b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests ... ok
+test b5_unregistered_server_key_is_refused_at_admission_and_replay ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s

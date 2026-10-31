@@ -22,6 +22,8 @@ use crate::git_bridge::{
     GitBlobMapping, GitBridgeEntry, GitBridgeTarget, GitImportedCommit, GitImportedRefs,
     GitImportedTag, GitTreeMapping,
 };
+use crate::seal::REVISION_SEAL_TAG;
+use synapse_auth::CapabilityLink;
 use synapse_core::{FileMode, GitOid, PathMutation, TreeDigest};
 
 /// Codec version byte that starts every binary record and checkpoint content.
@@ -326,6 +328,7 @@ pub fn encode_record(record: &WalRecord) -> SynapseResult<Vec<u8>> {
             chain,
             admitted_at_ms,
             new_blobs,
+            seal,
         } => {
             w.bytes(&envelope.encode(), "envelope v2")?;
             put_chain(&mut w, chain)?;
@@ -334,21 +337,65 @@ pub fn encode_record(record: &WalRecord) -> SynapseResult<Vec<u8>> {
             for b in new_blobs {
                 w.raw(&b.0);
             }
+            put_seal(&mut w, seal);
         }
         WalRecord::ObsolescenceRecorded {
             marker,
             chain,
             recorded_at_ms,
+            seal,
         } => {
             w.bytes(&marker.encode(), "obsolescence marker")?;
             put_chain(&mut w, chain)?;
             w.u64(*recorded_at_ms);
+            put_seal(&mut w, seal);
         }
-        WalRecord::GitBridgeImported { repo_id, entry } => {
+        WalRecord::RevisionStateMoved {
+            state_move: m,
+            moved_at_ms,
+            seal,
+        } => {
+            w.repo(&m.repo_id)?;
+            w.raw(&m.changeset_id.0);
+            w.u8(m.to.tag_byte());
+            put_chain(&mut w, &m.chain)?;
+            w.u64(*moved_at_ms);
+            w.u64(m.signed_at_ms);
+            w.bytes(&m.leaf_link.encode(), "leaf link")?;
+            w.raw(&m.mover_key);
+            w.raw(&m.signature);
+            put_seal(&mut w, seal);
+        }
+        WalRecord::DerivedRevisionAdmitted {
+            derived,
+            chain,
+            admitted_at_ms,
+            seal,
+        } => {
+            w.bytes(&derived.encode(), "derived revision")?;
+            put_chain(&mut w, chain)?;
+            w.u64(*admitted_at_ms);
+            put_seal(&mut w, seal);
+        }
+        WalRecord::GitBridgeImported {
+            repo_id,
+            entry,
+            seal,
+        } => {
             w.repo(repo_id)?;
             put_git_bridge_entry(&mut w, entry)?;
+            put_seal(&mut w, seal);
         }
     }
+    Ok(w.0)
+}
+
+/// The body of a kind 10 record without its seal trailer, `repo_id | entry`: what the
+/// record digest (state root and seal chain) covers.
+pub(crate) fn git_bridge_body(repo_id: &RepoId, entry: &GitBridgeEntry) -> SynapseResult<Vec<u8>> {
+    let mut w = Writer(Vec::with_capacity(256));
+    w.repo(repo_id)?;
+    put_git_bridge_entry(&mut w, entry)?;
     Ok(w.0)
 }
 
@@ -424,6 +471,35 @@ fn put_git_bridge_entry(w: &mut Writer, e: &GitBridgeEntry) -> SynapseResult<()>
         }
     }
     Ok(())
+}
+
+/// The optional seal trailer of a revision record (issue #101): nothing when unsealed,
+/// else `1 u8 | server_key [32] | signature [64]`. Bytes after a body that do not open
+/// with the seal tag are refused as `TrailingBytes`.
+fn put_seal(w: &mut Writer, seal: &Option<RevisionSeal>) {
+    if let Some(seal) = seal {
+        w.u8(REVISION_SEAL_TAG);
+        w.raw(&seal.server_key);
+        w.raw(&seal.signature);
+    }
+}
+
+fn get_seal(r: &mut Reader) -> Decoded<Option<RevisionSeal>> {
+    if r.remaining() == 0 {
+        return Ok(None);
+    }
+    // Anything after the body that is not a seal is trailing bytes, as before seals.
+    if r.buf[r.pos] != REVISION_SEAL_TAG {
+        return Err(CodecRefusal::TrailingBytes {
+            at: r.pos,
+            count: r.remaining(),
+        });
+    }
+    r.u8()?;
+    Ok(Some(RevisionSeal {
+        server_key: r.array()?,
+        signature: r.array()?,
+    }))
 }
 
 fn put_chain(w: &mut Writer, chain: &ChainPath) -> SynapseResult<()> {
@@ -893,17 +969,56 @@ pub fn decode_record(bytes: &[u8], cap: u64) -> Result<WalRecord, CodecRefusal> 
                 chain,
                 admitted_at_ms,
                 new_blobs,
+                seal: get_seal(&mut r)?,
             }
         }
         8 => WalRecord::ObsolescenceRecorded {
             marker: r.embedded("obsolescence marker", ObsolescenceMarker::decode)?,
             chain: r.embedded("chain path", ChainPath::decode)?,
             recorded_at_ms: r.u64()?,
+            seal: get_seal(&mut r)?,
+        },
+        9 => {
+            let repo_id = r.repo()?;
+            let changeset_id = ChangesetId(r.array()?);
+            let at = r.pos;
+            let tag = r.u8()?;
+            let to = RevisionState::from_tag_byte(tag).ok_or(CodecRefusal::UnknownTag {
+                at,
+                field: "revision state",
+                tag,
+            })?;
+            let chain = r.embedded("chain path", ChainPath::decode)?;
+            let moved_at_ms = r.u64()?;
+            WalRecord::RevisionStateMoved {
+                state_move: SignedStateMove {
+                    repo_id,
+                    changeset_id,
+                    to,
+                    chain,
+                    signed_at_ms: r.u64()?,
+                    leaf_link: r.embedded("leaf link", CapabilityLink::decode)?,
+                    mover_key: r.array()?,
+                    signature: r.array()?,
+                },
+                moved_at_ms,
+                seal: get_seal(&mut r)?,
+            }
+        }
+        11 => WalRecord::DerivedRevisionAdmitted {
+            derived: r.embedded("derived revision", DerivedRevision::decode)?,
+            chain: r.embedded("chain path", ChainPath::decode)?,
+            admitted_at_ms: r.u64()?,
+            seal: get_seal(&mut r)?,
         },
         10 => {
             let repo_id = r.repo()?;
             let entry = get_git_bridge_entry(&mut r)?;
-            WalRecord::GitBridgeImported { repo_id, entry }
+            WalRecord::GitBridgeImported {
+                repo_id,
+                entry,
+                seal: get_seal(&mut r)?,
+            }
         }
         tag => {
             return Err(CodecRefusal::UnknownTag {
@@ -976,7 +1091,7 @@ pub struct CheckpointState {
     pub blob_first_visible_seq: BTreeMap<BlobDigest, WalSeq>,
     pub github_projections: BTreeMap<u64, GitHubPullRequestProjection>,
     pub canonical_heads: BTreeMap<RepoId, RadicleCanonicalHead>,
-    /// Revision records (kinds 7 and 8, and the H1 Git bridge kind 10) in sequence order (ADR 0003 B1). Written only when
+    /// Revision records (kinds 7 to 11; 10 is the H1 Git bridge) in sequence order (ADR 0003 B1, B4, B5, H1). Written only when
     /// non-empty, so checkpoints of stores without revisions keep their exact bytes.
     pub revision_log: Vec<(WalSeq, WalRecord)>,
 }
@@ -1134,7 +1249,7 @@ impl CheckpointState {
         }
     }
 
-    fn encode_content(&self) -> SynapseResult<Vec<u8>> {
+    pub(crate) fn encode_content(&self) -> SynapseResult<Vec<u8>> {
         self.check_keys()?;
         let mut w = Writer(Vec::with_capacity(4096));
         w.u8(CODEC_V2);
@@ -1173,7 +1288,7 @@ impl CheckpointState {
         Ok(w.0)
     }
 
-    fn decode_content(
+    pub(crate) fn decode_content(
         bytes: &[u8],
         checkpoint_seq: WalSeq,
         anchor_frame_sha256: [u8; 32],
@@ -1263,7 +1378,7 @@ impl CheckpointState {
                 let tag_at = r.pos + 4 + 1;
                 let bytes = r.bytes()?;
                 let record = decode_record(&bytes, r.cap)?;
-                if !matches!(record.kind_byte(), 7 | 8 | 10) {
+                if !matches!(record.kind_byte(), 7..=11) {
                     return Err(CodecRefusal::UnknownTag {
                         at: tag_at,
                         field: "revision record kind",

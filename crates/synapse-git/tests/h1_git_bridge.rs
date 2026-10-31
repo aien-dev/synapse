@@ -16,6 +16,99 @@ use synapse_git::pack::{decode_idx, PackReader};
 use synapse_git::{export_repository, GitRepository, ObjectKind};
 
 #[test]
+fn h1_native_reader_resolves_symbolic_ref_chains_and_loose_shadowing() {
+    let dir = temp_dir("symbolic-ref");
+    build_fixture(&dir);
+    let packed_target = git_text(&dir, &["rev-parse", "refs/heads/main"]);
+    let loose_target = git_text(&dir, &["rev-parse", "refs/heads/feature"]);
+    git(
+        &dir,
+        &["update-ref", "refs/remotes/origin/main", &packed_target],
+    );
+    git(&dir, &["pack-refs", "--all"]);
+    // The loose symbolic ref shadows the packed direct ref of the same name.
+    git(
+        &dir,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/main",
+            "refs/heads/feature",
+        ],
+    );
+    git(
+        &dir,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/alias",
+            "refs/remotes/origin/main",
+        ],
+    );
+    git(
+        &dir,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/alias",
+        ],
+    );
+
+    let (refs, _) = GitRepository::open(&dir.join(".git"))
+        .unwrap()
+        .refs()
+        .unwrap();
+    let resolved = GitOid::from_hex(&loose_target).unwrap();
+    for name in [
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/alias",
+        "refs/remotes/origin/main",
+    ] {
+        assert_eq!(refs.get(name), Some(&resolved), "resolved {name}");
+    }
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn h1_native_reader_refuses_symbolic_ref_cycles_and_dangling_targets() {
+    for (label, aliases) in [
+        (
+            "cycle",
+            vec![
+                ("refs/remotes/origin/one", "refs/remotes/origin/two"),
+                ("refs/remotes/origin/two", "refs/remotes/origin/one"),
+            ],
+        ),
+        (
+            "dangling",
+            vec![("refs/remotes/origin/HEAD", "refs/remotes/origin/missing")],
+        ),
+        (
+            "escaping",
+            vec![("refs/remotes/origin/HEAD", "../../outside")],
+        ),
+        (
+            "malformed",
+            vec![("refs/remotes/origin/HEAD", "refs/remotes//broken")],
+        ),
+    ] {
+        let dir = temp_dir(label);
+        build_fixture(&dir);
+        for (name, target) in aliases {
+            write(
+                &dir.join(".git"),
+                name,
+                format!("ref: {target}\n").as_bytes(),
+            );
+        }
+        let err = GitRepository::open(&dir.join(".git"))
+            .unwrap()
+            .refs()
+            .unwrap_err();
+        assert_eq!(err.code, RefusalCode::GitObjectCorrupt, "{label}: {err}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+#[test]
 fn h1_native_reader_reads_every_loose_object_exactly_as_git() {
     let dir = temp_dir("loose");
     build_fixture(&dir);

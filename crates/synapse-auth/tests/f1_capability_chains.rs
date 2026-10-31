@@ -234,6 +234,35 @@ fn paths(p: &[&str]) -> RequestScope {
 fn in_scope() -> RequestScope {
     paths(&["crates/synapse-auth/src/lib.rs"])
 }
+#[test]
+fn chained_authorization_backpressures_before_evaluating_request() {
+    use synapse_auth::{AuditOutcome, MAX_AUDIT_ENTRIES};
+    let mut fx = Fx::new();
+    let req = fx.request(&fx.s, fx.full_chain(), Capability::Propose, in_scope(), 42);
+    for _ in 0..MAX_AUDIT_ENTRIES {
+        fx.enforcer
+            .audit_log_mut()
+            .record(
+                NOW,
+                BoundaryKind::Api,
+                repo(),
+                "untrusted".into(),
+                Capability::Propose,
+                "wire_submit",
+                AuditOutcome::Refused {
+                    code: RefusalCode::AuthChainBroken,
+                    reason: "invalid".into(),
+                },
+            )
+            .unwrap();
+    }
+    let head = fx.enforcer.audit_log().verify_chain().unwrap();
+    assert_eq!(
+        fx.authorize(&req, 4),
+        Err(RefusalCode::BackpressureOverCapacity)
+    );
+    assert_eq!(fx.enforcer.audit_log().verify_chain().unwrap(), head);
+}
 
 // ---------------------------------------------------------------------------------------------
 // Property: no derived grant exceeds its parent.

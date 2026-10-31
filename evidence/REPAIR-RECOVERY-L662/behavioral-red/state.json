@@ -1,0 +1,51 @@
+{
+  "production_head": "5c6aad4701a44f3187487123f70753bd13ef0714",
+  "test_source_sha256": "1ff0b4d6cdd670b73d7f8e0510bf7ca0297ae08a79ff6e0898ba70cee09abf35",
+  "results": [
+    {
+      "case": "backup-overflow",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "120s",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "-p",
+        "synapse-store",
+        "r1_repair_backup_overflow_length_is_refused_without_panicking",
+        "--",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 101,
+      "expected_behavior_failure_observed": true
+    },
+    {
+      "case": "inherited-lock",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "120s",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "-p",
+        "synapse-store",
+        "r1_repair_parent_drop_releases_lock_despite_inherited_helper_fd",
+        "--",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 101,
+      "expected_behavior_failure_observed": true
+    }
+  ],
+  "complete": true
+}

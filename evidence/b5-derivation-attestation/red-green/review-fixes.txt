@@ -1,0 +1,63 @@
+# Review fixes for PR #95 (2026-10-17, on B5 head 50295c3): red before green
+# Review comment: aien-dev/synapse#95 issuecomment-6228539788, findings 1 and 5.
+
+## Fix 1: server key lookup bound to the repository (DerivationIdentityRepoMismatch)
+# Red: test written with only the new refusal code added; check_derivation unchanged.
+# Command: cargo test --locked -p synapse-api --test b5_derivation_attestation b5_identity_log_of_another_repository
+test b5_identity_log_of_another_repository_is_refused_at_admission_and_replay ... FAILED
+thread 'b5_identity_log_of_another_repository_is_refused_at_admission_and_replay' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:575:5:
+assertion `left == right` failed: refused at admission
+  left: Ok(())
+ right: Err(DerivationIdentityRepoMismatch)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.06s
+
+## Fix 2: admission-to-write sequence check in every build profile (WalSequenceGap)
+# Red (debug build): the debug_assert_eq! panics.
+# Command: cargo test --locked -p synapse-api --test b5_derivation_attestation b5_derivation_written_at
+test b5_derivation_written_at_another_sequence_than_it_was_checked_at_is_refused ... FAILED
+thread 'b5_derivation_written_at_another_sequence_than_it_was_checked_at_is_refused' panicked at crates/synapse-store/src/revision.rs:769:9:
+assertion `left == right` failed: derivation checked at the sequence it was written at
+  left: WalSeq(5)
+ right: WalSeq(4)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.05s
+
+# Red (release build): the record checked at seq 4 is admitted at seq 5.
+# Command: cargo test --release --locked -p synapse-api --test b5_derivation_attestation b5_derivation_written_at
+test b5_derivation_written_at_another_sequence_than_it_was_checked_at_is_refused ... FAILED
+thread 'b5_derivation_written_at_another_sequence_than_it_was_checked_at_is_refused' panicked at crates/synapse-api/tests/b5_derivation_attestation.rs:748:5:
+assertion `left == right` failed: refused with a typed error, not admitted and not a panic
+  left: Ok(WalSeq(5))
+ right: Err(WalSequenceGap)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.05s
+
+## Green, both fixes (debug build)
+# Command: cargo test --locked -p synapse-api --test b5_derivation_attestation
+test b5_attestation_naming_a_different_rule_is_refused_at_admission_and_replay ... ok
+test b5_attestation_naming_different_inputs_is_refused_at_admission_and_replay ... ok
+test b5_attestation_signed_by_another_key_is_refused_at_admission_and_replay ... ok
+test b5_derivation_written_at_another_sequence_than_it_was_checked_at_is_refused ... ok
+test b5_derived_revision_presented_with_an_agent_signature_it_does_not_have_is_refused ... ok
+test b5_identity_log_of_another_repository_is_refused_at_admission_and_replay ... ok
+test b5_recomputation_that_disagrees_is_refused_at_admission_and_replay ... ok
+test b5_replayed_attestation_is_refused_at_admission_and_replay ... ok
+test b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests ... ok
+test b5_unregistered_server_key_is_refused_at_admission_and_replay ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+## Green, both fixes (release build)
+# Command: cargo test --release --locked -p synapse-api --test b5_derivation_attestation
+test b5_attestation_naming_a_different_rule_is_refused_at_admission_and_replay ... ok
+test b5_attestation_naming_different_inputs_is_refused_at_admission_and_replay ... ok
+test b5_attestation_signed_by_another_key_is_refused_at_admission_and_replay ... ok
+test b5_derivation_written_at_another_sequence_than_it_was_checked_at_is_refused ... ok
+test b5_derived_revision_presented_with_an_agent_signature_it_does_not_have_is_refused ... ok
+test b5_identity_log_of_another_repository_is_refused_at_admission_and_replay ... ok
+test b5_recomputation_that_disagrees_is_refused_at_admission_and_replay ... ok
+test b5_replayed_attestation_is_refused_at_admission_and_replay ... ok
+test b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests ... ok
+test b5_unregistered_server_key_is_refused_at_admission_and_replay ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+## Workspace
+# Command: nice -n 19 cargo test --locked --workspace -j 4
+45 test binaries: 342 passed, 0 failed, 1 ignored

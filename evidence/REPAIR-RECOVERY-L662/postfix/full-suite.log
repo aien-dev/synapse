@@ -1,0 +1,850 @@
+   Compiling synapse-api v0.1.0 (/home/drakestapleton/workspace/hermes-loop-synapse105-L662/crates/synapse-api)
+   Compiling synapse-radicle v0.1.0 (/home/drakestapleton/workspace/hermes-loop-synapse105-L662/crates/synapse-radicle)
+   Compiling synapse-wire v0.1.0 (/home/drakestapleton/workspace/hermes-loop-synapse105-L662/crates/synapse-wire)
+   Compiling synapse-git v0.1.0 (/home/drakestapleton/workspace/hermes-loop-synapse105-L662/crates/synapse-git)
+   Compiling synapse-bench v0.1.0 (/home/drakestapleton/workspace/hermes-loop-synapse105-L662/crates/synapse-bench)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.82s
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_api-6ea47c06b20eb2ec)
+
+running 31 tests
+test advisory::tests::context_digest_and_guidance_come_from_the_base ... ok
+test advisory::tests::advisory_writes_nothing_to_the_coordination_store ... ok
+test crumb::tests::reads_chain_from_snapshot_for_files_and_directories ... ok
+test crumb::tests::refuses_without_read_capability_and_for_unknown_paths ... ok
+test crumb::tests::different_snapshots_give_different_digests ... ok
+test crumb::tests::oversized_and_symlink_crumbs_are_invalid_without_parsing ... ok
+test advisory::tests::refusals_over_cap_duplicate_invalid_and_without_read ... ok
+test tree::tests::diff_skips_equal_subtrees_and_reports_in_path_order ... ok
+test tree::tests::digest_is_independent_of_edit_order_and_history ... ok
+test tree::tests::overlay_matches_upserting_every_file_of_the_other_tree ... ok
+test advisory::tests::stale_context_is_flagged ... ok
+test tree::tests::upsert_replaces_file_dir_collisions_and_delete_prunes_empty_dirs ... ok
+test tree::tests::paging_with_offset_and_prefix_matches_a_flat_listing ... ok
+test advisory::tests::proposal_in_the_base_lineage_is_not_open ... ok
+test advisory::tests::separate_files_do_not_overlap ... ok
+test advisory::tests::same_file_collision_reports_the_open_proposal ... ok
+test advisory::tests::canonical_head_is_not_used_at_an_older_snapshot ... ok
+test advisory::tests::expired_claim_is_ignored ... ok
+test evidence::tests::matching_receipt_is_current_and_grants_nothing ... ok
+test evidence::tests::base_binds_one_context_per_mutated_directory ... ok
+test evidence::tests::changeset_editing_a_crumb_binds_both_contexts ... ok
+test evidence::tests::forged_or_unknown_receipts_are_refused ... ok
+test evidence::tests::wrong_source_or_directory_set_is_a_mismatch ... ok
+test advisory::tests::lock_without_holder_is_skipped ... ok
+test evidence::tests::context_from_another_base_is_stale_not_accepted ... ok
+test advisory::tests::pending_crumb_rewrite_after_a_promotion_is_flagged ... ok
+test tests::test_virtual_tree_and_diff_parity_against_git_cli ... ok
+test tests::test_conflicts_history_provenance_status_path_invalidation_and_watch_cursor_recovery ... ok
+test advisory::tests::own_claim_is_not_reported_as_conflict ... ok
+test advisory::tests::claim_held_by_another_agent_is_reported ... ok
+test tree::tests::bound_is_enforced_pinned_nodes_survive_and_evicted_nodes_are_reported ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests/b1_chained_revisions.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/b1_chained_revisions-1093d0d9652e6f10)
+
+running 2 tests
+test b1_api_refuses_paths_outside_scope_foreign_authors_and_unknown_bases ... ok
+test b1_api_join_and_prune_follow_the_creating_chain_of_real_f1_chains ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/b4_revision_states.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/b4_revision_states-7ccfccef2742a3c3)
+
+running 4 tests
+test b89_api_state_moves_must_be_signed_by_the_request_agent ... ok
+test b4_api_joining_identical_content_grants_no_ownership_of_a_private_revision ... ok
+test b4_api_move_to_canonical_outside_the_promotion_queue_is_refused ... ok
+test b4_api_private_revision_is_invisible_outside_its_owner_chain_with_real_f1_chains ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/b5_derivation_attestation.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/b5_derivation_attestation-9cd76699ef41eb01)
+
+running 12 tests
+test b5_derivation_written_at_another_sequence_than_it_was_checked_at_is_refused ... ok
+test b5_replica_refuses_a_state_move_that_does_not_verify ... ok
+test b5_replayed_attestation_is_refused_at_admission_and_replay ... ok
+test b5_recomputation_that_disagrees_is_refused_at_admission_and_replay ... ok
+test b5_attestation_signed_by_another_key_is_refused_at_admission_and_replay ... ok
+test b5_attestation_naming_different_inputs_is_refused_at_admission_and_replay ... ok
+test b5_derived_revision_presented_with_an_agent_signature_it_does_not_have_is_refused ... ok
+test b5_another_owners_private_revision_is_not_a_derivation_input ... ok
+test b5_identity_log_of_another_repository_is_refused_at_admission_and_replay ... ok
+test b5_attestation_naming_a_different_rule_is_refused_at_admission_and_replay ... ok
+test b5_unregistered_server_key_is_refused_at_admission_and_replay ... ok
+test b5_replica_recomputes_every_derived_revision_and_gets_the_same_digests ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests/c1_tree_digest.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/c1_tree_digest-e3820379d36be282)
+
+running 1 test
+test c1_tree_store_accounting_covers_the_real_heap_under_eviction ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+
+     Running tests/payload_digest_parity.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/payload_digest_parity-dacf0463b07154af)
+
+running 5 tests
+test a_payload_that_cannot_serialize_is_refused_with_the_same_code_and_message ... ok
+test refusal_codes_are_unchanged_for_every_recorded_submit ... ok
+test new_digest_equals_old_on_edge_values ... ok
+test new_digest_equals_old_for_every_recorded_request ... ok
+test new_digest_equals_old_over_the_a1_malformed_corpus ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.01s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_auth-7acbd1bb7d7e98b0)
+
+running 15 tests
+test digest::tests::decimal_table_matches_serde_json_for_every_u8 ... ok
+test state_move::tests::faults_map_to_auth_signature_invalid ... ok
+test tests::small_order_issuer_key_grant_is_refused ... ok
+test tests::small_order_agent_key_request_is_refused ... ok
+test tests::non_canonical_malleable_signatures_are_refused ... ok
+test state_move::tests::a_leaf_link_of_another_repository_is_refused ... ok
+test state_move::tests::a_move_signed_by_the_chain_leaf_verifies_for_root_and_derived_chains ... ok
+test key_cache::tests::chain_path_refusal_codes_for_bad_keys_are_unchanged_cold_and_warm ... ok
+test state_move::tests::a_bad_signature_or_a_signer_that_is_not_the_leaf_is_refused_typed ... ok
+test tests::test_capability_matrix_adversarial_refusals_and_audit_chain ... ok
+test digest::tests::every_write_size_around_the_staging_buffer_hashes_the_same_bytes ... ok
+test key_cache::tests::grant_path_refusal_codes_for_bad_keys_are_unchanged_cold_and_warm ... ok
+test key_cache::tests::invalid_key_bytes_are_refused_every_time_and_never_cached ... ok
+test key_cache::tests::each_key_decodes_once_across_repeated_authorizations ... ok
+test key_cache::tests::hostile_valid_key_churn_stays_at_the_cap ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/f1_capability_chains.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/f1_capability_chains-2ea243f07a43349d)
+
+running 11 tests
+test f1_link_bound_to_another_repository_is_refused ... ok
+test f1_link_and_chain_binary_encoding_is_canonical_and_malformed_bytes_are_refused ... ok
+test f1_stripped_chains_are_refused ... ok
+test f1_reordered_chains_are_refused ... ok
+test f1_out_of_scope_path_is_refused ... ok
+test f1_forged_chains_are_refused ... ok
+test f1_link_bound_to_another_audience_is_refused ... ok
+test f1_chain_with_an_ancestor_revoked_at_the_request_walseq_is_refused ... ok
+test f1_partitioned_rate_parent_keeps_only_what_it_has_not_handed_down ... ok
+test f1_property_no_derived_grant_exceeds_its_parent ... ok
+test f1_property_child_quotas_never_sum_above_the_parent ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.58s
+
+     Running tests/payload_digest_streaming.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/payload_digest_streaming-26fe15175a2d7c03)
+
+running 3 tests
+test payload_digest_streams_and_matches_the_materialized_json ... ok
+test signing_a_large_payload_never_materializes_its_json ... ok
+test authorizing_a_large_payload_never_materializes_its_json ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_bench-ff0e3b8f4bedcee0)
+
+running 76 tests
+test bounds::tests::energy_figures_come_from_counter_differences ... ok
+test bounds::tests::energy_figures_refuse_broken_windows ... ok
+test bounds::tests::protocol_refuses_too_few_repetitions_and_unaligned_device_chunks ... ok
+test bounds::tests::hidden_energy_device_refuses_with_instrument_unavailable_and_writes_nothing ... ok
+test bounds::tests::memory_copy_copies_and_counts_both_directions ... ok
+test bounds::tests::memory_read_touches_every_word_of_every_pass ... ok
+test bounds::tests::arm_sha256_matches_the_sha2_crate ... ok
+test bounds::tests::w1_source_with_a_different_digest_is_refused ... ok
+test bounds::tests::sha2_crate_probe_counts_hashed_bytes ... ok
+test bounds::tests::device_probes_write_then_read_back_the_pattern ... ok
+test conformance::tests::radicle_suite_cases_pass_and_live_case_skips_without_path ... ok
+test crypto_vectors::tests::decoder_refuses_malformed_corpora_with_typed_errors ... ok
+test bounds::tests::ed25519_probe_verifies_and_refuses_a_bad_signature ... ok
+test bounds::tests::measured_rates_are_labelled_achieved_never_bounds ... ok
+test crypto_vectors::tests::a0_instruction_code_gives_every_corpus_digest ... ok
+test crypto_vectors::tests::inner_portable_backend_is_in_use ... ok
+test bounds::tests::report_figures_are_recomputed_from_integers ... ok
+test bounds::tests::verify_accepts_sealed_evidence_as_written ... ok
+test bounds::tests::verify_refuses_a_protocol_changed_after_the_run ... ok
+test crypto_vectors::tests::corpus_round_trips_byte_for_byte ... ok
+test bounds::tests::verify_refuses_a_changed_report_figure ... ok
+test crypto_vectors::tests::corpus_pins_the_edge_case_decisions ... ok
+test bounds::tests::verify_refuses_a_changed_raw_sample ... ok
+test bounds::tests::frozen_overflowed_or_missing_counters_refuse_preflight ... ok
+test bounds::tests::advancing_counter_passes_preflight ... ok
+test crypto_vectors::tests::each_edge_case_is_in_the_corpus_and_catches_a_wrong_implementation ... ok
+test orchestrator::tests::ops_per_agent_respects_floor_and_g1_cap ... ok
+test orchestrator::tests::opt_all_requires_every_rep ... ok
+test crypto_vectors::tests::every_corpus_answer_is_the_rust_crates_answer ... ok
+test pmu_diag::tests::acceptance1_counted_reads_are_raw_and_attributed_per_core_class ... ok
+test pmu_diag::tests::acceptance1_disabled_mode_makes_no_system_call ... ok
+test pmu_diag::tests::acceptance1_discovery_verifies_encodings_and_core_classes ... ok
+test pmu_diag::tests::acceptance1_event_attr_is_user_only_inherited_counting ... ok
+test bounds::tests::errored_repetitions_are_counted_and_refused_beyond_the_protocol_allowance ... ok
+test pmu_diag::tests::acceptance1_malformed_reads_are_refused_never_repaired ... ok
+test host::tests::cpu_models_never_empty_and_free_bytes_readable ... ok
+test pmu_diag::tests::acceptance1_multiplexed_and_partial_residency_are_labelled_not_scaled ... ok
+test conformance::tests::wal_suite_stores_write_binary_codec_frames ... ok
+test pmu_diag::tests::acceptance1_permission_denied_is_instrument_unavailable_without_counts ... ok
+test pmu_diag::tests::acceptance1_schema_protocol_refuses_bad_plans ... ok
+test crypto_vectors::tests::sealed_corpus_digest_is_pinned ... ok
+test pmu_diag::tests::acceptance1_unsupported_or_missing_pmu_refuses_before_any_open ... ok
+test pmu_diag::tests::acceptance1_real_host_sample_is_counted_or_typed_unavailable ... ok
+test rng::tests::below_stays_in_bounds_and_shuffle_is_permutation ... ok
+test rng::tests::same_seed_same_sequence_and_derive_is_label_sensitive ... ok
+test crypto_vectors::tests::models_reproduce_dalek_on_the_whole_corpus ... ok
+test rusage::tests::window_counts_waited_child_cpu ... ok
+test fixture::tests::list_and_load_match_git_object_ids ... ok
+test segments::tests::fractions_are_bound_over_measured_and_refused_energy_stays_none ... ok
+test segments::tests::interval_bound_is_flush_shared_by_agents_until_crypto_dominates ... ok
+test stats::tests::nearest_rank_matches_definition ... ok
+test stats::tests::spread_reports_median_min_max ... ok
+test stats::tests::summary_withholds_tail_percentiles_for_small_samples ... ok
+test tests::utc_timestamp_has_iso_shape ... ok
+test workload::tests::hunk_insertion_preserves_original_lines ... ok
+test workload::tests::scenario_has_expected_shape_and_classes ... ok
+test crypto_vectors::tests::every_length_across_the_block_boundaries_is_in_the_corpus ... ok
+test workload::tests::write_workload_is_deterministic_sorted_and_unique ... ok
+test crypto_vectors::tests::sealed_corpus_matches_the_rust_crates_exactly ... ok
+test crypto_vectors::tests::rfc8032_vectors_match_the_rust_crate_and_are_in_the_corpus ... ok
+test crypto_vectors::tests::published_sha256_answers_match_the_rust_crate_and_are_in_the_corpus ... ok
+test pmu_diag::tests::acceptance1_crumb_leg_without_crumb_fixture_is_not_run ... ok
+test segments::tests::block_device_bench_never_writes_to_a_file_it_did_not_create ... ok
+test bounds::tests::verify_refuses_dropped_extra_or_resized_repetitions ... ok
+test segments::tests::block_device_bench_creates_formats_and_removes_its_own_device ... ok
+test pmu_diag::tests::acceptance3_report_recomputes_from_raw_and_digests_verify ... ok
+test pmu_diag::tests::acceptance1_verify_refuses_mismatched_pmu_output ... ok
+test bounds::tests::verify_checks_sha256sums_not_only_consistency ... ok
+test recovery::tests::recovery_and_import_probe_preserve_state_on_small_fixture ... ok
+test conformance::tests::git_suite_cases_pass ... ok
+test pmu_diag::tests::acceptance1_manifest_attribution_and_every_leg_kind_runs ... ok
+test git_arm::tests::all_git_arms_produce_identical_trees_for_the_same_proposal ... ok
+test conformance::tests::wal_suite_cases_pass ... ok
+test crypto_vectors::tests::workspace_sha2_is_built_with_its_aarch64_instruction_backend ... ok
+test conflict::tests::conflict_cell_matches_ground_truth_and_git_on_small_fixture ... ok
+test crypto_vectors::tests::portable_sha2_backend_gives_the_sealed_corpus ... ok
+
+test result: ok. 76 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.06s
+
+     Running unittests src/main.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_bench-57799f139af8b52d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/verify-qualification.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/verify_qualification-4a7fe3813df08039)
+
+running 6 tests
+test tests::accepts_pass_and_declared_gaps_outside_s05 ... ok
+test tests::refuses_missing_scenario_array ... ok
+test tests::refuses_bad_status_and_s05_gap ... ok
+test tests::refuses_missing_duplicate_or_unknown_scenarios ... ok
+test tests::refuses_unqualified_or_missing_verdict ... ok
+test tests::refuses_failed_or_missing_component_results ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/wire-transport.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/wire_transport-232af8e468a1d314)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/c1_tree_cache_bound.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/c1_tree_cache_bound-a1d535debdc70b16)
+
+running 2 tests
+test c1_cold_build_then_warm_paging_with_structural_sharing ... ok
+test c1_memory_stays_under_the_configured_bound_under_the_gate4_query_load ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.33s
+
+     Running tests/c1_tree_parity.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/c1_tree_parity-8009bcc9a53428f8)
+
+running 3 tests
+test c1_tree_and_diff_parity_with_git_on_gate4_fixture ... ignored, needs the Gate 4 fixture repository (run with --ignored where it is present)
+test c1_tree_and_diff_parity_with_git_on_edge_cases ... ok
+test c1_tree_parity_with_git_ls_tree_r_on_gate4_shaped_population ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.70s
+
+     Running tests/crumb_synapse_qualification.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/crumb_synapse_qualification-0b7ddb0ee981164a)
+
+running 15 tests
+test s08_child_claim_then_abort ... ok
+test s10_mixed_agents_crumb_c_and_synapse ... ok
+test s09_child_submit_then_crash ... ok
+test s07_self_signed_receipt_known_gap ... ok
+test s05_fifo_record_refused_advisory_answers ... ok
+test s03_stale_crumb_snapshot ... ok
+test s11_git_round_trip_crumb_bytes ... ok
+test s12_exit_rule_passing_run_is_not_publication ... ok
+test s04_expired_claims_ignored ... ok
+test s01_two_agents_same_file ... ok
+test s02_two_agents_separate_files ... ok
+test s05_forged_coordination_records ... ok
+test s06_forged_and_tampered_receipts_refused ... ok
+test s08_crash_mid_claim ... ok
+test s09_crash_mid_submit ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.47s
+
+     Running tests/store_repair_cli.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/store_repair_cli-f421ba62afa7e18d)
+
+running 1 test
+test store_repair_cli_reports_and_refuses_writes_without_intent ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_coord-9a803c56fb718270)
+
+running 9 tests
+test identity::tests::marker_decode_refuses_foreign_or_torn ... ok
+test identity::tests::root_resolution_order_matches_crumb_c ... ok
+test identity::tests::hex_and_marker_round_trip ... ok
+test json::tests::duplicate_key_overwrites_in_place ... ok
+test tests::key_dir_and_agent_stem ... ok
+test json::tests::numbers_and_errors ... ok
+test json::tests::round_trip_matches_c_layout ... ok
+test time::tests::iso_round_trip ... ok
+test tests::norm_path_rules ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/synapse-coord.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_coord-6582b16ba529a298)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/hostile.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/hostile-4aacd66e6933b041)
+
+running 11 tests
+test canon_refuses_fifo_and_oversize_promptly ... ok
+test fifo_record_in_dirs_is_refused_promptly ... ok
+test fifo_as_the_record_being_claimed_is_never_replaced ... ok
+test planted_lock_file_directory_is_refused ... ok
+test fifo_record_in_agents_is_refused_promptly ... ok
+test symlink_record_to_dev_zero_is_refused_without_reading ... ok
+test oversize_record_is_refused_and_cap_is_inclusive ... ok
+test non_record_entries_are_ignored_and_symlinked_dirs_not_followed ... ok
+test planted_lock_file_fifo_is_refused ... ok
+test fifo_store_id_is_refused_promptly ... ok
+test symlinked_dir_component_under_dirs_is_refused_and_not_written_through ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests/identity.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/identity-f5d01ff84bdcbca9)
+
+running 9 tests
+test expecting_open_refuses_missing_marker_and_creates_nothing ... ok
+test unreadable_marker_is_refused_not_rewritten ... ok
+test expectation_is_rechecked_inside_every_transaction ... ok
+test marker_survives_pruning_expiry_and_close ... ok
+test expecting_open_refuses_mismatch_and_writes_nothing ... ok
+test split_roots_are_silent_without_expectation_and_refused_with_it ... ok
+test first_mutation_creates_marker_and_sniff_shows_it ... ok
+test concurrent_first_opens_agree_on_one_id_threads_and_processes ... ok
+test crash_before_marker_link_leaves_no_marker_then_recovers ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+
+     Running tests/plane.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/plane-7cb743d74818ecad)
+
+running 12 tests
+test session_id_is_never_a_pid ... ok
+test record_bytes_match_crumb_c_layout ... ok
+test corrupt_record_is_refused_not_overwritten ... ok
+test t5_concurrent_processes_no_lost_updates_and_one_winner ... ok
+test crash_torn_tmp_files_are_ignored ... ok
+test t6_expiry_prunes_dead_lock_and_agent ... ok
+test t7_path_normalization_and_escape_refusal ... ok
+test t5_concurrent_threads_in_one_process ... ok
+test claim_block_update_whisper_close_history ... ok
+test t1_t2_t3_t4_cross_workspace_visibility_conflict_release ... ok
+test unknown_fields_survive_and_history_is_capped ... ok
+test crash_between_tmp_write_and_rename_leaves_store_valid ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_core-5cddeefcaaa0fd65)
+
+running 26 tests
+test derivation::tests::b5_path_collision_is_equal_or_below ... ok
+test revision::tests::b1_chain_path_dominance_is_prefix_order ... ok
+test revision_state::tests::b4_every_allowed_move_raises_the_rank_and_every_other_pair_is_refused ... ok
+test revision_state::tests::b4_state_tags_round_trip_and_unknown_tags_are_not_states ... ok
+test revision_state::tests::b4_owner_moves_never_reach_verified_or_canonical ... ok
+test derivation::tests::b5_attestation_round_trips_and_refuses_malformed_bytes ... ok
+test tests::test_radicle_did_key_roundtrip_and_real_spark_did ... ok
+test tree::tests::encoding_is_exact_and_digest_changes_with_any_field ... ok
+test tree::tests::hex_round_trips ... ok
+test tree::tests::empty_tree_digest_is_the_domain_separated_hash_of_a_zero_count ... ok
+test tree::tests::order_names_and_counts_are_enforced ... ok
+test tests::test_path_validation_refuses_traversal_and_git_dir ... ok
+test revision::tests::b1_envelope_v2_round_trips_and_refuses_malformed_bytes ... ok
+test derivation::tests::b5_server_witness_round_trips_and_is_not_an_agent ... ok
+test revision::tests::b1_envelope_v2_signature_binds_repo_key_and_time ... ok
+test revision::tests::b1_v2_changeset_id_covers_content_only_not_author_or_time ... ok
+test revision::tests::b1_witness_and_marker_round_trip ... ok
+test tests::test_distinct_identities_and_domain_separation ... ok
+test derivation::tests::b5_attestation_signature_binds_every_field ... ok
+test key_cache::tests::envelope_refusal_codes_for_bad_keys_are_unchanged_cold_and_warm ... ok
+test revision_state::tests::b4_property_random_move_sequences_never_move_backwards ... ok
+test key_cache::tests::warm_cache_admits_nothing_the_author_did_not_sign ... ok
+test key_cache::tests::envelope_author_key_decodes_once_across_repeated_validates ... ok
+test tests::test_unslop_zero_em_or_en_dashes_across_workspace ... ok
+test key_cache::tests::invalid_author_keys_are_refused_every_time_and_never_cached ... ok
+test key_cache::tests::hostile_author_churn_stays_at_the_cap ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_crumb-644531e8fa300796)
+
+running 16 tests
+test json::tests::parses_nested_document ... ok
+test json::tests::refuses_duplicate_keys ... ok
+test json::tests::refuses_depth_over_cap_and_accepts_cap ... ok
+test json::tests::refuses_loose_grammar ... ok
+test tests::chain_nearest_and_inherited_follow_explain ... ok
+test tests::classifies_each_dialect_without_coercion ... ok
+test tests::digest_covers_missing_invalid_and_bytes ... ok
+test tests::oversized_and_symlink_entries_are_invalid_with_digest ... ok
+test tests::refuses_bad_target_paths ... ok
+test tests::refuses_with_typed_reasons ... ok
+test yaml::tests::crlf_parses_like_lf_and_bare_cr_is_refused ... ok
+test yaml::tests::parses_synapse_root_shape ... ok
+test tests::invalid_entries_are_reported_and_skipped_for_nearest ... ok
+test yaml::tests::refuses_off_shape_documents ... ok
+test tests::size_cap_is_enforced_where_crumb_c_has_none ... ok
+test json::cost_tests::widest_object_parses_in_linear_time ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/parity.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/parity-2909841313d98fac)
+
+running 8 tests
+test pinned_source_matches_script ... ok
+test script_targets_match_test_targets ... ok
+test fixtures_stay_below_the_size_cap ... ok
+test chains_include_missing_intermediate_entries ... ok
+test sniff_matches_crumb_c ... ok
+test explain_matches_crumb_c ... ok
+test leaf_dialects_are_as_designed ... ok
+test validate_matches_crumb_c ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/repo_root.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/repo_root-fdc4b5c8c34b5825)
+
+running 1 test
+test repository_root_crumb_is_rfc0001 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_evidence-8dbc9e3efb0e68b2)
+
+running 15 tests
+test tests::digest_types_and_tags_are_distinct ... ok
+test tests::structural_rules_are_enforced ... ok
+test tests::outcome_must_agree_with_exit_status ... ok
+test tests::encode_refuses_what_validate_refuses ... ok
+test tests::unknown_version_is_refused ... ok
+test tests::executor_did_must_be_canonical ... ok
+test tests::round_trip_encoding_is_canonical ... ok
+test tests::wrong_domain_is_refused ... ok
+test tests::flaky_and_error_never_count_as_pass ... ok
+test tests::forged_signatures_are_refused ... ok
+test tests::identity_excludes_logs_and_timings ... ok
+test tests::malformed_bytes_are_refused_without_panic ... ok
+test tests::every_bound_field_is_tamper_evident ... ok
+test tests::total_record_size_is_capped ... ok
+test tests::every_single_byte_flip_is_refused ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_git-83f7f678f78d730d)
+
+running 15 tests
+test pack::tests::crc32_matches_the_ieee_check_value ... ok
+test object::tests::commit_and_tag_links_parse_and_keep_parent_order ... ok
+test inflate::tests::output_over_the_declared_size_is_refused ... ok
+test object::tests::loose_encoding_round_trips_and_ids_match_git_known_values ... ok
+test pack::tests::delta_copy_and_insert_apply_and_bad_deltas_are_refused ... ok
+test object::tests::tree_entries_parse_and_re_encode_exactly ... ok
+test inflate::tests::every_truncation_and_bit_flip_is_refused_or_exact_without_panic ... ok
+test pack::tests::large_offsets_use_the_eight_byte_table ... ok
+test repo::tests::a_file_swapped_for_a_pipe_or_link_after_the_check_is_refused_without_blocking ... ok
+test inflate::tests::prefix_decode_stops_at_its_length_without_inflating_the_rest ... ok
+test inflate::tests::stored_blocks_round_trip_and_report_consumed_length ... ok
+test pack::tests::written_pack_indexes_back_to_the_same_entries_and_objects ... ok
+test tests::test_advance_human_branch_requires_publish_capability_and_rejects_bypass ... ok
+test tests::test_git_materialization_fsck_clone_fetch_and_human_branch_protection ... ok
+test pack::tests::every_truncation_and_bit_flip_of_a_pack_is_refused_without_panic ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running tests/h1_git_bridge.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/h1_git_bridge-945779b89b4e90b0)
+
+running 7 tests
+test h1_real_repository_full_history_round_trips_with_identical_object_ids ... ignored
+test h1_damaged_or_incomplete_repositories_are_refused_typed ... ok
+test h1_native_reader_reads_every_loose_object_exactly_as_git ... ok
+test h1_native_indexer_resolves_reference_deltas_from_git_pack_objects ... ok
+test h1_native_reader_resolves_offset_deltas_in_git_packs_and_matches_git_idx ... ok
+test h1_full_history_exports_as_a_pack_with_identical_object_ids_and_fsck_strict_clean ... ok
+test h1_export_is_deterministic_and_never_overwrites_a_repository ... ok
+
+test result: ok. 6 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.78s
+
+     Running tests/h1_hostile_repo.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/h1_hostile_repo-3e7adececa1fa9f1)
+
+running 8 tests
+test h1_hostile_fifo_reference_is_refused_without_blocking ... ok
+test h1_hostile_reference_linked_to_dev_zero_is_refused ... ok
+test h1_hostile_oversized_reference_file_is_refused ... ok
+test h1_hostile_fifo_loose_object_is_refused_without_blocking ... ok
+test h1_detached_head_commit_is_collected ... ok
+test h1_hostile_fifo_packed_refs_and_head_are_refused_without_blocking ... ok
+test h1_hostile_reference_linked_outside_the_repository_is_refused ... ok
+test h1_hostile_delta_bomb_pack_is_refused_before_it_is_resolved ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.76s
+
+     Running tests/h1_read_limits.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/h1_read_limits-ea9e71eb4998de11)
+
+running 4 tests
+test h1_lock_files_under_refs_are_skipped ... ok
+test h1_pack_file_and_ref_file_caps_are_enforced ... ok
+test h1_per_object_cap_is_enforced_for_packed_and_loose_objects ... ok
+test h1_total_object_budget_is_enforced_for_packed_and_loose_objects ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_radicle-c8ed495642d19e0f)
+
+running 2 tests
+test tests::test_real_host_radicle_storage_sigrefs_verification ... ok
+test tests::test_radicle_quorum_and_all_five_split_brain_cases ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/e0_identity_document.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/e0_identity_document-81c69c00bb23c8e9)
+
+running 6 tests
+test e0_genesis_needs_its_own_threshold_and_a_valid_document ... ok
+test e0_edit_signed_by_threshold_applies ... ok
+test e0_removed_executor_later_receipts_are_refused ... ok
+test e0_edit_signed_by_fewer_than_threshold_is_refused ... ok
+test e0_edits_chain_and_cannot_be_replayed_or_reordered ... ok
+test e0_binary_format_round_trips_and_refuses_malformed_bytes ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_store-67e309c4eb45f3e9)
+
+running 139 tests
+test a1_tests::a1_documented_layout_decodes_and_every_non_canonical_form_is_refused ... ok
+test a1_tests::a1_encoder_refuses_a_repository_id_that_rejects_validation ... ok
+test a1_tests::a1_checkpoint_state_matches_its_v1_json_form_in_both_directions ... ok
+test a1_tests::a1_v1_readers_refuse_the_tombstone ... ok
+test a1_tests::a1_edge_records_match_their_json_form_in_both_directions ... ok
+test a1_tests::a1_state_root_helpers_match_the_store ... ok
+test a1_tests::a1_every_record_kind_matches_its_v1_json_form_in_both_directions ... ok
+
+running 1 test
+
+running 1 test
+
+running 1 test
+test a1_tests::a1_codec_never_goes_back_and_never_runs_ahead_of_the_migration ... ok
+test a1_tests::a1_frame_length_cap_is_enforced_on_write_and_on_replay ... ok
+test a1_tests::a1_v1_checkpoint_ahead_of_checkpoint_v2_is_refused ... ok
+test blockdev_a2_suite::r1_suite_stores_are_raw_block_stores ... ok
+test blockdev_a2_suite::segment_tests::a2_segment_index_round_trips_and_refuses_damage ... ok
+test a1_tests::a1_damaged_checkpoint_v2_is_refused ... ok
+
+running 1 test
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_log ... ok
+test a1_tests::a1_v1_records_appended_in_the_crash_window_are_refused ... ok
+test blockdev_tests::r1_classifies_known_signatures ... ok
+test blockdev_tests::r1_every_signature_has_a_pin_test ... ok
+test blockdev_tests::r1_a_second_opener_of_the_device_is_refused ... ok
+test blockdev_tests::r1_failed_device_flush_acknowledges_nothing ... ok
+test a1_tests::a1_stale_checkpoint_v1_beside_checkpoint_v2_recovers_wal_log ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_log ... ok
+test blockdev_tests::r1_lost_newest_superblock_never_drops_acknowledged_changes ... ok
+test blockdev_tests::r1_full_device_refuses_the_batch_and_keeps_every_ack ... ok
+test a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_log ... ok
+test blockdev_tests::r1_opens_only_the_configured_path ... ok
+test blockdev_tests::r1_sig_btrfs ... ok
+test blockdev_tests::r1_sig_btrfs_256g ... ok
+test blockdev_tests::r1_sig_btrfs_64m ... ok
+test blockdev_tests::r1_sig_exfat ... ok
+test blockdev_tests::r1_sig_ext ... ok
+test blockdev_tests::r1_sig_f2fs ... ok
+test blockdev_tests::r1_sig_fat16 ... ok
+test blockdev_tests::r1_sig_fat32 ... ok
+test blockdev_tests::r1_sig_gpt ... ok
+test blockdev_tests::r1_sig_gpt_4k ... ok
+test blockdev_tests::r1_sig_gpt_backup ... ok
+test blockdev_tests::r1_sig_gpt_backup_4k ... ok
+test blockdev_tests::r1_sig_iso9660 ... ok
+test blockdev_tests::r1_sig_luks ... ok
+test blockdev_tests::r1_sig_lvm0 ... ok
+test blockdev_tests::r1_sig_lvm1 ... ok
+test blockdev_tests::r1_sig_lvm2 ... ok
+test blockdev_tests::r1_sig_lvm3 ... ok
+test blockdev_tests::r1_sig_mbr ... ok
+test blockdev_tests::r1_sig_md_0_90 ... ok
+test blockdev_tests::r1_sig_md_1_0 ... ok
+test blockdev_tests::r1_sig_md_1_1 ... ok
+test blockdev_tests::r1_sig_md_1_2 ... ok
+test blockdev_tests::r1_sig_ntfs ... ok
+test blockdev_tests::r1_sig_squashfs ... ok
+test blockdev_tests::r1_sig_swap ... ok
+test blockdev_tests::r1_sig_swap_16k ... ok
+test blockdev_tests::r1_sig_swap_64k ... ok
+test blockdev_tests::r1_sig_swap_old ... ok
+test blockdev_tests::r1_sig_xfs ... ok
+test blockdev_tests::r1_sig_zfs_l0 ... ok
+test blockdev_tests::r1_sig_zfs_l0_be ... ok
+test blockdev_tests::r1_sig_zfs_l1 ... ok
+test blockdev_tests::r1_sig_zfs_l1_be ... ok
+test blockdev_tests::r1_sig_zfs_l2 ... ok
+test blockdev_tests::r1_sig_zfs_l2_be ... ok
+test blockdev_tests::r1_sig_zfs_l3 ... ok
+test blockdev_tests::r1_sig_zfs_l3_be ... ok
+test blockdev_tests::r1_refuses_unknown_label_bytes_and_blank_devices_without_format ... ok
+test blockdev_tests::r1_superblock_falls_back_to_the_older_copy_when_the_newest_is_damaged ... ok
+test blockdev_tests::repair_tests::r1_repair_backup_overflow_length_is_refused_without_panicking ... ok
+test a1_tests::a1_record_prepared_before_the_migration_commits_in_the_new_codec ... ok
+test blockdev_tests::repair_tests::r1_repair_holds_the_exclusive_lock ... ok
+test blockdev_a2_suite::segment_tests::a2_flush_failure_batch_sync_in_new_segment_acks_nothing ... ok
+test blockdev_a2_suite::segment_tests::a2_flush_failure_directory_flush_of_new_segment_acks_nothing ... ok
+test blockdev_tests::r1_refuses_a_device_whose_signature_is_only_at_its_end ... ok
+test blockdev_a2_suite::segment_tests::a2_crash_between_payload_and_index_keeps_every_ack ... ok
+test blockdev_tests::repair_tests::r1_repair_refuses_a_foreign_device ... ok
+test blockdev_tests::repair_tests::r1_repair_parent_drop_releases_lock_despite_inherited_helper_fd ... ok
+test blockdev_tests::repair_tests::r1_repair_intact_image_has_nothing_to_do_and_never_writes ... ok
+test a1_tests::a1_covered_json_frames_then_binary_frames_recover_wal_v2_log ... ok
+test blockdev_a2_suite::segment_tests::a2_directory_flush_precedes_every_batch_in_a_new_segment ... ok
+test a1_tests::a1_crash_before_tombstone_recovers_wal_v2_log ... ok
+test blockdev_tests::repair_tests::r1_repair_report_lists_the_records_past_the_older_checkpoint ... ok
+test blockdev_tests::repair_tests::r1_repair_refuses_to_roll_forward_a_slot_without_batches ... ok
+test blockdev_a2_suite::segment_tests::a2_crash_after_segment_index_before_checkpoint_keeps_every_ack ... ok
+test a1_tests::a1_first_v2_checkpoint_records_last_v1_root_and_chains_wal_v2_log ... ok
+test blockdev_tests::repair_tests::r1_repair_adopt_older_backs_up_drops_only_the_range_and_records_it ... ok
+test blockdev_tests::repair_tests::r1_repair_log_that_does_not_verify_refuses_the_mount ... ok
+
+running 1 test
+test blockdev_tests::repair_tests::r1_repair_interrupted_adopt_finishes_without_a_second_record ... ok
+test blockdev_a2_suite::segment_tests::a2_torn_segment_crash_mid_batch_keeps_every_ack ... ok
+test blockdev_tests::repair_tests::r1_repair_roll_forward_recovers_every_record_byte_identical ... ok
+test group_tests::test_crc32c_hardware_matches_portable ... ok
+test blockdev_a2_suite::segment_tests::a2_crash_after_new_segment_file_before_directory_flush_keeps_every_ack ... ok
+test blockdev_a2_suite::segment_tests::a2_torn_segment_with_data_after_it_fails_closed_under_both_policies ... ok
+test blockdev_a2_suite::segment_tests::a2_checkpoint_keeps_blobs_in_segments_across_reopen ... ok
+test revision::b4_tests::b4_replay_refuses_a_forged_move_to_verified ... ok
+test blockdev_tests::r1_refuses_a_device_carrying_a_filesystem_or_partition_signature ... ok
+test revision::b4_tests::b89_a_forger_minted_leaf_link_verifies_but_never_owns_a_revision ... ok
+test group_tests::test_v1_checkpoint_crash_window_reopens_and_skips_covered_frames ... ok
+test revision::b4_tests::b89_state_root_record_digest_covers_the_signature_fields ... ok
+test revision::b4_tests::b89_forged_owner_move_resealed_in_the_wal_changes_nothing_on_replay ... ok
+test blockdev_a2_suite::segment_tests::a2_pre_a2_stores_replay_and_switch_to_segments ... ok
+test revision::b4_tests::b89_signed_owner_move_round_trips_replay_checkpoint_and_compaction ... ok
+test revision::b4_tests::s101_removed_reordered_or_edited_sealed_records_break_the_chain ... ok
+test group_tests::test_duplicate_idempotency_keys_inside_one_batch ... ok
+test revision::b4_tests::s101_seal_trailer_round_trips_and_malformed_trailers_are_refused_typed ... ok
+test revision::b4_tests::b89_torn_tail_compaction_drops_unverified_moves_so_strict_recovery_accepts_the_store ... ok
+test a1_tests::a1_fresh_store_writes_binary_frames_and_records_the_empty_v1_root ... ok
+
+running 1 test
+test revision::b4_tests::s101_appended_unsealed_records_change_nothing_and_compaction_restores_strict ... ok
+
+running 1 test
+test group_tests::test_shutdown_drains_queued_submissions_and_refuses_new_ones ... ok
+test group_tests::test_concurrent_submitters_acks_unique_contiguous_and_durable_before_ack ... ok
+
+running 1 test
+test revision::b4_tests::s101_whole_log_rewrite_swapping_an_admission_chain_changes_nothing_on_sealed_replay ... ok
+test revision::b4_tests::s101_group_commit_store_seals_and_replays ... ok
+test revision::b4_tests::s101_sealed_store_round_trips_replay_checkpoint_and_compaction ... ok
+test group_tests::test_v2_upgrade_marker_is_atomic_and_survives_a_stray_temp_file ... ok
+test segment_tests::a2_segment_index_round_trips_and_refuses_damage ... ok
+
+running 1 test
+test group_tests::test_v1_store_upgrades_to_v2_with_continuous_chain ... ok
+test group_tests::test_rollback_failure_poisons_store_until_reopen ... ok
+test segment_tests::a2_flush_failure_batch_sync_in_new_segment_acks_nothing ... ok
+test tests::test_crc32c_standard_rfc3720_vector ... ok
+test segment_tests::a2_directory_flush_precedes_every_batch_in_a_new_segment ... ok
+test segment_tests::a2_crash_after_new_segment_file_before_directory_flush_keeps_every_ack ... ok
+
+running 1 test
+test segment_tests::a2_flush_failure_directory_flush_of_new_segment_acks_nothing ... ok
+test tests::test_idempotent_ingest_snapshot_reads_and_deterministic_replay ... ok
+test segment_tests::a2_crash_after_segment_index_before_checkpoint_keeps_every_ack ... ok
+test segment_tests::a2_crash_between_payload_and_index_keeps_every_ack ... ok
+test tests::test_fault_injection_crash_before_wal_and_torn_frames_no_phantom_visibility ... ok
+test tests::test_compaction_checkpoint_and_garbage_collection ... ok
+test segment_tests::a2_checkpoint_keeps_blobs_in_segments_across_reopen ... ok
+test segment_tests::a2_torn_segment_crash_mid_batch_keeps_every_ack ... ok
+test tests::test_subprocess_crash_recovery_no_lost_ack_and_no_phantom_visibility ... ok
+test segment_tests::a2_torn_segment_with_data_after_it_fails_closed_under_both_policies ... ok
+test tests::test_wal_crc_chain_and_sequence_corruption_refusals ... ok
+test group_tests::test_corrupt_last_batch_with_zero_sector_in_blob_is_not_dropped ... ok
+test segment_tests::a2_pre_a2_stores_replay_and_switch_to_segments ... ok
+test group_tests::test_injected_sync_failure_acks_nothing_and_retry_commits_once ... ok
+test group_tests::test_group_commit_roundtrip_reopen_and_legacy_policy_refusal ... ok
+test group_tests::test_injected_write_failure_acks_nothing_and_retry_commits_once ... ok
+test group_tests::test_torn_last_sector_with_short_tail_is_truncatable ... ok
+test group_tests::test_subprocess_crash_mid_batch_no_lost_ack_no_phantom ... ok
+test group_tests::test_v2_checkpoint_crash_window_reopens_and_skips_covered_frames ... ok
+test blockdev_tests::r1_power_cut_at_every_write_boundary_keeps_every_ack ... ok
+test revision::b4_tests::b4_property_forged_record_sequences_never_move_a_revision_backwards ... ok
+
+test result: ok. 139 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.50s
+
+     Running tests/a1_malformed_corpus.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/a1_malformed_corpus-48a6a6299254d049)
+
+running 2 tests
+test a1_malformed_frame_corpus_is_refused_typed_without_panic_or_allocation_above_the_cap ... ok
+test a1_resealed_corpus_reaches_the_decoder_and_is_refused_or_canonical ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.58s
+
+     Running tests/b1_change_identity.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/b1_change_identity-f2cb1bc63ebc3dc1)
+
+running 8 tests
+test b1_revision_records_round_trip_and_malformed_bytes_are_refused_typed ... ok
+test b1_rewrite_keeps_change_id_and_gets_new_changeset_id ... ok
+test b1_join_from_key_outside_creating_chain_without_change_scope_is_refused ... ok
+test b1_divergence_two_live_successors_is_detected ... ok
+test b1_repeat_same_repo_did_idempotency_key_returns_first_wal_seq ... ok
+test b1_prune_by_chain_not_dominating_creating_chain_is_refused ... ok
+test b1_identical_content_two_agents_one_chain_one_change_is_one_revision_two_attestations_two_witnesses ... ok
+test b1_every_v1_changeset_id_still_resolves_to_its_record ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+     Running tests/b4_revision_states.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/b4_revision_states-f614eb5b7c56fa8e)
+
+running 5 tests
+test b4_state_move_records_round_trip_and_malformed_bytes_are_refused_typed ... ok
+test b4_joining_identical_content_grants_no_ownership_of_a_private_revision ... ok
+test b4_any_move_to_canonical_outside_the_promotion_queue_is_refused ... ok
+test b4_private_revision_is_invisible_to_every_key_outside_its_owner_chain ... ok
+test b4_property_random_operation_sequences_never_move_a_revision_backwards ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.37s
+
+     Running tests/b5_derived_record.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/b5_derived_record-74e1778e1d141b7c)
+
+running 1 test
+test b5_derived_revision_records_round_trip_and_malformed_bytes_are_refused_typed ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_wire-4ed3d0abdebb57de)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/synapse-wire-fuzz.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/synapse_wire_fuzz-fcb4ff87bebb60bd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/g1_fuzz.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/g1_fuzz-9bbee4ea6ef9e55c)
+
+running 7 tests
+test fuzz_regression_many_scope_paths_stay_under_allocation_cap ... ok
+test negative_control_fuzzer_finds_planted_read_past_frame ... ok
+test negative_control_fuzzer_finds_planted_allocation_over_cap ... ok
+test negative_control_fuzzer_finds_planted_panic ... ok
+test negative_control_fuzzer_finds_planted_non_canonical_accept ... ok
+test every_malformed_frame_in_fuzz_corpus_is_refused_with_typed_refusal ... ok
+test fuzzing_frame_decoder_finds_no_panic_no_read_past_frame_no_allocation_over_cap ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.93s
+
+     Running tests/g1_wire.rs (/home/drakestapleton/workspace/targets/L662/5c6aad4701a44f3187487123f70753bd13ef0714/debug/deps/g1_wire-6ce83511f18e00e6)
+
+running 8 tests
+test malformed_body_is_refused_with_typed_refusal ... ok
+test malformed_header_is_refused_with_typed_refusal ... ok
+test every_frame_kind_round_trips_to_identical_bytes ... ok
+test stream_reader_refuses_length_over_cap_before_reading_the_body ... ok
+test decoder_never_reads_past_a_frame ... ok
+test server_refuses_protocol_violations_with_typed_refusals ... ok
+test server_closes_connection_on_frame_before_hello_or_malformed_frame ... ok
+test have_want_sends_only_missing_chunks_and_acknowledges_durable_changes ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+   Doc-tests synapse_api
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_auth
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_bench
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_coord
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_crumb
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_evidence
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_git
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_radicle
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_store
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests synapse_wire
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

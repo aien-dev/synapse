@@ -192,6 +192,51 @@ enum HeadState {
     Detached(GitOid),
 }
 
+enum RefValue {
+    Direct(GitOid),
+    Symbolic(String),
+}
+
+fn resolve_ref(
+    name: &str,
+    refs: &BTreeMap<String, RefValue>,
+    resolved: &mut BTreeMap<String, GitOid>,
+) -> SynapseResult<GitOid> {
+    let mut cursor = name.to_string();
+    let mut path = Vec::new();
+    let mut visiting = BTreeSet::new();
+    let oid = loop {
+        if let Some(oid) = resolved.get(&cursor) {
+            break *oid;
+        }
+        if !visiting.insert(cursor.clone()) {
+            return Err(corrupt(format!("symbolic reference cycle at {cursor}")));
+        }
+        match refs.get(&cursor) {
+            Some(RefValue::Direct(oid)) => break *oid,
+            Some(RefValue::Symbolic(target)) => {
+                if !valid_ref_name(target) {
+                    return Err(corrupt(format!(
+                        "invalid symbolic reference target {target:?}"
+                    )));
+                }
+                path.push(cursor);
+                cursor = target.clone();
+            }
+            None => {
+                return Err(corrupt(format!(
+                    "symbolic reference {cursor} has no target"
+                )))
+            }
+        }
+    };
+    resolved.insert(cursor, oid);
+    for alias in path {
+        resolved.insert(alias, oid);
+    }
+    Ok(oid)
+}
+
 impl GitRepository {
     /// Open `git_dir` with the default [`ReadLimits`].
     pub fn open(git_dir: &Path) -> SynapseResult<Self> {
@@ -342,7 +387,7 @@ impl GitRepository {
     /// returns the branch `HEAD` points to, if symbolic. Every file read must be a regular file
     /// within its cap; a symbolic link, pipe or device anywhere under `refs/` is refused.
     pub fn refs(&self) -> SynapseResult<(BTreeMap<String, GitOid>, Option<String>)> {
-        let mut refs = BTreeMap::new();
+        let mut ref_values = BTreeMap::new();
         let packed = self.git_dir.join("packed-refs");
         if let Some(bytes) = read_regular(&packed, self.limits.max_packed_refs_bytes)? {
             let text =
@@ -354,7 +399,10 @@ impl GitRepository {
                 let (hex, name) = line
                     .split_once(' ')
                     .ok_or_else(|| corrupt("malformed packed-refs line"))?;
-                refs.insert(name.to_string(), GitOid::from_hex(hex)?);
+                if !valid_ref_name(name) {
+                    return Err(corrupt(format!("invalid packed reference name {name:?}")));
+                }
+                ref_values.insert(name.to_string(), RefValue::Direct(GitOid::from_hex(hex)?));
             }
         }
         let root = self.git_dir.join("refs");
@@ -390,14 +438,29 @@ impl GitRepository {
                 let text = std::str::from_utf8(&bytes)
                     .map_err(|_| corrupt(format!("reference {rel} is not UTF-8")))?;
                 let value = text.trim_end();
-                if value.starts_with("ref: ") {
-                    // Symbolic refs other than HEAD (for example refs/remotes/origin/HEAD)
-                    // name another ref; the target is exported on its own.
-                    continue;
+                if !valid_ref_name(&rel) {
+                    return Err(corrupt(format!("invalid reference name {rel:?}")));
                 }
-                refs.insert(rel, GitOid::from_hex(value)?);
+                if let Some(target) = value.strip_prefix("ref: ") {
+                    if !valid_ref_name(target) {
+                        return Err(corrupt(format!(
+                            "symbolic reference {rel} has invalid target {target:?}"
+                        )));
+                    }
+                    ref_values.insert(rel, RefValue::Symbolic(target.to_string()));
+                } else {
+                    ref_values.insert(rel, RefValue::Direct(GitOid::from_hex(value)?));
+                }
             }
         }
+        let mut resolved_refs = BTreeMap::new();
+        for name in ref_values.keys() {
+            resolve_ref(name, &ref_values, &mut resolved_refs)?;
+        }
+        let refs = ref_values
+            .keys()
+            .map(|name| (name.clone(), resolved_refs[name]))
+            .collect();
         let head = match self.head_state()? {
             HeadState::Symbolic(name) => Some(name),
             HeadState::Missing | HeadState::Detached(_) => None,

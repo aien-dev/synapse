@@ -1,0 +1,61 @@
+{
+  "source_inputs": {
+    "crates/synapse-store/src/blockdev.rs": "5210b7fc7c075a0488faa7b2e9e90004eb9021f1a9e9169a2b24c023f6b493b5",
+    "crates/synapse-store/src/blockdev/repair.rs": "1a439f7d9d37902249be9f04d4a03a61209ce4b430c44131c4da8a17b9172beb",
+    "crates/synapse-store/src/blockdev_tests.rs": "1ff0b4d6cdd670b73d7f8e0510bf7ca0297ae08a79ff6e0898ba70cee09abf35"
+  },
+  "fixture_pin": "1b6e340d48417dfbcfe2df56d48a0696a3a9b250",
+  "results": [
+    {
+      "gate": "c1-fixture",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "-p",
+        "synapse-bench",
+        "--test",
+        "c1_tree_parity",
+        "c1_tree_and_diff_parity_with_git_on_gate4_fixture",
+        "--",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "status": "PASS"
+    },
+    {
+      "gate": "h1-real-repository",
+      "command": [
+        "timeout",
+        "--signal=TERM",
+        "20m",
+        "/home/drakestapleton/.local/bin/quiet-build",
+        "cargo",
+        "test",
+        "--locked",
+        "-j",
+        "6",
+        "-p",
+        "synapse-git",
+        "--test",
+        "h1_git_bridge",
+        "h1_real_repository_full_history_round_trips_with_identical_object_ids",
+        "--",
+        "--ignored",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 101,
+      "status": "FAIL"
+    }
+  ],
+  "complete": false
+}

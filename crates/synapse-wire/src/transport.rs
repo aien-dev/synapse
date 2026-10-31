@@ -1,6 +1,7 @@
 //! Stream transports for wire frames.
 //!
-//! Any reliable, ordered byte stream works (`UnixStream`, `TcpStream`, an in-memory pipe).
+//! Any reliable, ordered byte stream works (`UnixStream`, `TcpStream`, the shared-memory
+//! [`crate::ring::RingStream`], an in-memory pipe).
 //! The reader takes the 16-byte header first, checks the declared body length against its
 //! cap, and only then allocates and reads exactly that many bytes, so a hostile peer cannot
 //! make it allocate more than `max_frame_body` or consume bytes of the next frame.
@@ -13,7 +14,15 @@ use crate::frame::{
 use std::io::{BufReader, ErrorKind, Read, Write};
 use synapse_core::{RefusalCode, SynapseError, SynapseResult};
 
+/// An I/O error, except that a shared-memory ring refusal carried inside one keeps its own
+/// code (`WireRingViolation`).
 fn io(e: std::io::Error) -> SynapseError {
+    if let Some(r) = e
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<crate::ring::RingRefusal>())
+    {
+        return r.clone().into_error();
+    }
     SynapseError::new(RefusalCode::IoFailure, format!("wire transport: {e}"))
 }
 

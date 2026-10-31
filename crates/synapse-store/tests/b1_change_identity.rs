@@ -1,15 +1,17 @@
 //! ADR 0003 step B1 acceptance tests (issue #27): change identity bound to its creating
 //! chain, admission witnesses, obsolescence markers, envelope v2 with a native base, and v1
-//! identities unchanged. Chains here are plain link-digest paths; `synapse-api` tests the
-//! same rules with real signed F1 capability chains.
+//! identities unchanged. Chains here are digests of real F1 links from the shared fixture
+//! (`common`); `synapse-api` tests the same rules end to end through the request path.
 
 use ed25519_dalek::SigningKey;
 use std::path::{Path, PathBuf};
 use synapse_core::{
     encode_did_key_ed25519, BlobDigest, ChainPath, ChangeId, ChangesetEnvelope,
     ChangesetEnvelopeV2, ChangesetId, FileMode, GitOid, IdempotencyKey, MutationOp,
-    ObsolescenceMarker, PathMutation, RefusalCode, RepoId, RevisionContent, TreeDigest, WalSeq,
+    ObsolescenceMarker, PathMutation, RefusalCode, RepoId, RevisionContent, RevisionState,
+    TreeDigest, WalSeq,
 };
+mod common;
 use synapse_store::codec::{decode_record, encode_record};
 use synapse_store::{
     AdmissionAuthority, FsyncPolicy, IngestOutcome, RecordCodec, RecoveryPolicy, RevisionOutcome,
@@ -56,7 +58,7 @@ struct Chains {
 }
 
 fn chains() -> Chains {
-    let p = |v: &[u8]| ChainPath::new(v.iter().map(|b| [*b; 32]).collect()).unwrap();
+    let p = common::path;
     Chains {
         r: p(&[1]),
         o: p(&[1, 2]),
@@ -311,6 +313,9 @@ fn b1_prune_by_chain_not_dominating_creating_chain_is_refused() {
     let mut s = open(&dir, FsyncPolicy::EveryCommit);
     let a = admit(&mut s, &key(2), &c.o, b"orchestrator attempt", 1);
     let b = admit(&mut s, &key(3), &c.w1, b"worker attempt", 1);
+    // The owner shares it (ADR 0003 B4), so the other chains see it and are refused for
+    // dominance rather than as an unknown revision.
+    common::mv(&mut s, &[1, 2], a, RevisionState::Draft, 5_500).unwrap();
     let before = s.committed_seq();
     for (signer, chain) in [(key(3), &c.w1), (key(9), &c.x), (key(4), &c.w2)] {
         let err = s
@@ -554,11 +559,13 @@ fn b1_revision_records_round_trip_and_malformed_bytes_are_refused_typed() {
             chain: c.w1.clone(),
             admitted_at_ms: 5,
             new_blobs: vec![BlobDigest::compute(b"x")],
+            seal: None,
         },
         WalRecord::ObsolescenceRecorded {
             marker: marker(&key(2), env.changeset_id(), vec![ChangesetId([3; 32])]),
             chain: c.o.clone(),
             recorded_at_ms: 6,
+            seal: None,
         },
     ];
     for record in records {
