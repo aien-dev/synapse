@@ -160,8 +160,8 @@ pub enum RefusalCode {
     /// without the mover's private key (ADR 0003 sections 5.3 and 5.4, step B4, issue #89).
     RevisionStateMoveUnverified,
     /// Strict recovery of a store opened with a revision seal key found a revision record
-    /// (kind 7, 8, 9, or 11) whose server seal is missing or does not verify against the seal
-    /// chain so far: it was written, changed, reordered, or followed by a removed record
+    /// (kind 7, 8, 9, 10, or 11) whose server seal is missing or does not verify against the
+    /// seal chain so far: it was written, changed, reordered, or followed by a removed record
     /// without the server's key (issue #101).
     RevisionRecordUnsealed,
     /// A `DerivationAttestation` does not name the revision it is presented with, or its

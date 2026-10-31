@@ -691,8 +691,8 @@ impl SynapseStore {
     }
 
     /// [`Self::open`] with the server's machine key as the revision seal key (issue #101).
-    /// Every revision record written (kinds 7, 8, 9, and 11) is sealed by `seal`, chained to
-    /// the previous one; on replay a revision record whose seal does not verify against that
+    /// Every revision record written (kinds 7, 8, 9, 10, and 11) is sealed by `seal`, chained
+    /// to the previous one; on replay a revision record whose seal does not verify against that
     /// chain changes nothing. `StrictFailClosed` refuses such a store with
     /// `RevisionRecordUnsealed` (including one with revision records written before it was
     /// sealed); `TruncateTornTail` opens it, reports them in [`Self::seal_replay_report`],
