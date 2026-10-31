@@ -1,0 +1,46 @@
+== Baseline: the new tests on b69db2d (the reviewed head), unchanged code
+thread 'h1_store_refuses_git_ids_that_do_not_match_their_content' (3328942) panicked at crates/synapse-git/tests/h1_bridge_import.rs:777:22:
+one Git ID mapped to two blobs in one entry: accepted (Some(WalSeq(1)))
+thread 'h1_import_refuses_a_record_over_the_store_limits_before_writing' (3328932) panicked at crates/synapse-git/tests/h1_bridge_import.rs:420:5:
+assertion `left == right` failed: commit record over max_wal_record_bytes: nothing written
+  left: WalSeq(1)
+ right: WalSeq(0)
+test result: FAILED. 8 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 4.74s
+
+== R1 dry run skips the WAL frame size (B1) (test h1_import_refuses_a_record_over_the_store_limits)
+thread 'h1_import_refuses_a_record_over_the_store_limits_before_writing' (3747395) panicked at crates/synapse-git/tests/h1_bridge_import.rs:420:5:
+assertion `left == right` failed: commit record over max_wal_record_bytes: nothing written
+  left: WalSeq(1)
+ right: WalSeq(0)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.91s
+== R2 importer writes record by record, no whole-import dry run (B1) (test h1_import_refuses_a_record_over_the_store_limits)
+thread 'h1_import_refuses_a_record_over_the_store_limits_before_writing' (3748760) panicked at crates/synapse-git/tests/h1_bridge_import.rs:420:5:
+assertion `left == right` failed: commit record over max_wal_record_bytes: nothing written
+  left: WalSeq(1)
+ right: WalSeq(0)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.06s
+== R3 blob Git ID not re-hashed (B2) (test h1_store_refuses_git_ids_that_do_not_match)
+thread 'h1_store_refuses_git_ids_that_do_not_match_their_content' (3749726) panicked at crates/synapse-git/tests/h1_bridge_import.rs:777:22:
+a blob under another blob's Git ID: accepted (Some(WalSeq(1)))
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.03s
+== R4 tree Git ID not re-hashed (B2) (test h1_store_refuses_git_ids_that_do_not_match)
+thread 'h1_store_refuses_git_ids_that_do_not_match_their_content' (3750712) panicked at crates/synapse-git/tests/h1_bridge_import.rs:777:22:
+a tree under a wrong Git ID: accepted (Some(WalSeq(1)))
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.05s
+== R5 commit Git ID not re-hashed (B2) (test h1_store_refuses_git_ids_that_do_not_match)
+thread 'h1_store_refuses_git_ids_that_do_not_match_their_content' (3752073) panicked at crates/synapse-git/tests/h1_bridge_import.rs:871:22:
+a commit under a wrong Git ID: accepted (Some(WalSeq(2)))
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.03s
+== R6 tag Git ID not re-hashed (B2) (test h1_store_refuses_git_ids_that_do_not_match)
+thread 'h1_store_refuses_git_ids_that_do_not_match_their_content' (3752894) panicked at crates/synapse-git/tests/h1_bridge_import.rs:905:18:
+a tag under a wrong Git ID: accepted (Some(WalSeq(3)))
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.04s
+== R7 tree file blob need only be visible, not mapped in its repository (N3) (test h1_store_refuses_git_ids_that_do_not_match)
+thread 'h1_store_refuses_git_ids_that_do_not_match_their_content' (3753679) panicked at crates/synapse-git/tests/h1_bridge_import.rs:851:19:
+assertion `left == right` failed: GitObjectCorrupt: unmapped entry
+  left: GitObjectCorrupt
+ right: BlobNotFound
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.03s
+== R8 export passes any tag Git ID through as a target (test export_refuses_a_tag_target_that_is_not_imported)
+thread 'bridge::tests::export_refuses_a_tag_target_that_is_not_imported' (3754688) panicked at crates/synapse-git/src/bridge.rs:887:58:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s

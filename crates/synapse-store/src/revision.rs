@@ -184,7 +184,7 @@ pub(crate) struct CompactedRevisionLog {
 }
 
 /// Digest of one revision record over its canonical core encodings.
-fn record_digest(record: &WalRecord) -> [u8; 32] {
+pub(crate) fn record_digest(record: &WalRecord) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update([record.kind_byte()]);
     let mut chain = Vec::new();
@@ -239,6 +239,9 @@ fn record_digest(record: &WalRecord) -> [u8; 32] {
             h.update(m.mover_key);
             h.update(m.signature);
         }
+        WalRecord::GitBridgeImported { repo_id, entry, .. } => {
+            crate::git_bridge::record_digest_input(repo_id, entry, &mut h);
+        }
         WalRecord::DerivedRevisionAdmitted {
             derived,
             chain: c,
@@ -281,6 +284,14 @@ fn visible_to(rev: &StoredRevision, viewer: &ChainPath) -> bool {
 impl RevisionLedger {
     pub(crate) fn log(&self) -> &[(WalSeq, WalRecord)] {
         &self.log
+    }
+
+    /// The log without the records whose seal did not verify (issue #101): the records that
+    /// took effect, in sequence order.
+    pub(crate) fn applied_log(&self) -> impl Iterator<Item = &(WalSeq, WalRecord)> {
+        self.log
+            .iter()
+            .filter(|(seq, _)| !self.unsealed.contains(seq))
     }
 
     /// Kind 9 records that changed nothing, by reason (issue #89).
@@ -541,6 +552,9 @@ impl RevisionLedger {
                     }
                 }
             }
+            // Git bridge records are kept in the log (checkpoint and state root); their map
+            // lives in `git_bridge::GitBridgeLedger`.
+            WalRecord::GitBridgeImported { .. } => {}
             _ => return,
         }
         self.log.push((seq, record));
@@ -1042,6 +1056,13 @@ impl crate::SynapseStore {
             // Another owner's `Private` revision is not a parent this chain can name (B4).
             let parent_repo = if self.revisions.get_visible(repo, *parent, viewer).is_some() {
                 repo
+            } else if self
+                .git_bridge
+                .repo(repo)
+                .is_some_and(|r| r.commit_by_changeset(*parent).is_some())
+            {
+                // An imported Git commit (step H1) of this repository.
+                repo
             } else if let Some(cs) = self.changesets.get(parent) {
                 &cs.envelope.repo_id
             } else {
@@ -1274,7 +1295,7 @@ impl crate::SynapseStore {
             .ok_or_else(|| not_found(format!("change {change_id} not found")))
     }
 
-    fn check_binary_codec(&self) -> SynapseResult<()> {
+    pub(crate) fn check_binary_codec(&self) -> SynapseResult<()> {
         if self.codec == crate::RecordCodec::JsonV1 {
             return Err(SynapseError::new(
                 RefusalCode::EnvelopeVersionUnsupported,
@@ -1291,7 +1312,7 @@ impl crate::SynapseStore {
     /// before anything is written, and a frame that lands at another sequence anyway is not
     /// applied and poisons the store (`WalSequenceGap` in both cases), so a record is never
     /// admitted at a sequence it was not checked at. Real checks in every build profile.
-    fn append_revision_record(
+    pub(crate) fn append_revision_record(
         &mut self,
         mut record: WalRecord,
         blobs: &[(BlobDigest, &[u8])],

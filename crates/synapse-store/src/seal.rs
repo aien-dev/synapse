@@ -5,7 +5,7 @@
 //! Kinds 7 and 8 carry a `chain` field that no signature in the record covers, so such a
 //! rewrite could swap an admission's chain for links the forger minted and then sign kind 9
 //! moves under them. A store opened with a [`RevisionSealKey`] (the server's machine key)
-//! closes that: every revision record it writes (kinds 7, 8, 9, and 11) carries a
+//! closes that: every revision record it writes (kinds 7, 8, 9, 10, and 11) carries a
 //! [`RevisionSeal`], an Ed25519 signature by that key over a running head that chains the
 //! record's `WalSeq`, its full record digest (every field, chain included), and the head of
 //! the previous sealed record. Replay applies a revision record only when its seal verifies

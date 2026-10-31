@@ -18,9 +18,13 @@
 //! huge length is refused without allocating it.
 
 use super::*;
+use crate::git_bridge::{
+    GitBlobMapping, GitBridgeEntry, GitBridgeTarget, GitImportedCommit, GitImportedRefs,
+    GitImportedTag, GitTreeMapping,
+};
 use crate::seal::REVISION_SEAL_TAG;
 use synapse_auth::CapabilityLink;
-use synapse_core::{FileMode, GitOid, PathMutation};
+use synapse_core::{FileMode, GitOid, PathMutation, TreeDigest};
 
 /// Codec version byte that starts every binary record and checkpoint content.
 pub const CODEC_V2: u8 = 2;
@@ -373,8 +377,100 @@ pub fn encode_record(record: &WalRecord) -> SynapseResult<Vec<u8>> {
             w.u64(*admitted_at_ms);
             put_seal(&mut w, seal);
         }
+        WalRecord::GitBridgeImported {
+            repo_id,
+            entry,
+            seal,
+        } => {
+            w.repo(repo_id)?;
+            put_git_bridge_entry(&mut w, entry)?;
+            put_seal(&mut w, seal);
+        }
     }
     Ok(w.0)
+}
+
+/// The body of a kind 10 record without its seal trailer, `repo_id | entry`: what the
+/// record digest (state root and seal chain) covers.
+pub(crate) fn git_bridge_body(repo_id: &RepoId, entry: &GitBridgeEntry) -> SynapseResult<Vec<u8>> {
+    let mut w = Writer(Vec::with_capacity(256));
+    w.repo(repo_id)?;
+    put_git_bridge_entry(&mut w, entry)?;
+    Ok(w.0)
+}
+
+fn put_git_target(w: &mut Writer, t: &GitBridgeTarget) {
+    match t {
+        GitBridgeTarget::Commit(c) => {
+            w.u8(1);
+            w.raw(&c.0);
+        }
+        GitBridgeTarget::Tree(d) => {
+            w.u8(2);
+            w.raw(&d.0);
+        }
+        GitBridgeTarget::Blob(b) => {
+            w.u8(3);
+            w.raw(&b.0);
+        }
+        GitBridgeTarget::Tag(o) => {
+            w.u8(4);
+            w.raw(&o.0);
+        }
+    }
+}
+
+/// `entry tag (u8) | body`: 1 objects `u32 n | (git oid [20] | blob [32] | size u64)* | u32 m
+/// | (git oid [20] | u32 len | tree node)*`; 2 commit `git oid | tree [32] | u32 n | parent
+/// [32]* | u32 len | headers`; 3 tag `git oid | target | u32 len | rest`; 4 refs `u32 n |
+/// (name | target)* | option head`. A target is `tag (u8) | [32]` (1 commit, 2 tree, 3 blob)
+/// or `4 | git oid [20]` (tag).
+fn put_git_bridge_entry(w: &mut Writer, e: &GitBridgeEntry) -> SynapseResult<()> {
+    w.u8(e.tag());
+    match e {
+        GitBridgeEntry::Objects { blobs, trees } => {
+            w.len(blobs.len(), "Git blob count")?;
+            for b in blobs {
+                w.raw(&b.git_oid.0);
+                w.raw(&b.blob.0);
+                w.u64(b.size_bytes);
+            }
+            w.len(trees.len(), "Git tree count")?;
+            for t in trees {
+                w.raw(&t.git_oid.0);
+                w.bytes(&t.node, "Git tree node")?;
+            }
+        }
+        GitBridgeEntry::Commit(c) => {
+            w.raw(&c.git_oid.0);
+            w.raw(&c.tree.0);
+            w.len(c.parents.len(), "Git parent count")?;
+            for p in &c.parents {
+                w.raw(&p.0);
+            }
+            w.bytes(&c.headers, "Git commit headers")?;
+        }
+        GitBridgeEntry::Tag(t) => {
+            w.raw(&t.git_oid.0);
+            put_git_target(w, &t.target);
+            w.bytes(&t.rest, "Git tag body")?;
+        }
+        GitBridgeEntry::Refs(r) => {
+            w.len(r.refs.len(), "Git reference count")?;
+            for (name, target) in &r.refs {
+                w.str(name, "Git reference name")?;
+                put_git_target(w, target);
+            }
+            match &r.head {
+                Some(h) => {
+                    w.bool(true);
+                    w.str(h, "Git HEAD")?;
+                }
+                None => w.bool(false),
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The optional seal trailer of a revision record (issue #101): nothing when unsealed,
@@ -737,6 +833,93 @@ fn get_version(r: &mut Reader) -> Decoded<()> {
 }
 
 /// Decode a binary v2 record. `cap` bounds every declared length and every reservation.
+const MIN_GIT_TARGET: usize = 1 + 20;
+
+fn get_git_target(r: &mut Reader) -> Decoded<GitBridgeTarget> {
+    let at = r.pos;
+    Ok(match r.u8()? {
+        1 => GitBridgeTarget::Commit(ChangesetId(r.array()?)),
+        2 => GitBridgeTarget::Tree(TreeDigest(r.array()?)),
+        3 => GitBridgeTarget::Blob(BlobDigest(r.array()?)),
+        4 => GitBridgeTarget::Tag(GitOid(r.array()?)),
+        tag => {
+            return Err(CodecRefusal::UnknownTag {
+                at,
+                field: "Git bridge target",
+                tag,
+            })
+        }
+    })
+}
+
+fn get_git_bridge_entry(r: &mut Reader) -> Decoded<GitBridgeEntry> {
+    let at = r.pos;
+    Ok(match r.u8()? {
+        1 => {
+            let (n, mut blobs) = r.vec(20 + 32 + 8)?;
+            for _ in 0..n {
+                blobs.push(GitBlobMapping {
+                    git_oid: GitOid(r.array()?),
+                    blob: BlobDigest(r.array()?),
+                    size_bytes: r.u64()?,
+                });
+            }
+            let (m, mut trees) = r.vec(20 + 4 + 4)?;
+            for _ in 0..m {
+                let git_oid = GitOid(r.array()?);
+                let node = r.embedded("Git tree node", |b| {
+                    synapse_core::decode_tree_node(b).map(|_| b.to_vec())
+                })?;
+                trees.push(GitTreeMapping { git_oid, node });
+            }
+            GitBridgeEntry::Objects { blobs, trees }
+        }
+        2 => {
+            let git_oid = GitOid(r.array()?);
+            let tree = TreeDigest(r.array()?);
+            let (n, mut parents) = r.vec(32)?;
+            for _ in 0..n {
+                parents.push(ChangesetId(r.array()?));
+            }
+            let headers = r.bytes()?;
+            GitBridgeEntry::Commit(GitImportedCommit {
+                git_oid,
+                tree,
+                parents,
+                headers,
+            })
+        }
+        3 => GitBridgeEntry::Tag(GitImportedTag {
+            git_oid: GitOid(r.array()?),
+            target: get_git_target(r)?,
+            rest: r.bytes()?,
+        }),
+        4 => {
+            let (n, mut refs) = r.vec::<(String, GitBridgeTarget)>(MIN_STR + MIN_GIT_TARGET)?;
+            for _ in 0..n {
+                let name_at = r.pos;
+                let name = r.string()?;
+                if refs.last().is_some_and(|(p, _)| *p >= name) {
+                    return Err(CodecRefusal::NotCanonical {
+                        at: name_at,
+                        field: "Git reference names",
+                    });
+                }
+                refs.push((name, get_git_target(r)?));
+            }
+            let head = if r.bool()? { Some(r.string()?) } else { None };
+            GitBridgeEntry::Refs(GitImportedRefs { refs, head })
+        }
+        tag => {
+            return Err(CodecRefusal::UnknownTag {
+                at,
+                field: "Git bridge entry",
+                tag,
+            })
+        }
+    })
+}
+
 pub fn decode_record(bytes: &[u8], cap: u64) -> Result<WalRecord, CodecRefusal> {
     let mut r = Reader::new(bytes, cap);
     get_version(&mut r)?;
@@ -828,6 +1011,15 @@ pub fn decode_record(bytes: &[u8], cap: u64) -> Result<WalRecord, CodecRefusal> 
             admitted_at_ms: r.u64()?,
             seal: get_seal(&mut r)?,
         },
+        10 => {
+            let repo_id = r.repo()?;
+            let entry = get_git_bridge_entry(&mut r)?;
+            WalRecord::GitBridgeImported {
+                repo_id,
+                entry,
+                seal: get_seal(&mut r)?,
+            }
+        }
         tag => {
             return Err(CodecRefusal::UnknownTag {
                 at,
@@ -899,7 +1091,7 @@ pub struct CheckpointState {
     pub blob_first_visible_seq: BTreeMap<BlobDigest, WalSeq>,
     pub github_projections: BTreeMap<u64, GitHubPullRequestProjection>,
     pub canonical_heads: BTreeMap<RepoId, RadicleCanonicalHead>,
-    /// Revision records (kinds 7, 8, and 9) in sequence order (ADR 0003 B1, B4). Written only when
+    /// Revision records (kinds 7 to 11; 10 is the H1 Git bridge) in sequence order (ADR 0003 B1, B4, B5, H1). Written only when
     /// non-empty, so checkpoints of stores without revisions keep their exact bytes.
     pub revision_log: Vec<(WalSeq, WalRecord)>,
 }
@@ -1186,7 +1378,7 @@ impl CheckpointState {
                 let tag_at = r.pos + 4 + 1;
                 let bytes = r.bytes()?;
                 let record = decode_record(&bytes, r.cap)?;
-                if !matches!(record.kind_byte(), 7..=9 | 11) {
+                if !matches!(record.kind_byte(), 7..=11) {
                     return Err(CodecRefusal::UnknownTag {
                         at: tag_at,
                         field: "revision record kind",

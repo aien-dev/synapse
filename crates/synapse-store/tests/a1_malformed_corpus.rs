@@ -162,6 +162,8 @@ fn length_fields(record: &WalRecord, bin: &[u8]) -> Vec<usize> {
         | WalRecord::DerivedRevisionAdmitted { .. } => vec![2],
         // repo_id length first (ADR 0003 B4).
         WalRecord::RevisionStateMoved { .. } => vec![2],
+        // repo_id length first (ADR 0003 H1, kind 10; not in the v1 fixture).
+        WalRecord::GitBridgeImported { .. } => vec![2],
     }
 }
 

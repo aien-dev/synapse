@@ -1,0 +1,49 @@
+# cut 2 green: cargo test --locked --workspace -j 4 (debug), feat/48-git-bridge-cut2 working tree
+unittests src/lib.rs: test result: ok. 31 passed; 0 failed; 0 ignored
+tests/b1_chained_revisions.rs: test result: ok. 2 passed; 0 failed; 0 ignored
+tests/c1_tree_digest.rs: test result: ok. 1 passed; 0 failed; 0 ignored
+unittests src/lib.rs: test result: ok. 1 passed; 0 failed; 0 ignored
+tests/f1_capability_chains.rs: test result: ok. 11 passed; 0 failed; 0 ignored
+unittests src/lib.rs: test result: ok. 74 passed; 0 failed; 0 ignored
+unittests src/bin/verify-qualification.rs: test result: ok. 6 passed; 0 failed; 0 ignored
+tests/c1_tree_cache_bound.rs: test result: ok. 2 passed; 0 failed; 0 ignored
+tests/c1_tree_parity.rs: test result: ok. 2 passed; 0 failed; 1 ignored
+tests/crumb_synapse_qualification.rs: test result: ok. 15 passed; 0 failed; 0 ignored
+unittests src/lib.rs: test result: ok. 9 passed; 0 failed; 0 ignored
+tests/hostile.rs: test result: ok. 11 passed; 0 failed; 0 ignored
+tests/identity.rs: test result: ok. 9 passed; 0 failed; 0 ignored
+tests/plane.rs: test result: ok. 12 passed; 0 failed; 0 ignored
+unittests src/lib.rs: test result: ok. 14 passed; 0 failed; 0 ignored
+unittests src/lib.rs: test result: ok. 16 passed; 0 failed; 0 ignored
+tests/parity.rs: test result: ok. 8 passed; 0 failed; 0 ignored
+tests/repo_root.rs: test result: ok. 1 passed; 0 failed; 0 ignored
+unittests src/lib.rs: test result: ok. 15 passed; 0 failed; 0 ignored
+unittests src/lib.rs: test result: ok. 16 passed; 0 failed; 0 ignored
+tests/h1_bridge_import.rs: test result: ok. 8 passed; 0 failed; 1 ignored
+tests/h1_git_bridge.rs: test result: ok. 6 passed; 0 failed; 1 ignored
+tests/h1_hostile_repo.rs: test result: ok. 9 passed; 0 failed; 0 ignored
+tests/h1_read_limits.rs: test result: ok. 4 passed; 0 failed; 0 ignored
+unittests src/lib.rs: test result: ok. 2 passed; 0 failed; 0 ignored
+tests/e0_identity_document.rs: test result: ok. 6 passed; 0 failed; 0 ignored
+unittests src/lib.rs: test result: ok. 55 passed; 0 failed; 0 ignored
+tests/a1_malformed_corpus.rs: test result: ok. 2 passed; 0 failed; 0 ignored
+tests/b1_change_identity.rs: test result: ok. 8 passed; 0 failed; 0 ignored
+tests/g1_fuzz.rs: test result: ok. 7 passed; 0 failed; 0 ignored
+tests/g1_wire.rs: test result: ok. 8 passed; 0 failed; 0 ignored
+workspace total: passed 371 failed 0 ignored 3
+
+# real repositories through the store (release test binary, /usr/bin/time -v, mirror clones)
+== synapse (release test binary, main 3d78efe)
+real repository <tmp>/synapse.git through the store: ImportReceipt { blobs: 876, trees: 859, commits: 180, tags: 0, refs: 75, records_written: 183, records_skipped: 0 }; import 7.5 s, reopen (WAL replay) 0.1 s, export 1.0 s, pack 72477923 bytes
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 8.94s
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:08.94
+	Maximum resident set size (kbytes): 197116
+== omega (release test binary, main f4a9849f)
+real repository <tmp>/omega.git through the store: ImportReceipt { blobs: 16867, trees: 10345, commits: 2413, tags: 11, refs: 633, records_written: 2433, records_skipped: 0 }; import 123.3 s, reopen (WAL replay) 0.3 s, export 5.8 s, pack 374713444 bytes
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 131.72s
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:11.72
+	Maximum resident set size (kbytes): 976824
+
+# lint
+cargo clippy --locked --workspace --all-targets -j 4 -- -D warnings: clean
+cargo fmt --all --check: clean

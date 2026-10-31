@@ -174,6 +174,22 @@ fn h1_hostile_reference_linked_outside_the_repository_is_refused() {
 }
 
 #[test]
+fn h1_hostile_linked_object_fanout_directory_is_refused() {
+    // Re-review of PR #90, N1: `objects/ab` replaced by a link to a directory outside the
+    // repository that holds the very same object file. Following the link would read it.
+    let (root, git_dir, tip) = small_repo("fanout-link");
+    let fanout = git_dir.join("objects").join(&tip[..2]);
+    let outside = root.join("outside-fanout");
+    fs::rename(&fanout, &outside).unwrap();
+    std::os::unix::fs::symlink(&outside, &fanout).unwrap();
+    assert_refused(
+        read_history(&git_dir),
+        RefusalCode::PathInvalid,
+        "objects/xx -> directory outside",
+    );
+}
+
+#[test]
 fn h1_hostile_oversized_reference_file_is_refused() {
     let (_root, git_dir, tip) = small_repo("big-ref");
     let mut text = format!("{tip}\n");

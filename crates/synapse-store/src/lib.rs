@@ -36,6 +36,7 @@ mod blockdev_a2_suite;
 mod blockdev_tests;
 pub mod chunk;
 pub mod codec;
+pub mod git_bridge;
 #[cfg(test)]
 mod g2_tests;
 #[cfg(test)]
@@ -368,6 +369,14 @@ pub enum WalRecord {
         admitted_at_ms: u64,
         seal: Option<RevisionSeal>,
     },
+    /// One Git bridge entry of an import into `repo_id` (ADR 0003 section 5.10, step H1 cut 2;
+    /// `git_bridge`). Binary codec only. Sealed like the other revision records (issue #101).
+    #[serde(skip)]
+    GitBridgeImported {
+        repo_id: RepoId,
+        entry: git_bridge::GitBridgeEntry,
+        seal: Option<RevisionSeal>,
+    },
 }
 
 impl WalRecord {
@@ -382,17 +391,19 @@ impl WalRecord {
             Self::RevisionAdmitted { .. } => 7,
             Self::ObsolescenceRecorded { .. } => 8,
             Self::RevisionStateMoved { .. } => 9,
+            Self::GitBridgeImported { .. } => 10,
             Self::DerivedRevisionAdmitted { .. } => 11,
         }
     }
 
-    /// True for the revision records a seal covers (kinds 7, 8, 9, and 11).
+    /// True for the revision records a seal covers (kinds 7 to 11).
     pub fn is_revision_record(&self) -> bool {
         matches!(
             self,
             Self::RevisionAdmitted { .. }
                 | Self::ObsolescenceRecorded { .. }
                 | Self::RevisionStateMoved { .. }
+                | Self::GitBridgeImported { .. }
                 | Self::DerivedRevisionAdmitted { .. }
         )
     }
@@ -403,6 +414,7 @@ impl WalRecord {
             Self::RevisionAdmitted { seal, .. }
             | Self::ObsolescenceRecorded { seal, .. }
             | Self::RevisionStateMoved { seal, .. }
+            | Self::GitBridgeImported { seal, .. }
             | Self::DerivedRevisionAdmitted { seal, .. } => seal.as_ref(),
             _ => None,
         }
@@ -412,15 +424,18 @@ impl WalRecord {
         if let Self::RevisionAdmitted { seal, .. }
         | Self::ObsolescenceRecorded { seal, .. }
         | Self::RevisionStateMoved { seal, .. }
+        | Self::GitBridgeImported { seal, .. }
         | Self::DerivedRevisionAdmitted { seal, .. } = self
         {
             *seal = Some(value);
         }
     }
 
-    /// Blob digests the upserts of this record reference (ingest and revision records).
+    /// Blob digests the upserts of this record reference (ingest and revision records), and the
+    /// blobs a Git bridge objects entry maps.
     pub fn upsert_blobs(&self) -> Vec<BlobDigest> {
         let mutations = match self {
+            Self::GitBridgeImported { entry, .. } => return entry.blobs(),
             Self::ChangesetIngest { envelope, .. } => &envelope.mutations,
             Self::RevisionAdmitted { envelope, .. } => &envelope.content.mutations,
             Self::DerivedRevisionAdmitted { derived, .. } => &derived.content.mutations,
@@ -555,6 +570,8 @@ pub struct SynapseStore {
     /// `checkpoint.v1` is not yet the tombstone although `checkpoint.v2` exists.
     /// Envelope v2 revisions, changes, witnesses, and markers (ADR 0003 B1).
     revisions: revision::RevisionLedger,
+    /// The Git bridge map (step H1 cut 2), derived from the kind 10 records in `revisions`.
+    git_bridge: git_bridge::GitBridgeLedger,
     /// The server key revision records are sealed with and checked against (issue #101).
     revision_seal: Option<RevisionSealKey>,
     tombstone_pending: bool,
@@ -674,8 +691,8 @@ impl SynapseStore {
     }
 
     /// [`Self::open`] with the server's machine key as the revision seal key (issue #101).
-    /// Every revision record written (kinds 7, 8, 9, and 11) is sealed by `seal`, chained to
-    /// the previous one; on replay a revision record whose seal does not verify against that
+    /// Every revision record written (kinds 7, 8, 9, 10, and 11) is sealed by `seal`, chained
+    /// to the previous one; on replay a revision record whose seal does not verify against that
     /// chain changes nothing. `StrictFailClosed` refuses such a store with
     /// `RevisionRecordUnsealed` (including one with revision records written before it was
     /// sealed); `TruncateTornTail` opens it, reports them in [`Self::seal_replay_report`],
@@ -834,6 +851,7 @@ impl SynapseStore {
             revisions: revision::RevisionLedger::new(
                 revision_seal.as_ref().map(RevisionSealKey::public_key),
             ),
+            git_bridge: git_bridge::GitBridgeLedger::default(),
             revision_seal,
         };
 
@@ -2057,6 +2075,7 @@ impl SynapseStore {
                 }
             }
         }
+        retained_blobs.extend(self.git_bridge.blob_digests());
         for stored in self.changesets.values() {
             for m in &stored.envelope.mutations {
                 if let MutationOp::Upsert { blob_digest, .. } = &m.op {
@@ -2620,9 +2639,17 @@ impl SynapseStore {
             }
             record @ (WalRecord::ObsolescenceRecorded { .. }
             | WalRecord::RevisionStateMoved { .. }) => self.revisions.apply(seq, record),
-            record @ WalRecord::DerivedRevisionAdmitted { .. }
+            record @ (WalRecord::DerivedRevisionAdmitted { .. }
+            | WalRecord::GitBridgeImported { .. })
                 if !self.revisions.accepts(seq, &record) =>
             {
+                self.revisions.apply(seq, record);
+            }
+            record @ WalRecord::GitBridgeImported { .. } => {
+                for digest in record.upsert_blobs() {
+                    self.blob_first_visible_seq.entry(digest).or_insert(seq);
+                }
+                self.git_bridge.apply(&record);
                 self.revisions.apply(seq, record);
             }
             record @ WalRecord::DerivedRevisionAdmitted { .. } => {
@@ -2750,6 +2777,7 @@ impl SynapseStore {
             s.revision_log,
             self.revision_seal.as_ref().map(RevisionSealKey::public_key),
         );
+        self.git_bridge = git_bridge::GitBridgeLedger::from_log(self.revisions.applied_log());
     }
 
     /// Admit a replayed (not checkpoint-covered) frame written with `codec`: the codec
